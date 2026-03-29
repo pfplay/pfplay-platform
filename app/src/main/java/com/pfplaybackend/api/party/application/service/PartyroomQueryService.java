@@ -166,7 +166,7 @@ public class PartyroomQueryService {
         QueueStatus queueStatus = djQueue.isClosed() ? QueueStatus.CLOSE : QueueStatus.OPEN;
         boolean isRegistered = isAlreadyRegistered(partyroom.getPartyroomId());
         PlaybackData playback = null;
-        if (isPlaybackActivated) {
+        if (isPlaybackActivated && playbackState.getCurrentPlaybackId() != null) {
             playback = playbackQueryService.getPlaybackById(playbackState.getCurrentPlaybackId());
         }
         List<DjWithProfileDto> djWithProfiles = getDjs(partyroom.getPartyroomId());
