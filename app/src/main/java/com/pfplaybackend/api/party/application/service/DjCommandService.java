@@ -61,12 +61,14 @@ public class DjCommandService {
         DjData dj = DjData.create(partyroom.getPartyroomId(), playlistId, crewId, nextOrder);
         DjData saved = aggregatePort.saveDj(dj);
 
-        playbackState.activate(null, null);
-        aggregatePort.savePlaybackState(playbackState);
+        if (isPostActivationProcessingRequired) {
+            playbackState.activate(null, null);
+            aggregatePort.savePlaybackState(playbackState);
+        }
 
         eventPublisher.publishEvent(new DjQueueChangedEvent(partyroom.getPartyroomId(), DjChangeType.ENQUEUE, crewId));
 
-        if(isPostActivationProcessingRequired) {
+        if (isPostActivationProcessingRequired) {
             playbackControlPort.startPlayback(partyroom);
         }
         return saved.getId();
