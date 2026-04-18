@@ -1,0 +1,74 @@
+# 개발계 (development) — 호스트 노출 포트: app 9090
+# 실행: docker compose -f docker-compose.dev.yml -p pfplay-dev --env-file .env.dev up -d --build
+services:
+  mysql:
+    image: mysql:8.0.30
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: pfplay
+      MYSQL_USER: ${DB_USERNAME:-pfplay}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+09:00
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-root}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  pytube:
+    build:
+      context: ../pfplay-streaming
+    environment:
+      API_KEY: ${PYTUBE_API_KEY:-pfplay_streaming}
+      API_SECRET: ${PYTUBE_API_SECRET}
+    restart: unless-stopped
+
+  app:
+    image: ghcr.io/pfplay/pfplay-api:dev
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-local}
+      DB_URL: jdbc:mysql://mysql:3306/pfplay?characterEncoding=UTF-8&useUnicode=true&serverTimezone=Asia/Seoul
+      DB_USERNAME: ${DB_USERNAME:-pfplay}
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      PYTUBE_URI: http://pytube:9000
+      PYTUBE_API_KEY: ${PYTUBE_API_KEY:-pfplay_streaming}
+      PYTUBE_API_SECRET: ${PYTUBE_API_SECRET}
+      JWT_SECRET: ${JWT_SECRET}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      TWITTER_CLIENT_ID: ${TWITTER_CLIENT_ID}
+      TWITTER_CLIENT_SECRET: ${TWITTER_CLIENT_SECRET}
+    ports:
+      - "9090:8080"
+    restart: unless-stopped
+
+volumes:
+  mysql-data:
+  redis-data:
