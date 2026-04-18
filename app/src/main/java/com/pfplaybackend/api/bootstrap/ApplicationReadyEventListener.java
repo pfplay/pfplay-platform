@@ -26,15 +26,18 @@ public class ApplicationReadyEventListener {
 
     @EventListener(ApplicationReadyEvent.class)
     public void onApplicationEvent() {
-        if (!environment.acceptsProfiles(Profiles.of("prod"))) {
-            avatarResourceInitializeService.addAvatarBodies();
-            avatarResourceInitializeService.addAvatarFaces();
-            avatarResourceInitializeService.addAvatarIcons();
+        // 시드 데이터는 schema가 fresh인 환경(ddl-auto=create: local, dev)에서만 의미가 있음.
+        // staging/prod(ddl-auto=validate)는 기존 데이터와 충돌하므로 스킵.
+        if (!environment.acceptsProfiles(Profiles.of("local", "dev"))) {
+            return;
         }
+
+        avatarResourceInitializeService.addAvatarBodies();
+        avatarResourceInitializeService.addAvatarFaces();
+        avatarResourceInitializeService.addAvatarIcons();
+
         // FIXME 서비스 간 '구동 순서에 대한 의존 문제'를 해소
-        // Add AdminUser
         UserId adminId = adminUserInitializeService.addAdminUser();
-        // Add Main Partyroom
         partyroomCommandService.initializeMainStage(adminId);
 
         if (environment.acceptsProfiles(Profiles.of("local"))) {
