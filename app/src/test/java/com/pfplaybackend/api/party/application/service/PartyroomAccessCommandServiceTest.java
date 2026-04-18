@@ -93,7 +93,7 @@ class PartyroomAccessCommandServiceTest {
         when(partyroomQueryService.getMyActivePartyroom(userId)).thenReturn(Optional.of(activeRoomInfo));
 
         // when
-        partyroomAccessCommandService.tryEnter(partyroomId);
+        partyroomAccessCommandService.tryEnter(partyroomId, null);
 
         // then — 재진입 시에도 이벤트가 발행되어야 함
         verify(eventPublisher, times(1)).publishEvent(any(CrewAccessedEvent.class));
@@ -155,7 +155,7 @@ class PartyroomAccessCommandServiceTest {
         when(aggregatePort.saveCrew(any(CrewData.class))).thenReturn(newRoomCrew);
 
         // when — 예외 없이 정상 실행되어야 함
-        partyroomAccessCommandService.tryEnter(newRoomId);
+        partyroomAccessCommandService.tryEnter(newRoomId, null);
 
         // then — exit 이벤트 + enter 이벤트 = 최소 2번 publish 호출
         verify(eventPublisher, atLeast(2)).publishEvent(any(Object.class));
