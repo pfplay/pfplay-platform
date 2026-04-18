@@ -35,13 +35,15 @@ echo "[deploy:$ENV] pulling app image..."
 echo "[deploy:$ENV] restarting app (mysql/redis/pytube intact)..."
 "${COMPOSE[@]}" up -d --no-deps app
 
-echo "[deploy:$ENV] waiting for health on http://localhost:${PORT}..."
+echo "[deploy:$ENV] waiting for app on http://localhost:${PORT}..."
+# /v3/api-docs는 인증 없이 200 응답하는 엔드포인트라 readiness 검증으로 적합.
+# (actuator 미사용 환경 대응)
 for i in $(seq 1 30); do
-  if curl -sf "http://localhost:${PORT}/actuator/health" >/dev/null 2>&1; then
+  if curl -sf "http://localhost:${PORT}/v3/api-docs" >/dev/null 2>&1; then
     echo "[deploy:$ENV] OK"
     exit 0
   fi
   sleep 2
 done
-echo "[deploy:$ENV] WARN: health check timed out (container may still be starting)" >&2
+echo "[deploy:$ENV] WARN: readiness check timed out (container may still be starting)" >&2
 exit 0
