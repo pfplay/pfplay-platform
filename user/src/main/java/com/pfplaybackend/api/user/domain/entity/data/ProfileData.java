@@ -23,7 +23,7 @@ public class ProfileData extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(columnDefinition = "integer unsigned")
+    @Column(columnDefinition = "bigint unsigned")
     private Long id;
 
     @Embedded

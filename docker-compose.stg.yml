@@ -50,21 +50,14 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    env_file:
+      - .env.stg
     environment:
-      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-local}
+      # compose-only override (컨테이너 내부 hostname)
       DB_URL: jdbc:mysql://mysql:3306/pfplay?characterEncoding=UTF-8&useUnicode=true&serverTimezone=Asia/Seoul
-      DB_USERNAME: ${DB_USERNAME:-pfplay}
-      DB_PASSWORD: ${DB_PASSWORD}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       PYTUBE_URI: http://pytube:9000
-      PYTUBE_API_KEY: ${PYTUBE_API_KEY:-pfplay_streaming}
-      PYTUBE_API_SECRET: ${PYTUBE_API_SECRET}
-      JWT_SECRET: ${JWT_SECRET}
-      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
-      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
-      TWITTER_CLIENT_ID: ${TWITTER_CLIENT_ID}
-      TWITTER_CLIENT_SECRET: ${TWITTER_CLIENT_SECRET}
     ports:
       - "8080:8080"
     restart: unless-stopped
