@@ -1,5 +1,6 @@
 package com.pfplaybackend.api.common.config.security;
 
+import com.pfplaybackend.api.common.config.security.cors.properties.CorsProperties;
 import com.pfplaybackend.api.common.config.security.jwt.CookieBearerTokenResolver;
 import com.pfplaybackend.api.common.config.security.jwt.CustomJwtAuthenticationConverter;
 import lombok.RequiredArgsConstructor;
@@ -14,15 +15,13 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
-import java.util.Arrays;
-import java.util.List;
-
 @Configuration
 @RequiredArgsConstructor
 public class SecurityConfig {
 
     private final CookieBearerTokenResolver customBearerTokenResolver;
     private final CustomJwtAuthenticationConverter jwtAuthenticationConverter;
+    private final CorsProperties corsProperties;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -58,17 +57,11 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of(
-                "https://localhost:3000",
-                "http://localhost:3000",
-                "http://localhost:8080",
-                "http://admin.pfplay.xyz",
-                "https://pfplay.xyz",
-                "https://api.pfplay.xyz"));
-        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(List.of("*"));
-        configuration.setAllowCredentials(true);
-        configuration.setMaxAge(3600L);
+        configuration.setAllowedOrigins(corsProperties.getAllowedOrigins());
+        configuration.setAllowedMethods(corsProperties.getAllowedMethods());
+        configuration.setAllowedHeaders(corsProperties.getAllowedHeaders());
+        configuration.setAllowCredentials(corsProperties.isAllowCredentials());
+        configuration.setMaxAge(corsProperties.getMaxAge());
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
