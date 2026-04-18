@@ -70,11 +70,17 @@ public class AvatarResourceInitializeService {
     }
 
     private void addAvatarFace(String name, String resourceUri) {
+        if (avatarFaceResourceRepository.findByResourceUri(resourceUri).isPresent()) {
+            return;
+        }
         AvatarFaceResourceData avatarFaceResourceData = AvatarFaceResourceData.create(name, resourceUri);
         avatarFaceResourceRepository.save(avatarFaceResourceData);
     }
 
     private void addAvatarIcon(String name, String resourceUri, PairType pairType) {
+        if (avatarIconResourceRepository.findByNameAndPairType(name, pairType) != null) {
+            return;
+        }
         AvatarIconResourceData avatarIconResourceData = AvatarIconResourceData.create(name, resourceUri, pairType);
         avatarIconResourceRepository.save(avatarIconResourceData);
     }

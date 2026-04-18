@@ -42,10 +42,15 @@ public class TemporaryUserInitializeService {
         addGuest(guestId);
         addAssociateMember(associateMemberId, "AM@google.com");
         // UpgradeToFullMember
-        upgradeMember(addAssociateMember(fullMemberId, "FM@google.com"));
+        MemberData fullMember = memberRepository.findByUserId(fullMemberId)
+                .orElseGet(() -> addAssociateMember(fullMemberId, "FM@google.com"));
+        upgradeMember(fullMember);
     }
 
     public void addGuest(UserId userId) {
+        if (guestRepository.findByUserId(userId).isPresent()) {
+            return;
+        }
         GuestData guest = GuestData.createWithFixedUserId(userId, "Firefox/MacOS");
         ProfileData profile = userProfileCommandService.createProfileDataForGuest(guest.getUserId());
         guest.initiateProfile(profile);
@@ -53,15 +58,18 @@ public class TemporaryUserInitializeService {
     }
 
     public MemberData addAssociateMember(UserId userId, String email) {
-        MemberData member = MemberData.createWithFixedUserId(userId, email, ProviderType.GOOGLE);
-        ProfileData profile = userProfileCommandService.createProfileDataForMember(member.getUserId());
-        Map<ActivityType, ActivityData> activityMap = userActivityCommandService.createUserActivities(member.getUserId());
-        member.initializeProfile(profile);
-        member.initializeActivityMap(activityMap);
+        return memberRepository.findByUserId(userId)
+                .orElseGet(() -> {
+                    MemberData member = MemberData.createWithFixedUserId(userId, email, ProviderType.GOOGLE);
+                    ProfileData profile = userProfileCommandService.createProfileDataForMember(member.getUserId());
+                    Map<ActivityType, ActivityData> activityMap = userActivityCommandService.createUserActivities(member.getUserId());
+                    member.initializeProfile(profile);
+                    member.initializeActivityMap(activityMap);
 
-        MemberData memberData = memberRepository.save(member);
-        playlistSetupPort.createDefaultPlaylist(member.getUserId());
-        return memberData;
+                    MemberData memberData = memberRepository.save(member);
+                    playlistSetupPort.createDefaultPlaylist(member.getUserId());
+                    return memberData;
+                });
     }
 
     public MemberData upgradeMember(MemberData member) {
