@@ -127,6 +127,9 @@ public class PartyroomCommandService {
                 "Welcome to the main stage",
                 "main",
                 10);
+        if (aggregatePort.findByLinkDomain(LinkDomain.of(command.linkDomain())).isPresent()) {
+            return;
+        }
         createMainStage(command, adminId);
     }
 }
