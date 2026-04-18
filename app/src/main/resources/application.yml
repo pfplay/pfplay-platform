@@ -6,6 +6,8 @@ spring:
         - common
       dev:
         - common
+      staging:
+        - common
       prod:
         - common
 
@@ -120,6 +122,13 @@ app:
       read: 5000
       write: 5000
 
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,https://localhost:3000,http://localhost:8080}
+    allowed-methods: ${CORS_ALLOWED_METHODS:GET,POST,PUT,PATCH,DELETE,OPTIONS}
+    allowed-headers: ${CORS_ALLOWED_HEADERS:*}
+    allow-credentials: ${CORS_ALLOW_CREDENTIALS:true}
+    max-age: ${CORS_MAX_AGE:3600}
+
 ---
 
 # 🟡 개발 환경
@@ -155,6 +164,51 @@ app:
       domain: ${COOKIE_DOMAIN}
       secure: ${COOKIE_SECURE:true}
       same-site: ${COOKIE_SAME_SITE:Lax}
+
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS}
+
+---
+
+# 🟠 검증 환경
+spring:
+  config:
+    activate:
+      on-profile: staging
+
+  jpa:
+    show-sql: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: false
+
+  sql:
+    init:
+      mode: never
+
+server:
+  error:
+    include-message: never
+    include-binding-errors: never
+    include-stacktrace: never
+    include-exception: false
+
+logging:
+  level:
+    org.springframework.security: INFO
+    org.springframework.web.reactive.function.client: INFO
+
+app:
+  jwt:
+    cookie:
+      domain: ${COOKIE_DOMAIN}
+      secure: true
+      same-site: Lax
+
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS}
 
 ---
 
@@ -193,8 +247,13 @@ app:
     cookie:
       domain: ${COOKIE_DOMAIN}
       secure: true
-      same-site: Strict
+      same-site: Lax
+
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS}
 
 springdoc:
   swagger-ui:
+    enabled: false
+  api-docs:
     enabled: false
