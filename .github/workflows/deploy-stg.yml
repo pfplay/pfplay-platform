@@ -9,7 +9,7 @@ on:
 env:
   IMAGE: ghcr.io/pfplay/pfplay-api
   TAG: stg
-  TARGET_DIR: /home/eisen/PFPlay/pfplay-backend-java
+  TARGET_DIR: /home/eisen/PFPlay/pfplay-platform
 
 jobs:
   build:

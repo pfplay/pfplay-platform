@@ -189,8 +189,8 @@ The project follows **Hexagonal Architecture (Ports & Adapters)** with DDD princ
 
 1. **Clone the repository**
 ```bash
-git clone https://github.com/pfplay/pfplay-backend.git
-cd pfplay-backend-java
+git clone https://github.com/pfplay/pfplay-platform.git
+cd pfplay-platform
 ```
 
 2. **Start infrastructure services (MySQL, Redis)**
@@ -375,7 +375,7 @@ stompClient.subscribe('/sub/events/' + partyroomId + '/playback-start',
 ## Project Structure
 
 ```
-pfplay-backend-java/
+pfplay-platform/
 ├── common/                             # Shared Kernel + infrastructure config
 │   └── src/main/java/com/pfplaybackend/api/common/
 │       ├── config/                     # Configuration (Security, Redis, JPA, Cache, Swagger)
