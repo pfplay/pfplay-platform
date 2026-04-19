@@ -51,7 +51,6 @@ jobs:
           push: true
           tags: |
             ${{ env.IMAGE }}:${{ env.TAG }}
-            ${{ env.IMAGE }}:${{ env.TAG }}-${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
