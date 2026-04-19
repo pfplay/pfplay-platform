@@ -125,6 +125,7 @@ MVP는 enum 수준 2-role. 확장 시나리오:
 
 // 개편 후 (belt-and-suspenders 기본 가드)
 .requestMatchers("/api/v1/admin/system/**").hasRole("SUPER_ADMIN")  // 슈퍼어드민 전용
+.requestMatchers("/api/v1/admin/avatar/**").hasRole("SUPER_ADMIN")  // Avatar BC — 과금 영역, 슈퍼어드민
 .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")               // 일반 어드민
 .requestMatchers("/api/v1/auth/admin/login").permitAll()            // 로그인 엔드포인트만 예외
 .requestMatchers("/api/v1/auth/admin/**").authenticated()           // logout/me 등
@@ -152,6 +153,9 @@ SpEL 문자열이 컨트롤러마다 하드코딩되면 RBAC 확장 시 수백 �
 ```java
 @Component("adminAuth")
 class AdminAuthorizationSpEL {
+    public boolean isSuperAdmin() {
+        return hasRole("SUPER_ADMIN");
+    }
     public boolean canManageAdmins() {
         return hasRole("SUPER_ADMIN");
     }
@@ -161,6 +165,10 @@ class AdminAuthorizationSpEL {
     public boolean canChangeMemberTier() {
         return hasRole("ADMIN");
     }
+    public boolean canManageAvatarResources() {  // §6.I
+        return hasRole("SUPER_ADMIN");
+        // 추후 RBAC 세분화 시 AVATAR_WRITE permission으로 변경 가능
+    }
     // ...
 }
 ```
@@ -168,9 +176,14 @@ class AdminAuthorizationSpEL {
 ```java
 @PreAuthorize("@adminAuth.canManageAdmins()")
 public void createAdmin(...) { ... }
+
+@PreAuthorize("@adminAuth.canManageAvatarResources()")
+public void publishAvatarResource(...) { ... }
 ```
 
 MVP에선 이 bean 메서드가 단순 role 체크이지만, 확장 시 permission 테이블 조회로 바뀌어도 컨트롤러 코드 불변.
+
+**Avatar BC 적용**: `avatar` 모듈의 어드민 컨트롤러(`AdminAvatarCommandController`)는 `@adminAuth.canManageAvatarResources()` 사용. Avatar는 **SUPER_ADMIN 전용** — 과금 직결 영역이라 최초 출시 시점에 엄격 가드하고, 운영 규모 확대 시 RBAC 세분화(§11.1.3)로 일반 ADMIN에 선택 부여.
 
 ## 5.3 JWT Claim Structure
 

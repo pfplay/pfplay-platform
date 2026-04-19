@@ -6,7 +6,7 @@
 
 ### 9.1 PR Sequence
 
-전체 작업은 12개 PR 내외로 분할한다. 각 PR은 독립 배포/롤백 가능하도록 설계.
+전체 작업은 14개 PR 내외로 분할한다 (Avatar BC 추가로 기존 12 → 14). 각 PR은 독립 배포/롤백 가능하도록 설계.
 
 | PR | 내용 | Migration | 의존 PR | 크기 |
 |---|---|---|---|---|
@@ -20,9 +20,11 @@
 | **PR 7** | V6 Partyroom 상태 enum + 카운터 + display_flag + 전체 엔티티 리팩토링 | V6 | 5 (security 정리 후) | **XL** |
 | **PR 8** | V7 partyroom_admin_action + admin partyroom management API (B-2~B-6, B-8) | V7 | 7 | L |
 | **PR 9** | V8 penalty history punisher_type + 어드민 페널티 경로 (B-7) | V8 | 8 | M |
-| **PR 10** | V10 user_activity_log (partitioned) + event listeners + member 관리 API (A-1~A-4) | V10 | 8 | L |
-| **PR 11** | V11 partyroom_report + 유저용 신고 API + 어드민 검토 API (C-1~C-2) | V11 | 10 | M |
-| **PR 12** | pfplay-admin (프런트엔드 — 별 레포) — 로그인 + 보호 라우트 + AuthStore + 유저/룸 목록 | — | 4 (admin login API) | **XL** |
+| **PR 10** 🆕 | **Avatar 모듈 스캐폴드 + V12 + 엔티티 이관.** 신규 `avatar` Gradle 모듈 생성, `AvatarBody/FaceResourceData` + VO + 레포 user→avatar 이관, `AvatarIconResourceData`/`PairType` 삭제. V12로 icon_uri 흡수 + lifecycle + 감사 컬럼 + face.obtainable_type. `user` 모듈 서비스/레포가 avatar 모듈 포트 경유하도록 내부 재배선 (외부 계약 불변). settings.gradle 수정. | V12 | 8 | **XL** |
+| **PR 11** 🆕 | **Avatar 어드민 CRUD + GCS 업로드 + 감사 리스너.** `AdminAvatarCommandController/QueryController`, `AvatarCatalogCommandService/QueryService`, `GcsAvatarStorageAdapter` (google-cloud-storage SDK), 아이콘 전용 재업로드 엔드포인트, Administration 리스너가 `AvatarResourcePublished/Retired` 소비 → `admin_action` 기록. SUPER_ADMIN 권한 가드 (§5 adminAuth bean). | — | 10 (+ 8의 admin_action) | **L** |
+| **PR 12** (←10) | V10 user_activity_log (partitioned) + event listeners + member 관리 API (A-1~A-4) | V10 | 8 | L |
+| **PR 13** (←11) | V11 partyroom_report + 유저용 신고 API + 어드민 검토 API (C-1~C-2) | V11 | 12 | M |
+| **PR 14** (←12) | pfplay-admin (프런트엔드 — 별 레포) — 로그인 + 보호 라우트 + AuthStore + 유저/룸 목록 + **Avatar 관리 UI** (§6.I-10) | — | 4 (admin login API) + 11 (Avatar API) | **XL** |
 
 ### 9.2 PR 의존 그래프
 
@@ -37,14 +39,23 @@ PR 1 ─── PR 2 ─── PR 3 (병렬 가능)
          ↓
          PR 7
          ↓
-         PR 8 ─── PR 10 (병렬 가능)
+         PR 8
          ↓
          PR 9
          ↓
-         PR 11
-
-(PR 12 프런트엔드는 PR 4 이후 백엔드와 병렬 가능)
+         PR 10 ─── PR 12 (병렬 가능)
+         ↓         ↓
+         PR 11     PR 13
+         └──┬──────┘
+            ▼
+          PR 14 (프런트)
+          (의존: PR 4 로그인 API + PR 11 Avatar API + PR 13 Report API)
 ```
+
+Avatar PR 10-11은 PR 9 이후에 들어간다. 이유:
+- PR 10은 V12 마이그레이션을 수반하며 V4~V11 뒤에 자연스럽게 배치.
+- PR 11은 PR 8의 `admin_action` 테이블을 리스너가 참조.
+- PR 14(프런트) 출시에 Avatar 관리 UI가 포함되어야 하므로 PR 11이 PR 14 이전에 머지돼야 함. PR 13(신고 API)도 함께 포함되는 게 자연스러움.
 
 ### 9.3 위험 항목 & 완화
 
@@ -59,6 +70,10 @@ PR 1 ─── PR 2 ─── PR 3 (병렬 가능)
 | `system_config` 캐시 stale | 캐시 TTL 30~60초. 긴급 토글 시엔 관리자가 수동 새로고침 (rare) |
 | V10 user_activity_log 파티션 누락 | 매월 새 파티션 생성 배치 + 예비 MAXVALUE 파티션 |
 | `ApplicationReadyEventListener` 재부팅 시 seed 충돌 | 모든 initializer 이미 idempotent. V5도 placeholder 체크 idempotent. |
+| PR 10 (V12 + 엔티티 이관) MySQL DDL 암시적 커밋으로 인한 부분 실패 | pre-launch라 실데이터 영향 없음. Step 2 실패 시 Step 1만 적용된 상태로 남으면 V13 보정으로 처리 |
+| PR 10 JPA 재배선 누락 (`findByNameAndPairType` 호출부 잔존) | 컴파일러가 `PairType` 삭제로 빌드 실패 강제. 같은 PR에 포함되므로 놓칠 수 없음 |
+| PR 11 GCS 업로드 중 DB INSERT 실패 → orphan 파일 | 즉시 delete 호출(§6.I-2). 삭제도 실패하면 orphan으로 남음. MVP 배치 청소 비포함(§8.3.4), 문제 발생 시 도입 |
+| GCS 서비스 계정 키 유출 | Secret Manager/env 주입 원칙. 레포지토리 커밋 금지 (기존 security 가이드) |
 
 ### 9.4 Milestone
 
@@ -66,8 +81,9 @@ PR 1 ─── PR 2 ─── PR 3 (병렬 가능)
 - **M1 (PR 1-3)**: IAM 기반 + Administrator + 유지보수 모드 가능
 - **M2 (PR 4-6)**: 어드민 로그인 + 어드민 CRUD — 최소 어드민 자체 관리 가능
 - **M3 (PR 7-9)**: 파티룸 운영 도구 — 상태/flag/페널티 관리
-- **M4 (PR 10-11)**: 유저 관리 + 활동 로그 + 신고 시스템
-- **M5 (PR 12)**: pfplay-admin 프런트엔드 배포 → 실제 사용 가능한 어드민 플랫폼 완성
+- **M4 🆕 (PR 10-11)**: Avatar BC + 아바타 리소스 관리 — 과금 기반 스키마/운영 도구 완성 (실제 과금/엔타이틀먼트는 별 마일스톤)
+- **M5 (PR 12-13)**: 유저 관리 + 활동 로그 + 신고 시스템
+- **M6 (PR 14)**: pfplay-admin 프런트엔드 배포 → 실제 사용 가능한 어드민 플랫폼 완성
 
 각 Milestone은 독립 가치 있으므로 중간 배포 가능.
 
@@ -108,6 +124,8 @@ reviewer 지적 외에도:
 | ArchUnit 컨텍스트 경계 테스트 | §8.5 |
 | Amplitude `authority_tier` 깨짐 방지 | §5.3.1 클레임 유지 |
 | 권한 SpEL 중앙화 (`adminAuth` bean) | §5.2.4 |
+| Avatar BC 분리 — 과금 기반 설계 대비 (2026-04-20 재검토) | §3.1 BC 표 재편, §3.3.5 Avatar aggregates, §4.11 V12 DDL, §6.I 어드민 CRUD, §9 PR 10-11 |
+| BC 재편 — 실제 Gradle 모듈 구조와 정합 | §3.1 (4→7 BCs), `user` 내 IAM/Profile 패키지 분리, Realtime = Runtime-segregated |
 
 ### 10.4 유지되지 않은 지적 — 정당화
 
@@ -156,42 +174,43 @@ reviewer가 제시한 것 중 다르게 판단한 것:
 - 미래: 본격 feature flag UI, A/B 테스트, 롤아웃 %
 - 전환: `system_config` 확장 or 외부 SaaS (LaunchDarkly 등) 도입
 
-### 11.2 착수 전 재확인 필요
+### 11.2 착수 전 재확인 (2026-04-20 확정)
 
-#### 11.2.1 SUSPEND 정책
+#### 11.2.1 SUSPEND 정책 ✅
 
 - SUSPEND 상태의 파티룸 동작 범위 (§6.B-4):
-  - (a) 입장만 막음, 내부는 정상
-  - (b) 입장 + 채팅 + 리액션 + DJ 등록 모두 막음
-- **추천: (a)** — "조사/경고 중" 의미로 가볍게. 심각하면 TERMINATE.
-- 착수 전 확인 필요.
+- **확정: (a) 입장만 막음, 내부(채팅/리액션/DJ)는 정상**
+- "조사/경고 중" 의미로 가볍게 사용. 심각하면 TERMINATE.
 
-#### 11.2.2 탈퇴 시 last_login_at 보존 여부
+#### 11.2.2 탈퇴 시 last_login_at 보존 여부 ✅
 
-- `withdraw()` 시 `last_login_at`도 NULL로 할지 유지할지
-- 유지: 분석/감사 가치 있음
-- 초기화: 완전한 익명화
-- **추천: 유지** (PII 아니며, 어드민이 "언제까지 활동했는지" 확인 가치 있음)
-- 확인 필요.
+- **확정: 보존** (PII 아니며, 어드민이 "언제까지 활동했는지" 확인 가치 있음)
 
-#### 11.2.3 신고자 중복 방지 수준
+#### 11.2.3 신고자 중복 방지 수준 ✅
 
-- 동일 유저가 동일 룸 동일 카테고리로 24h 내 중복 신고 가능 여부
-- (a) 허용 — 신고자가 추가 정보 제공 가능
-- (b) 차단 — 스팸/남용 방지
-- **추천: (b)** — UNIQUE 제약 `(partyroom_id, reporter_user_account_id, category, DATE(created_at))` 기반
-- 확인 필요.
+- **확정: (b) 차단** — UNIQUE 제약 `(partyroom_id, reporter_user_account_id, category, DATE(created_at))` 기반
 
-#### 11.2.4 어드민 로그인 세션 TTL 정책
+#### 11.2.4 어드민 로그인 세션 TTL 정책 ✅
 
-- AdminAccessToken: 15분 (§5.4.2)
-- 자동 연장 / refresh token 메커니즘은?
-- 옵션:
-  - (a) 슬라이딩 만료 — API 호출 시마다 연장
-  - (b) 고정 TTL — 만료 시 재로그인
-  - (c) 별도 refresh token (별 쿠키)
-- **추천: (a) 슬라이딩** — UX 좋고 어드민 편의. 절대 최대 TTL은 24h 등으로 제한.
-- 확인 필요.
+- **확정: (a) 슬라이딩 15분** — API 호출 시마다 AdminAccessToken 연장. 절대 최대 TTL 제약 없음(운영 중 필요 시 도입).
+
+### 11.2B 착수 전 재확인 (Avatar BC 관련, 미확정)
+
+#### 11.2.5 GCS 업로드 실패 시 재시도 정책
+
+업로드 중 network error / GCS 5xx 등 일시 오류 시:
+- (a) 서버 측 즉시 재시도 (3회, exponential backoff), 최종 실패 시 502
+- (b) 즉시 502 반환, 클라이언트(어드민 UI)가 수동 재시도
+- **추천: (b)** — 어드민이 UI로 수동 재시도 가능. 서버 측 재시도는 과설계.
+- 착수 시점 확정.
+
+#### 11.2.6 리소스 이미지 포맷/용량 정책
+
+제안안:
+- body: PNG/JPG, 최대 2MB
+- icon: PNG, 최대 200KB
+- face: body와 동일 제한
+- 디자이너 제공 실제 파일 분포 확인 후 조정. 착수 시점 확정.
 
 ### 11.3 문서 자체에 대한 방향
 

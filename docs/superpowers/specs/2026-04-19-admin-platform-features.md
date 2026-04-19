@@ -424,6 +424,189 @@ MVP는 SUPER_ADMIN/ADMIN 2-role. Permission 세분화 미래. `administrator.rol
 - 코드 삭제 X (개발자 편의 필요)
 - 향후 feature flag (E-3)로 제어하는 것 고려
 
+### 6.I 아바타 리소스 관리 🆕 (SUPER_ADMIN 전용)
+
+Avatar BC (§3.3.5)의 어드민 대면 기능. 전 엔드포인트 `@PreAuthorize("@adminAuth.canManageAvatarResources()")` 가드 (§5.2.4). URL rule(§5.2.3)도 `/api/v1/admin/avatar/**` → `SUPER_ADMIN`로 이중 방어.
+
+컨트롤러 위치: `avatar/.../adapter/in/web/AdminAvatarCommandController`, `AdminAvatarQueryController` (BC가 자기 API를 소유).
+
+**기본 경로 (base path): `/api/v1/admin/avatar/...`** — I-1~I-5 엔드포인트는 모두 이 prefix 하위.
+
+#### I-1. 카탈로그 조회
+
+**API**:
+- `GET /api/v1/admin/avatar/bodies`
+- `GET /api/v1/admin/avatar/faces`
+
+유저 피커와 달리 **모든 lifecycle 상태**(DRAFT/PUBLISHED/RETIRED)를 반환.
+
+Query parameters:
+- `status`: `DRAFT | PUBLISHED | RETIRED | ALL` (기본 `ALL`)
+- `obtainableType`: `BASIC | DJ_PNT` (body만 의미 있음)
+- `page`, `size` (기본 50)
+
+Response (body):
+```json
+{
+  "content": [
+    {
+      "id": 1,
+      "name": "ava_body_djing_005",
+      "resourceUri": "https://storage.googleapis.com/.../djing_005.png",
+      "iconUri": "https://storage.googleapis.com/.../icon_djing_005.png",
+      "obtainableType": "DJ_PNT",
+      "obtainableScore": 150,
+      "isCombinable": true,
+      "isDefaultSetting": false,
+      "combinePositionX": 60,
+      "combinePositionY": 40,
+      "lifecycleStatus": "PUBLISHED",
+      "createdAt": "2026-04-20T10:00:00Z",
+      "createdBy": 1,
+      "updatedAt": "2026-04-20T10:00:00Z",
+      "updatedBy": 1
+    }
+  ],
+  "pageInfo": { "page": 0, "size": 50, "totalElements": 15 }
+}
+```
+
+#### I-2. 리소스 생성
+
+**API**: `POST /api/v1/admin/avatar/bodies` — `multipart/form-data`
+
+필드:
+| 필드 | 타입 | 제약 |
+|---|---|---|
+| `bodyImage` | file | 필수. PNG/JPG. 최대 2MB. |
+| `iconImage` | file | 선택. PNG. 최대 200KB. |
+| `name` | string | 필수. `^[a-z0-9_]{3,64}$`. 전역 UNIQUE. |
+| `obtainableType` | string | `BASIC | DJ_PNT` |
+| `obtainableScore` | int | `BASIC` → 0 강제, `DJ_PNT` → 양수 |
+| `isCombinable` | bool | |
+| `isDefaultSetting` | bool | true이면 `obtainableType=BASIC` 강제 |
+| `combinePositionX/Y` | int | |
+
+**처리 순서 (원자성 보장)**:
+1. 요청 검증 (name 중복 조회, 값 범위, 파일 포맷/용량)
+2. `bodyImage`를 GCS 업로드 → `bodyUri` 획득
+3. `iconImage` 제공된 경우 GCS 업로드 → `iconUri` 획득
+4. `AvatarBodyResource.draft(...)` 생성 → INSERT
+5. **실패 시**: 업로드된 GCS 파일을 **즉시 delete 호출**. 삭제 실패 시에만 orphan으로 남음.
+
+**원자성 한계 (known gap)**: JVM이 GCS 업로드 완료 후 DB INSERT 또는 즉시 delete 호출 전에 죽으면(OOM, SIGKILL, 배포 중단) orphan GCS 객체가 남는다. 이 경우는 §8.3.4에서 언급한 장래 배치 청소가 도입되기 전까지 복구되지 않는다. MVP에서는 수용 (운영 체감 후 배치 도입 여부 판단).
+
+Response `201`:
+```json
+{
+  "id": 123,
+  "name": "ava_body_new_001",
+  "lifecycleStatus": "DRAFT",
+  "resourceUri": "...",
+  "iconUri": "...",
+  "createdAt": "2026-04-20T10:00:00Z",
+  "createdBy": 1
+}
+```
+
+**API**: `POST /api/v1/admin/avatar/faces` — 동일 구조 (face 필드만). `obtainableType` 필드는 선택(기본 `BASIC`).
+
+#### I-3. 리소스 수정
+
+**API**: `PATCH /api/v1/admin/avatar/bodies/{id}` — `multipart/form-data` (partial update)
+
+수정 가능 필드 (항상):
+- `obtainableType`, `obtainableScore`, `isCombinable`, `isDefaultSetting`, `combinePositionX/Y`
+
+수정 가능 필드 (**DRAFT 상태에서만**):
+- `bodyImage` (file) — 본 이미지 교체. 제공 시 GCS 새 파일 업로드 + 기존 파일 즉시 delete + `resource_uri` 갱신.
+- `iconImage` (file) — 아이콘 교체. 동일 패턴. (I-4의 아이콘 전용 엔드포인트도 DRAFT 제약 동일 적용)
+
+수정 불가 필드:
+- `name` — 전역 식별자, 불변
+- `lifecycleStatus` — 별 전용 엔드포인트(I-5)
+
+제약:
+- `obtainableType` 등 **메타데이터 수정은 DRAFT 또는 PUBLISHED**에서 가능. `RETIRED`는 수정 불가 (`AVATAR_RESOURCE_RETIRED` 409).
+- **이미지 교체(`bodyImage`/`iconImage`)는 DRAFT에서만 가능** (`AVATAR_IMAGE_IMMUTABLE_AFTER_PUBLISH` 409). PUBLISHED 상태에서 이미지 교체 시도는 거부.
+- `isDefaultSetting=true`로 전환 시 현재 `BASIC` + `PUBLISHED` 아니면 400
+
+**이미지 교체가 DRAFT 제한인 이유**:
+- `member.avatarSetting.avatar*Uri`는 리소스 URI를 **값으로 캐시**함 (§3.3.2). PUBLISHED 상태에서 `resource_uri`를 바꾸면 기존 유저가 캐시해둔 URI가 stale이 됨 — 유저에게는 여전히 이전 이미지가 보임. 즉 PUBLISHED 이후 교체는 "새 유저에게만" 수정이 반영되어 오타 수정 목적을 제대로 달성하지 못함.
+- 올바른 운영 흐름: DRAFT에서 검수(§I-1 `status=DRAFT` 필터 활용) → 문제 없으면 publish. publish 이후 발견된 이미지 오류는 **retire + 새 리소스 draft + publish** 절차로 대응.
+- 이 경로는 cross-BC 쓰기(Avatar → User Profile `avatar_setting` UPDATE) 없이 URI-단조 불변식을 유지한다. 향후 운영 피드백 누적 후 필요 시 `AvatarResourceImageReplaced` 이벤트 + User Profile cascade 기능 추가 검토.
+
+#### I-4. 아이콘 전용 재업로드
+
+**API**:
+- `POST /api/v1/admin/avatar/bodies/{id}/icon` — `multipart/form-data` (field: `iconImage`)
+- `POST /api/v1/admin/avatar/faces/{id}/icon` — 동일
+
+I-3의 PATCH에서도 가능하지만, 아이콘만 재업로드하는 빈도가 높을 것으로 예상되므로 전용 엔드포인트 제공.
+
+처리: 기존 `icon_uri`의 GCS 파일 즉시 delete → 새 파일 업로드 → DB UPDATE.
+
+**제약: DRAFT 상태에서만 허용** (I-3과 동일 근거 — URI 값 참조 모델 유지). PUBLISHED에서 호출 시 `409 AVATAR_IMAGE_IMMUTABLE_AFTER_PUBLISH`. RETIRED에서 호출 시 `409 AVATAR_RESOURCE_RETIRED`.
+
+#### I-5. 상태 전이
+
+**API**:
+- `POST /api/v1/admin/avatar/bodies/{id}/publish` — DRAFT → PUBLISHED
+- `POST /api/v1/admin/avatar/bodies/{id}/retire` — PUBLISHED → RETIRED
+  - Body: `{ "reason": "string" }` (필수)
+- Face 동일 패턴
+
+**도메인 이벤트**:
+- publish 시 `AvatarResourcePublished(resourceType, resourceId, resourceUri)` 발행
+  - Administration 리스너 → `admin_action(action_type='PUBLISH_AVATAR_RESOURCE', target_type='AVATAR_BODY'/'AVATAR_FACE', target_id=resourceId, metadata={...})` 기록
+  - User Profile 피커 캐시(도입 시점에) 무효화
+- retire 시 `AvatarResourceRetired(resourceType, resourceId, reason)` 발행
+  - Administration 리스너 → `admin_action` 기록 (reason 포함)
+  - 기존 유저 `avatarSetting`에는 영향 없음 (URI 값 참조)
+
+#### I-6. 파일 업로드 상세
+
+- **버킷**: 기존 `pfplay-firebase.appspot.com` (Firebase Storage = GCS) 재사용. 현 시드 URI가 이 버킷에 있음.
+- **경로 규칙**: `ava_body/{yyyymmdd}_{random}.png`, `ava_face/...`, `ava_icon/...`
+  - 기존 Firebase Storage 구조와 호환 (`ava_basic`, `ava_djing`, `ava_face`, `ava_icon` 폴더 존재)
+  - 신규는 분류별 폴더 + 날짜/랜덤으로 충돌 방지
+- **SDK**: `com.google.cloud:google-cloud-storage`. 서비스 계정 키는 application yml 외부(Secret Manager 또는 env) 주입.
+- **접근 권한**: 업로드 파일은 `publicRead`. 기존 URI가 공개이므로 동일.
+- **다운로드 URL**: GCS SDK가 반환하는 `https://storage.googleapis.com/...` 공개 URL을 `resource_uri`/`icon_uri`로 저장.
+
+#### I-7. 유저 피커 영향 (Non-breaking)
+
+기존 `GET /api/v1/users/me/profile/avatar/bodies` / `faces` 엔드포인트:
+- 내부 조회 조건에 `WHERE lifecycle_status = 'PUBLISHED'` 추가
+- 응답 계약(필드/JSON 스키마) 불변 — 프런트 변경 0
+
+#### I-8. 에러 케이스
+
+| 시나리오 | HTTP | 코드 |
+|---|---|---|
+| name 중복 | 409 | `AVATAR_NAME_ALREADY_EXISTS` |
+| 지원 안 하는 파일 포맷 | 400 | `AVATAR_INVALID_FILE_FORMAT` |
+| 파일 크기 초과 | 400 | `AVATAR_FILE_TOO_LARGE` |
+| GCS 업로드 실패 | 502 | `AVATAR_STORAGE_UPLOAD_FAILED` |
+| lifecycle 전이 불가 (예: DRAFT → retire) | 409 | `AVATAR_INVALID_LIFECYCLE_TRANSITION` |
+| RETIRED 리소스 수정 시도 | 409 | `AVATAR_RESOURCE_RETIRED` |
+| PUBLISHED 상태에서 이미지(body/face/icon) 교체 시도 | 409 | `AVATAR_IMAGE_IMMUTABLE_AFTER_PUBLISH` |
+| 권한 부족 (일반 ADMIN 접근) | 403 | `FORBIDDEN` (global) |
+| `isDefaultSetting=true`지만 BASIC/PUBLISHED 아님 | 400 | `AVATAR_INVALID_DEFAULT_SETTING` |
+
+#### I-9. 권한
+
+전 엔드포인트 `@PreAuthorize("@adminAuth.canManageAvatarResources()")` (§5.2.4 중앙 SpEL bean). MVP에서 이 메서드는 `hasRole("SUPER_ADMIN")`.
+
+근거: 과금 직결 영역. 초기 단계(어드민 수 ≈ 1명)에선 분산 운영 필요성 없음. 추후 RBAC 세분화(§11) 때 `canManageAvatarResources()`의 구현만 permission 테이블 조회로 교체 — 컨트롤러 코드 불변.
+
+#### I-10. UI/프런트 참고 (pfplay-admin)
+
+백엔드 스펙은 여기까지. 프런트 연결점만 요약:
+- 카탈로그 리스트: 상태 필터(DRAFT/PUBLISHED/RETIRED/ALL), 썸네일(iconUri) 미리보기, 본 이미지(resourceUri) 클릭 확대
+- 생성 모달: 드래그드롭 업로드 2슬롯(bodyImage, iconImage), 폼 검증, multipart POST
+- 상태 버튼: `Publish` (DRAFT only), `Retire` (PUBLISHED only, 사유 입력 모달)
+
 ---
 
 ## 7. Listing UI Spec (파티룸 목록 기준 템플릿)

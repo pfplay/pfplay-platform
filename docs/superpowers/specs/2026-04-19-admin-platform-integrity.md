@@ -110,15 +110,17 @@ class UserAccount {
 
 | 이벤트 | 발행 컨텍스트 | 리스너 | 리스너 처리 |
 |---|---|---|---|
-| `UserAccountWithdrawn` | IAM | Party | Member/Guest 프로필 익명화 |
+| `UserAccountWithdrawn` | IAM | User Profile | Member/Guest 프로필 익명화 |
 | `UserAccountWithdrawn` | IAM | Administration | Administrator `revokedAt` 세팅 |
 | `PartyroomSuspendedByAdmin` | Party | Administration | `partyroom_admin_action` INSERT |
 | `PartyroomTerminatedByAdmin` | Party | Administration | 동일 |
 | `PartyroomMetaUpdatedByAdmin` | Party | Administration | 동일 |
-| `MemberTierChanged` | Party | Administration | `partyroom_admin_action` + `user_activity_log` |
+| `MemberTierChanged` | User Profile | Administration | `partyroom_admin_action` + `user_activity_log` |
 | `AdminPenalizedCrew` | Party (또는 Administration 발행) | Administration | `partyroom_admin_action` INSERT with correlation id |
 | `CrewAccessedEvent (ENTER/EXIT)` | Party (기존) | Administration, Party | `user_activity_log` + `partyroom.crew_count` 갱신 |
 | `UserSignedIn` | IAM | Administration | `user_activity_log` SIGNED_IN |
+| `AvatarResourcePublished` 🆕 | Avatar | Administration + User Profile | (Administration) `admin_action` INSERT `action_type='PUBLISH_AVATAR_RESOURCE'`, metadata = resourceType/uri. (User Profile) 피커 캐시 무효화 — 캐시 도입 시점에. |
+| `AvatarResourceRetired` 🆕 | Avatar | Administration | `admin_action` INSERT with `reason` metadata |
 
 ### 8.2.2 이벤트 신뢰성
 
@@ -199,6 +201,23 @@ class DataIntegrityChecker {
 }
 ```
 
+### 8.3.4 Avatar GCS Orphan 파일 — MVP 비포함
+
+Avatar BC는 GCS 파일 <-> DB 레코드 정합성이라는 별 종류의 drift 가능성이 있다:
+
+- **DB는 있는데 GCS엔 없음** (이미지 누실): `resource_uri`가 가리키는 GCS 객체가 외부 조작으로 삭제된 경우. 유저 피커에서 404.
+- **GCS는 있는데 DB엔 없음** (orphan 파일): 업로드 중 DB INSERT 실패 후 즉시 delete 호출도 실패한 경우.
+
+MVP 대응:
+- **DB→GCS 방향**: 업로드 시 DB 저장 전에 GCS 업로드 완료를 확인하므로 이 drift는 외부 조작으로만 발생. 탐지 필요 시 주기적 `HEAD` 확인 배치 추가 가능하나 **MVP 비포함** (YAGNI).
+- **GCS→DB 방향 (orphan 파일)**: 업로드 실패 시 즉시 delete 호출(§6.I-2) 1차 방어. 삭제도 실패하면 orphan 파일 남음. 주 1회 배치 청소 가능하나 **MVP 비포함**. 문제 발생이 확인되면 그때 추가 (사용자 결정 2026-04-20).
+
+추후 배치 도입 시 참고 쿼리/흐름:
+```
+Storage 전체 객체 목록 → DB의 avatar_body_resource.resource_uri / icon_uri 집합과 비교
+→ DB에 없는 GCS 객체 = orphan → 7일 이상 경과 시 삭제 (신규 업로드와 경쟁 방지)
+```
+
 ## 8.4 Layer 4 — 자동 테스트
 
 ### 8.4.1 불변식 단위 테스트
@@ -235,6 +254,31 @@ void terminated_partyroom_cannot_be_suspended() {
     
     assertThatThrownBy(() -> room.suspend())
         .isInstanceOf(InvariantViolation.class);
+}
+
+@Test
+void avatar_body_resource_lifecycle_is_one_way() {
+    AvatarBodyResource r = AvatarBodyResource.draft(...);
+    assertThatThrownBy(() -> r.retire("reason"))
+        .isInstanceOf(InvariantViolation.class);  // DRAFT → RETIRED 불가
+
+    r.publish();
+    assertThat(r.getLifecycleStatus()).isEqualTo(PUBLISHED);
+
+    r.retire("reason");
+    assertThat(r.getLifecycleStatus()).isEqualTo(RETIRED);
+
+    assertThatThrownBy(() -> r.updateResource(...))
+        .isInstanceOf(InvariantViolation.class);  // RETIRED 수정 불가
+}
+
+@Test
+void default_avatar_body_must_be_basic_and_published() {
+    AvatarBodyResource r = AvatarBodyResource.draft(
+        "test_body", uri, null,
+        ObtainmentType.DJ_PNT, 100, false, /*isDefaultSetting*/true, 0, 0);
+    // DJ_PNT + isDefaultSetting=true → 검증 실패해야 함
+    // (명령 단에서 막는 것을 테스트)
 }
 ```
 
@@ -279,15 +323,33 @@ static final ArchRule administration_should_not_depend_on_party_internals =
 
 @ArchTest
 static final ArchRule iam_should_not_depend_on_other_contexts =
-    noClasses().that().resideInAPackage("..iam..")
+    noClasses().that().resideInAPackage("..user.identity..")
         .should().dependOnClassesThat().resideInAnyPackage(
             "..party..",
             "..administration..",
-            "..operations.."
+            "..operations..",
+            "..avatar.."  // IAM은 Avatar도 의존하지 않음
         );
+
+@ArchTest
+static final ArchRule avatar_should_not_depend_on_any_business_bc =
+    noClasses().that().resideInAPackage("..avatar..")
+        .should().dependOnClassesThat().resideInAnyPackage(
+            "..user..",              // IAM identity + User Profile 양쪽 차단
+            "..party..",
+            "..partyview..",
+            "..administration..",
+            "..operations..",
+            "..playlist..",
+            "..realtime..",
+            "..auth.."               // IAM auth endpoints
+        );
+    // Avatar는 순수 생산자 BC — 다른 BC를 import하지 않는다.
+    // 역방향(user/app → avatar)은 Gradle이 허용. 여기서는 생산자 규약만 강제.
+    // common (Shared Kernel)은 금지 목록에 없음 — 전 BC 공유 허용.
 ```
 
-컴파일 타임 보장 — CI에서 fail 시 PR 블록.
+컴파일 타임 보장 — CI에서 fail 시 PR 블록. **`avatar` 모듈 분리(PR 10) 이후 Gradle 자체가 avatar→다른 BC 의존을 컴파일 레벨에서 차단**하므로 ArchUnit은 2차 방어(같은 모듈 내 패키지 위반 감지)로 기능한다.
 
 ## 8.6 Summary — 무결성 보장 다층 방어
 

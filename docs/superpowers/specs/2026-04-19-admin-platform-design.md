@@ -9,12 +9,13 @@
 PFPlay는 파티룸 기반 음악 스트리밍 서비스다. 본 문서는 `pfplay-admin` 프런트엔드와 이를 뒷받침할 백엔드 어드민 플랫폼의 중장기 설계를 정의한다. 서비스는 pre-launch 상태이며, 이 설계를 기점으로 11개의 Flyway 마이그레이션(V4~V11)과 다수의 PR로 구현된다.
 
 핵심 설계 결정:
-- **F2 (Composition)** 바운디드 컨텍스트 분리: IAM / Party / Administration / Operations
+- **F2 (Composition)** 바운디드 컨텍스트 분리: IAM / User Profile / Party / Playlist / Avatar / Administration / Operations + Realtime(Runtime-segregated) + Shared Kernel(`common`)
+- **Avatar BC 신설 (신규)** — 아바타 리소스는 서비스 내 유일한 잠재 과금 영역이라 전략적 분리. `avatar` Gradle 모듈 신설.
 - **Cross-context FK 금지** — 무결성은 애플리케이션 레이어 + 도메인 이벤트로 보장
 - **슈퍼어드민 1명 + 일반 어드민 N** (확장 가능한 RBAC 기반)
 - **어드민 로컬 로그인 + 크로스-서브도메인 쿠키** (admin.pfplay.xyz ↔ pfplay.xyz 간 세션 공유)
 - **Flyway 중심 스키마 진화** — Java initializer는 도메인 로직 동반 시드에만 사용
-- **친구/DM 같은 미래 기능에 대한 스키마 과설계 금지** — YAGNI 준수
+- **친구/DM 같은 미래 기능에 대한 스키마 과설계 금지** — YAGNI 준수 (단, Avatar BC의 향후 `obtainable_type` 확장은 과금 전략 대비로 설계 상 차단되지 않도록 함)
 
 ## 1. Context & Goals
 
@@ -94,6 +95,14 @@ PFPlay는 파티룸(partyroom)이라는 공간에서 여러 크루(crew)가 모�
 - **H-1.** 가상 유저 대량 생성 (local/dev 전용, prod에선 차단)
 - **H-2.** 데모 환경 초기화 (local/dev 전용)
 
+#### I. 아바타 리소스 관리 (SUPER_ADMIN 전용)
+- **I-1.** 아바타 카탈로그 조회 (DRAFT/PUBLISHED/RETIRED 전체)
+- **I-2.** 리소스 생성 (GCS 백엔드 프록시 업로드 + DB 등록, 원자성 보장)
+- **I-3.** 리소스 수정 (필드 패치 + 이미지 교체 — 과금 대비 lifecycle 제약)
+- **I-4.** 상태 전이 (publish/retire, 하드 delete 불가)
+- **I-5.** 아이콘 전용 재업로드 엔드포인트
+- **동기**: 아바타는 서비스 내 유일한 잠재 과금 영역. 현재 Java initializer/Flyway V3 시드 기반 관리의 고통(새 리소스 추가, 교체, DJ_PNT 튜닝, Firebase-DB 수작업 복붙, 페어링) 해소.
+
 ### 2.2 Out of Scope (MVP 아님, 미래 기능)
 
 - **친구 맺기**: `friendship (user_account_id_a, _b, status, ...)` 스타일. 전용 "Social" 컨텍스트 신설 예상. 현 설계가 이를 막지 않음 확인.
@@ -115,14 +124,26 @@ PFPlay는 파티룸(partyroom)이라는 공간에서 여러 크루(crew)가 모�
 
 ### 3.1 Bounded Contexts
 
-네 개의 명확한 컨텍스트로 나눈다.
+PFPlay 전체를 **7개 비즈니스 BC + 1 Runtime-segregated 모듈 + Shared Kernel**로 정리한다. 이는 현 Gradle 멀티모듈 구조와 일치시키고, Avatar BC를 새로 분리한 재편이다.
 
-| Context | Type | 관심사 | 주요 Aggregate |
-|---|---|---|---|
-| **IAM** | Generic subdomain | 인증 자격, 로그인, 계정 lifecycle | UserAccount |
-| **Party** | **Core domain** | 파티, 음악, 크루, DJ, 페널티, 리액션 | Member, Guest, Partyroom, Crew, Playback, Playlist, DJQueue, CrewPenaltyHistory |
-| **Administration** | Supporting subdomain | 시스템 운영 — 어드민, 관리 액션, 신고, 활동 로그 | Administrator, AdminAction, PartyroomReport, UserActivityLog |
-| **Operations** | Supporting subdomain | 시스템 운영 상태 — 유지보수, feature flag | SystemConfig |
+| # | Context | Type | Gradle 모듈 / 패키지 | 주요 Aggregate | 관심사 |
+|---|---|---|---|---|---|
+| 1 | **IAM** | Generic subdomain | **현재 분산**: `common/.../config/security/*` (필터/JWT 인프라) + `app/.../auth/*` (OAuth·로그인 엔드포인트) + `user/.../api/user/identity/*` (UserAccount aggregate). 중장기 후보: `iam` 모듈 분리. | `UserAccount` | 로그인 자격, JWT 발급/검증, OAuth, 비밀번호 |
+| 2 | **User Profile** | Supporting | `user` 모듈, `api.user.profile.*` 패키지 | `Member`, `Guest` | 티어·닉네임·소개·지갑·아바타 설정(유저가 고른 URI) |
+| 3 | **Party** | **Core domain** | `app` 모듈, `api.party.*` + `api.partyview.*` | `Partyroom`, `Crew`, `Playback`, `DjQueue`, `CrewPenaltyHistory`, `CrewBlockHistory` | 파티·음악·크루·DJ·페널티·리액션 |
+| 4 | **Playlist** | Supporting | `playlist` 모듈 | `Playlist`, `Track` | 개인 플레이리스트 — DJ 큐가 인용 |
+| 5 | **Avatar** 🆕 | Supporting | **신규 `avatar` 모듈** | `AvatarBodyResource`, `AvatarFaceResource` | 아바타 카탈로그. 유일한 잠재 과금 영역(전략적으로 분리). 파일 업로드(GCS) 포함. |
+| 6 | **Realtime** | — *(BC 아님; 런타임 분리 모듈)* | `realtime` 모듈 | (도메인 aggregate 없음) | WebSocket/STOMP 기반 실시간 브로드캐스트. 향후 WebFlux(reactive) 런타임으로 분리 운용 전제로 모듈 경계를 둠. 비즈니스 BC 유형(Generic/Core/Supporting)에 속하지 않음. |
+| 7 | **Administration** | Supporting | `app` 모듈, `api.administration.*` (기존 `api.admin.*` 재편) | `Administrator`, `AdminAction`, `PartyroomReport`, `UserActivityLog` | 어드민 거버넌스, 모더레이션, 감사 |
+| 8 | **Operations** | Supporting | `app` 모듈, `api.operations.*` (신규) | `SystemConfig` | 유지보수 모드, feature flag |
+| — | Shared Kernel | — | `common` 모듈 | (값 객체·예외·보안 인프라) | 전 BC가 import 허용. BC 아님. |
+| — | Bootstrap | — | `app.bootstrap.*` | — | 컴포지션 루트 / 시작 시퀀스. BC 아님. |
+
+**변경점 요약**:
+- 이전 설계는 4 BC(IAM / Party / Administration / Operations)였으나, **실제 Gradle 모듈 구조**(`user`, `playlist`, `realtime`)와 정합시키며 확장.
+- **Avatar BC 신설**은 향후 과금 대응을 위한 전략적 분리. `user` 모듈에 흩어져 있던 `AvatarBody/Face/IconResource` 엔티티를 `avatar` 모듈로 이관.
+- `user` 모듈 내부는 **IAM(identity) + User Profile** 두 BC를 패키지로 분리.
+- `realtime`을 기존 "Technical subdomain" 표기에서 **"Runtime-segregated"로 재명명** — 분리 이유가 플럼빙이 아니라 런타임 스택 선택(WebFlux 전환 전제)임을 명확히.
 
 ### 3.2 Cross-Context Integration 원칙
 
@@ -162,22 +183,41 @@ PFPlay는 파티룸(partyroom)이라는 공간에서 여러 크루(crew)가 모�
   - `UserAccountWithdrawn` (IAM 발행) → Party/Administration 리스너가 익명화
   - `PartyroomSuspendedByAdmin` (Party 발행) → Administration `UserActivityLog` 리스너가 기록
   - `AdminPenalizedCrew` (Administration 또는 Party 발행) → 양 컨텍스트에서 각자 기록
+  - `AvatarResourcePublished` (Avatar 발행) → Administration 리스너가 `admin_action` 기록, User Profile 피커 캐시 무효화 (캐시 도입 시점)
+  - `AvatarResourceRetired` (Avatar 발행) → Administration 리스너가 `admin_action` 기록. 기존 유저 `avatarSetting`에는 영향 없음(URI 값 참조).
 
-#### 규칙 4. Repository & Package 경계
+#### 규칙 4. Module / Package 경계
 
-각 컨텍스트는 독립된 패키지로 구분되어야 한다.
+각 컨텍스트는 Gradle 모듈 또는 패키지로 구분된다. Gradle 모듈 분리된 경우 컴파일러가 경계를 강제하고, 패키지 분리인 경우 정적 검사(ArchUnit)로 보호한다.
 
-- 권장 패키지 구조:
+- 최종 모듈/패키지 구조 (V12 이후):
   ```
-  com.pfplaybackend.api.iam.*             ← UserAccount, auth 관련
-  com.pfplaybackend.api.party.*           ← Member, Guest, Partyroom 등
-                                             (기존 user.* 와 party.*의 재편/통합)
-  com.pfplaybackend.api.administration.*  ← Administrator, AdminAction 등
-                                             (기존 admin.* 의 재편)
-  com.pfplaybackend.api.operations.*      ← SystemConfig, maintenance
+  avatar/                                   ← 신규 Gradle 모듈 (PR 10)
+    └── com.pfplaybackend.api.avatar.*      ← Avatar BC 전체
+
+  user/
+    ├── com.pfplaybackend.api.user.identity.*  ← IAM 일부 (UserAccount)
+    └── com.pfplaybackend.api.user.profile.*   ← User Profile BC (Member/Guest)
+
+  playlist/  com.pfplaybackend.api.playlist.*
+  realtime/  com.pfplaybackend.realtime.*      ← WebSocket/STOMP
+  app/
+    ├── com.pfplaybackend.api.auth.*             ← IAM 엔드포인트
+    ├── com.pfplaybackend.api.party.*            ← Party BC + partyview
+    ├── com.pfplaybackend.api.partyview.*        ← (Party 내 read-model)
+    ├── com.pfplaybackend.api.administration.*   ← 기존 api.admin.* 재편
+    ├── com.pfplaybackend.api.operations.*       ← 신규 (SystemConfig)
+    └── com.pfplaybackend.api.bootstrap.*        ← 컴포지션 루트
+
+  common/  (Shared Kernel — 전 BC 참조 허용)
   ```
-- Static import 체크: Administration 코드에서 `com.pfplaybackend.api.party.*` 클래스 import 금지 (ArchUnit 또는 정적 분석 도구 활용 가능)
-- **예외**: `common` 모듈의 공통 값 객체(UserId, PartyroomId 등)는 전 컨텍스트에서 참조 가능 — Shared Kernel로 취급
+- **ArchUnit 경계 규칙 (§8.5)**:
+  - Administration → Party 내부 엔티티 import 금지 (값 객체만 허용)
+  - Avatar → 그 어떤 다른 BC도 import 금지 (avatar는 순수 생산자). 역방향(User Profile/Administration/app → Avatar)은 허용.
+  - `common` 모듈은 어떤 BC에도 의존하지 않는다 (Shared Kernel).
+- **Gradle 레벨 강제**:
+  - `avatar` 모듈은 `common`만 `implementation project(':common')`으로 의존.
+  - `user` 모듈은 `avatar` 모듈을 추가 의존 (유저 피커가 avatar 카탈로그를 조회).
 
 ### 3.3 Aggregates by Context
 
@@ -213,12 +253,27 @@ PFPlay는 파티룸(partyroom)이라는 공간에서 여러 크루(crew)가 모�
 
 **`Member` (Aggregate Root)**
 
+> 주: Member는 **User Profile BC**에 속한다 (§3.1 #2). 여기 §3.3.2 Party와 분리 배치는 과거 문서 구조 상 편의이며, Party BC와 User Profile BC는 별 BC다. V12 이후 패키지 경계가 명확해진다.
+
 속성:
 - `memberId` (PK)
 - `userAccountId` (값 참조, UNIQUE)
 - `authorityTier` (FM | AM | GT) — 파티 서비스 등급
-- `profile` (nickname, introduction, walletAddress, avatar settings)
+- `profile` (nickname, introduction, walletAddress, **avatarSetting**)
 - `activityData` (1:N 관계, DJ_PNT / REF_LINK / ROOM_ACT 점수)
+
+`avatarSetting` 상세 (User Profile → Avatar BC 참조):
+- `avatarBodyUri`, `avatarFaceUri`, `avatarIconUri` — 전부 **URI 문자열**
+- Avatar BC의 리소스 ID가 아니라 URI 값으로 참조 (cross-BC FK 금지 원칙)
+- Avatar 리소스가 retire되어도 기존 유저 설정은 URI 기반이므로 깨지지 않음
+- 유저 피커는 `lifecycle_status='PUBLISHED'` 필터를 거쳐 유효 리소스만 선택 가능 (§6.I)
+
+**V12 이후 `avatarIconUri` 의미론** (중요):
+- V12로 `avatar_icon_resource` 테이블이 삭제되지만, `member.avatarSetting.avatarIconUri`는 **유지된다** (구조 변경 없음).
+- 이 필드의 의미가 "독립된 AvatarIconResource를 향한 참조" → "유저가 고른 body 또는 face의 `icon_uri` 값을 **캐시한 것**"으로 바뀐다.
+- 캐시 갱신 시점: 유저가 body 선택 시 → `body.icon_uri`를 복사. Face 선택 시 합성 구성에 따라 face 기반 또는 body 기반 아이콘을 복사 (기존 `UserAvatarDomainService` 로직과 동일 방향성).
+- V12 Step 3의 `UPDATE body SET icon_uri = (icon row's resource_uri)`로 본래 존재했던 URI 문자열이 그대로 부모 테이블로 옮겨오므로, 기존 유저가 캐시해둔 `avatarIconUri` 값은 **V12 전후로 동일한 문자열 URI를 계속 가리킨다**. 데이터 이전 불필요.
+- 코드 변화: `AvatarResourceQueryService.findByNameAndPairType(...)` 호출부는 `body.getIconUri()` / `face.getIconUri()` 직접 조회로 치환 (PR 10에 포함).
 
 불변식:
 - 같은 `userAccountId`로 Member 최대 1개 (UNIQUE 제약)
@@ -363,41 +418,112 @@ MVP 용도:
 
 캐시: 런타임 조회는 Redis 또는 애플리케이션 캐시 (30~60초 TTL). 변경 시 `SystemConfigUpdated` 이벤트 발행 → 캐시 무효화.
 
+#### 3.3.5 Avatar 🆕
+
+신규 `avatar` Gradle 모듈에 거주. 유일한 잠재 과금 영역을 위한 전략적 분리.
+
+**`AvatarBodyResource` (Aggregate Root)**
+
+속성:
+- `id` (PK)
+- `name` VARCHAR(64) UNIQUE — 전역 식별자 (예: `ava_body_djing_005`)
+- `resourceUri` VARCHAR(500) — 바디 이미지 공개 URL (GCS)
+- `iconUri` VARCHAR(500) nullable — 피커 썸네일 URL. NULL이면 placeholder 표시.
+- `obtainableType` VARCHAR(16) — `BASIC | DJ_PNT` (향후 `PURCHASE | EVENT` 확장 대비, ENUM 확장은 Flyway로)
+- `obtainableScore` INT — DJ_PNT일 때 해금 기준 점수
+- `isCombinable` BOOLEAN, `isDefaultSetting` BOOLEAN
+- `combinePositionX/Y` INT — face 합성 좌표
+- `lifecycleStatus` VARCHAR(16) — `DRAFT | PUBLISHED | RETIRED`
+- `createdAt`, `createdBy`, `updatedAt`, `updatedBy`
+  - `createdBy`/`updatedBy`는 **`Long`** raw 저장 (administrator_id 값). `AdministratorId` VO를 import하지 않는다 — Avatar BC는 Administration BC에 의존하지 않는 순수 생산자 규약. 호출자(`AdminAvatarCommandService`)가 `AdministratorId.getValue()`로 언팩해 전달.
+  - NULL = 시스템 시드(V3 이전 부팅)
+
+**엔티티 기본값 주의**: V12는 `lifecycle_status`에 `DEFAULT 'PUBLISHED'`를 설정(기존 V3 15+1행을 PUBLISHED로 이전하기 위함). 그러나 **신규 레코드는 반드시 DRAFT로 들어가야** 하므로, `AvatarBodyResource.draft(...)` 팩토리는 컬럼 값을 명시적으로 `DRAFT`로 세팅해 INSERT한다 (DB default 의존 금지). 같은 규약이 Face에도 적용.
+
+불변식:
+- `name` 전역 UNIQUE
+- lifecycleStatus 전이 **단방향**: `DRAFT → PUBLISHED → RETIRED`. 역방향 금지.
+- `isDefaultSetting=true` ⟹ `obtainableType=BASIC` AND `lifecycleStatus=PUBLISHED`
+- `obtainableType=BASIC` ⟹ `obtainableScore=0`
+- `RETIRED` 상태에서는 수정 불가 (aggregate method가 차단)
+
+팩토리:
+- `AvatarBodyResource.draft(name, bodyUri, iconUri?, obtainable..., combine...)` — DRAFT 생성
+
+명령:
+- `updateResource(...)` — DRAFT 또는 PUBLISHED에서만
+- `updateIconUri(uri)` — 아이콘 단독 교체
+- `publish()` — DRAFT → PUBLISHED, `AvatarResourcePublished` 이벤트
+- `retire(reason)` — PUBLISHED → RETIRED, `AvatarResourceRetired` 이벤트
+
+**`AvatarFaceResource` (Aggregate Root)**
+
+속성:
+- `id` (PK), `name` UNIQUE, `resourceUri`, `iconUri` nullable
+- `obtainableType` VARCHAR(16) `DEFAULT 'BASIC'` — 현재 BASIC 고정. 향후 과금 확장 대비 컬럼 선행 도입.
+- `lifecycleStatus`, 감사 컬럼(Body와 동일)
+
+Body와 동일한 lifecycle 규약 + 도메인 이벤트.
+
+**삭제된 개념**:
+- `AvatarIconResource` 테이블/엔티티 — body/face에 `iconUri` 필드로 흡수 (§4 V12)
+- `PairType` enum — 불필요 (테이블 DROP으로 discriminator 소멸)
+
+**Avatar BC 포트**:
+- `AvatarCatalogQueryUseCase` — User Profile/Admin 모두 사용
+- `AvatarCatalogCommandUseCase` — SUPER_ADMIN 전용
+- `AvatarStoragePort` — GCS 업로드 어댑터 추상화 (`adapter/out/storage/GcsAvatarStorageAdapter`가 구현)
+
 ### 3.4 Context Map
 
 ```
-                          ┌────────────────────┐
-                          │   IAM              │
-                          │   UserAccount      │
-                          └────────┬───────────┘
-                                   │
-                       userAccountId (value, no FK)
-                                   │
-                ┌──────────────────┼──────────────────┐
-                │                  │                  │
-        ┌───────▼───────┐  ┌───────▼─────────┐  ┌────▼──────────┐
-        │   Party       │  │ Administration  │  │  Operations   │
-        │               │  │                 │  │               │
-        │ Member        │  │ Administrator   │  │ SystemConfig  │
-        │ Guest         │  │ AdminAction ────┼──► (target: Party│
-        │ Partyroom     │  │ PartyroomReport │  │   entities as │
-        │ Crew          │  │ UserActivityLog │  │   value refs) │
-        │ Playback      │  │                 │  │               │
-        │ Playlist      │  │                 │  │               │
-        │ DJQueue       │  │                 │  │               │
-        │ CrewPenalty   │  │                 │  │               │
-        └───────┬───────┘  └─────────▲───────┘  └───────────────┘
-                │                    │
-                │  domain events     │
-                └───────────────────►│
-                                     │
-                              (Administration listens to
-                               Party events for UserActivityLog)
+                   ┌────────────────────┐
+                   │   IAM              │
+                   │   UserAccount      │
+                   └────────┬───────────┘
+                            │
+                userAccountId (value, no FK)
+                            │
+     ┌────────────┬─────────┼─────────┬─────────────┐
+     │            │         │         │             │
+┌────▼─────┐ ┌────▼──────┐  │  ┌──────▼──────┐ ┌────▼────────┐
+│  User    │ │  Party    │  │  │Administration│ │ Operations │
+│ Profile  │ │  (Core)   │  │  │              │ │            │
+│          │ │           │  │  │Administrator │ │SystemConfig│
+│ Member   │ │ Partyroom │  │  │AdminAction ──┼─►(targets as│
+│ Guest    │ │ Crew      │  │  │PartyroomRpt  │ │ value refs)│
+│          │ │ Playback  │  │  │UserActivLog  │ │            │
+│ (avatar  │ │ DjQueue   │  │  │              │ │            │
+│  URIs→)──┼─┤CrewPenlty │  │  └──────▲───────┘ └────────────┘
+└────┬─────┘ └────┬──────┘  │         │
+     │            │         │  domain events
+     │        ┌───▼─────┐   │   ┌─────┴──────┐
+     │        │Playlist │   │   │  Realtime  │
+     │        │ (track  │   │   │ (WebFlux,  │
+     │        │  catalg)│   │   │ broadcast) │
+     │        └─────────┘   │   └────────────┘
+     │                      │
+     └──────────────────────┘
+     URI value reference
+     (avatar_body_uri, avatar_face_uri, avatar_icon_uri)
+                            │
+                    ┌───────▼─────────┐
+                    │  Avatar 🆕      │
+                    │                 │
+                    │ AvatarBody      │
+                    │ AvatarFace      │
+                    │ (Resources)     │
+                    │ + GCS uploads   │
+                    └─────────────────┘
+
+Shared Kernel: common (전 BC가 VO/예외/보안 인프라 import)
 ```
 
-- **실선 화살표**: 값 참조 (UserAccountId, PartyroomId 등). FK 아님.
-- **점선 화살표**: 도메인 이벤트 기반 통합.
-- **각 컨텍스트는 자기 자신의 테이블/엔티티만 owns**.
+- **실선 화살표**: 값 참조 (UserAccountId, PartyroomId, Avatar URI 등). FK 아님.
+- **점선/domain events**: 도메인 이벤트 기반 통합.
+- **Avatar**는 유일한 "순수 생산자" BC — 다른 BC는 Avatar를 import하지만 Avatar는 어디도 import하지 않는다. (Gradle이 이 방향을 강제)
+- **Realtime**은 도메인 aggregate 없음 — 다른 BC가 발행한 브로드캐스트를 소비해 WebSocket으로 내보낸다.
+- **각 BC는 자기 자신의 테이블/엔티티만 owns**.
 
 ## 4~11 섹션
 
@@ -417,4 +543,6 @@ MVP 용도:
 
 **Revision history**:
 - 2026-04-19 Initial narrow auth design (now archived in git history as predecessor of this file)
+- 2026-04-19 Full admin platform design (§0~§11 across 6 docs), post architecture-review iteration
+- 2026-04-20 Avatar BC 신설 및 BC 재편 (4 → 7 BCs + Realtime + Shared Kernel). `avatar` Gradle 모듈 추가, IAM 현 분산 명시, Realtime을 Runtime-segregated로 재분류. §2.1 I 카테고리(아바타 리소스 관리) 추가. §3.1 BC 표 전면 재작성, §3.2 모듈 경계 규약 구체화, §3.3.5 Avatar aggregates 추가, §3.4 context map 재그림. 관련 V12 마이그레이션 및 §6.I 스펙은 별 문서. 아키텍처 리뷰 2차 반영 (`avatarIconUri` 캐시 의미론 명시, V12 JOIN 방어적 전환, lifecycle 기본값 규약 등).
 - 2026-04-19 Expanded to full platform design (this revision)

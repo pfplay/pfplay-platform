@@ -1,13 +1,13 @@
 # PFPlay Admin Platform — Schema Design (§4)
 
 > Companion to `2026-04-19-admin-platform-design.md`. 본 문서는 §4 Schema Design만을 다룬다.
-> V4~V11 Flyway 마이그레이션의 DDL, 전환 전략, 리팩토링 범위를 확정한다.
+> V4~V12 Flyway 마이그레이션의 DDL, 전환 전략, 리팩토링 범위를 확정한다.
 
 ## 4.0 Migration Overview
 
 | V | Context | 내용 | 변경 성격 | 영향 범위 |
 |---|---|---|---|---|
-| V4 | IAM + Party | `user_account` / `member` / `guest` 재구성 (상속→composition), `profileData` 이동, `providerType` VARCHAR 전환 | DROP + CREATE | **대규모** — user 도메인 전반 |
+| V4 | IAM + User Profile | `user_account` / `member` / `guest` 재구성 (상속→composition), `profileData` 이동, `providerType` VARCHAR 전환 | DROP + CREATE | **대규모** — user 도메인 전반 |
 | V5 | Administration | `administrator` 테이블 + 슈퍼어드민 placeholder seed | CREATE + INSERT | 중간 — Admin 초기화 로직 연계 |
 | V6 | Party | `partyroom` 상태 enum + `crew_count` / `last_activity_at` / `display_flag` | ALTER + 엔티티 전체 리팩토링 | 대규모 — `isTerminated()` 호출 전반 |
 | V7 | Administration | `partyroom_admin_action` 테이블 | CREATE | 낮음 — 신규 모듈 |
@@ -15,6 +15,7 @@
 | V9 | Operations | `system_config` 테이블 + `maintenance.*` seed | CREATE + INSERT | 낮음 |
 | V10 | Administration | `user_activity_log` 테이블 (월별 파티셔닝) | CREATE | 낮음 |
 | V11 | Administration | `partyroom_report` 테이블 | CREATE | 낮음 |
+| **V12** 🆕 | **Avatar** | `avatar_body_resource` / `avatar_face_resource`에 `icon_uri`, `lifecycle_status`, 감사 컬럼 추가. `face.obtainable_type` 컬럼 신설. `avatar_icon_resource` 테이블 DROP + 데이터 이전. | ALTER + UPDATE + DROP | 중간 — Avatar 엔티티/레포 이관 동반 |
 
 ## 4.1 V4 — IAM Refactor
 
@@ -575,9 +576,9 @@ REVIEWING ──(보류)──► PENDING      [가능 but 드문 케이스]
 | 테이블 | Context | 외부 참조 컬럼 | FK 여부 |
 |---|---|---|---|
 | `user_account` | IAM | — | — |
-| `member` | Party | `user_account_id` | ❌ no FK, UNIQUE |
-| `member` | Party | `profile_id` | ✅ FK (`user_profile`, same context) |
-| `guest` | Party | `user_account_id` | ❌ no FK, UNIQUE |
+| `member` | User Profile | `user_account_id` | ❌ no FK, UNIQUE |
+| `member` | User Profile | `profile_id` | ✅ FK (`user_profile`, same context) |
+| `guest` | User Profile | `user_account_id` | ❌ no FK, UNIQUE |
 | `partyroom` | Party | `host_id` (user 참조) | ❌ 기존 관행 유지 (Party 내 usage) |
 | `administrator` | Administration | `user_account_id` | ❌ no FK, UNIQUE |
 | `administrator` | Administration | `granted_by_administrator_id` | ✅ FK (self-ref, same context) |
@@ -588,6 +589,9 @@ REVIEWING ──(보류)──► PENDING      [가능 but 드문 케이스]
 | `partyroom_report` | Administration | `partyroom_id`, `reporter_user_account_id` | ❌ loose ref |
 | `user_activity_log` | Administration | `user_account_id`, `partyroom_id` | ❌ loose ref |
 | `system_config` | Operations | `updated_by_administrator_id` | ❌ loose ref |
+| `avatar_body_resource` | Avatar | `created_by`, `updated_by` (administrator 참조) | ❌ loose ref |
+| `avatar_face_resource` | Avatar | `created_by`, `updated_by` (administrator 참조) | ❌ loose ref |
+| `member.avatar_setting.avatar_*_uri` | User Profile → Avatar | Avatar 리소스 URI | ❌ URI 값만 참조 (ID FK 금지) |
 
 **원칙 재확인**:
 - 같은 컨텍스트 내 FK는 OK
@@ -597,7 +601,7 @@ REVIEWING ──(보류)──► PENDING      [가능 but 드문 케이스]
 ## 4.10 Migration 순서 의존성
 
 ```
-V4 (IAM, Party user 리팩)
+V4 (IAM, User Profile 리팩)
   ↓
 V5 (Administrator — user_account 참조)
   ↓
@@ -612,9 +616,148 @@ V9 (system_config — 독립적)
 V10 (user_activity_log — user_account 참조, Administration)
   ↓
 V11 (partyroom_report — administrator FK 있음)
+  ↓
+V12 (Avatar BC 재구성 — 기존 V3 시드 위에 진행, 다른 V와 독립)
 ```
 
-V6/V8/V9는 상호 독립적이므로 PR 병렬 가능하지만, Flyway 번호는 머지 순서에 따라 결정.
+V6/V8/V9는 상호 독립적이므로 PR 병렬 가능. V12(Avatar)는 다른 마이그레이션과 완전 독립이지만 Administration의 `admin_action` 테이블(V7)에 의존하는 이벤트 리스너가 있어 배치상 V7 이후 PR에 배치.
+
+## 4.11 V12 — Avatar BC Restructure 🆕
+
+### 4.11.1 목표
+
+1. `avatar_icon_resource` 별 테이블 제거 → body/face의 `icon_uri` 필드로 흡수 (1:1 관계를 스키마가 직접 표현)
+2. `PairType` enum(ordinal 저장 footgun) 제거 — 별 테이블이 사라지면서 discriminator 소멸
+3. `lifecycle_status` (`DRAFT` | `PUBLISHED` | `RETIRED`) 도입 — 과금 영역 대비 soft-lifecycle (삭제 불가)
+4. face에 `obtainable_type` 컬럼 신설 (`BASIC` 고정) — 향후 과금 확장 대비 선행 컬럼
+5. 감사 컬럼 추가 (`created_at/by`, `updated_at/by` — 어드민 CRUD 이력)
+
+### 4.11.2 Pre-condition
+
+- V3 이미 실행됨 (`avatar_body_resource` 15행 + `avatar_face_resource` 1행 + `avatar_icon_resource` 5행 + UNIQUE 제약 존재)
+- `obtainable_type` 컬럼은 이미 VARCHAR(`@Enumerated(STRING)`) 저장 — ordinal 이슈 없음
+- `avatar_icon_resource.pair_type`은 tinyint(ordinal). 이 테이블 DROP으로 해당 footgun도 함께 해소
+
+### 4.11.3 DDL (V12__avatar_bc_restructure.sql)
+
+```sql
+-- =====================================================
+-- V12: Avatar BC Restructure
+--
+-- Avatar BC 신설에 따른 리소스 테이블 재구성.
+-- 핵심 변경:
+--   1. icon_uri를 body/face의 필드로 흡수 (avatar_icon_resource 제거)
+--   2. lifecycle_status (DRAFT/PUBLISHED/RETIRED) 도입 — 과금 대비 soft-lifecycle
+--   3. face에도 obtainable_type 컬럼 신설 (BASIC 고정, 추후 PURCHASE 확장 대비)
+--   4. 감사 컬럼 추가 (created/updated by administrator_id)
+-- =====================================================
+
+-- Step 1. body: icon_uri, lifecycle, 감사 컬럼 추가
+ALTER TABLE avatar_body_resource
+    ADD COLUMN icon_uri         VARCHAR(500) NULL        AFTER resource_uri,
+    ADD COLUMN lifecycle_status VARCHAR(16)  NOT NULL
+        DEFAULT 'PUBLISHED'                               AFTER is_default_setting,
+    ADD COLUMN created_at       DATETIME     NOT NULL
+        DEFAULT CURRENT_TIMESTAMP                         AFTER combine_positiony,
+    ADD COLUMN created_by       BIGINT       NULL        AFTER created_at,
+        -- administrator_id. NULL = 시스템 시드 (V3).
+        -- cross-BC loose ref (no FK).
+    ADD COLUMN updated_at       DATETIME     NOT NULL
+        DEFAULT CURRENT_TIMESTAMP
+        ON UPDATE CURRENT_TIMESTAMP                       AFTER created_by,
+    ADD COLUMN updated_by       BIGINT       NULL        AFTER updated_at;
+
+ALTER TABLE avatar_body_resource
+    ADD CONSTRAINT chk_body_lifecycle
+        CHECK (lifecycle_status IN ('DRAFT','PUBLISHED','RETIRED'));
+
+-- Step 2. face: icon_uri, lifecycle, obtainable_type, 감사 컬럼 추가
+ALTER TABLE avatar_face_resource
+    ADD COLUMN icon_uri         VARCHAR(500) NULL        AFTER resource_uri,
+    ADD COLUMN obtainable_type  VARCHAR(16)  NOT NULL
+        DEFAULT 'BASIC'                                   AFTER icon_uri,
+    ADD COLUMN lifecycle_status VARCHAR(16)  NOT NULL
+        DEFAULT 'PUBLISHED'                               AFTER obtainable_type,
+    ADD COLUMN created_at       DATETIME     NOT NULL
+        DEFAULT CURRENT_TIMESTAMP,
+    ADD COLUMN created_by       BIGINT       NULL,
+    ADD COLUMN updated_at       DATETIME     NOT NULL
+        DEFAULT CURRENT_TIMESTAMP
+        ON UPDATE CURRENT_TIMESTAMP,
+    ADD COLUMN updated_by       BIGINT       NULL;
+
+ALTER TABLE avatar_face_resource
+    ADD CONSTRAINT chk_face_lifecycle
+        CHECK (lifecycle_status IN ('DRAFT','PUBLISHED','RETIRED')),
+    ADD CONSTRAINT chk_face_obtainable
+        CHECK (obtainable_type = 'BASIC');
+        -- BASIC 고정. 추후 ENUM 확장 시 이 CHECK를 ALTER.
+        -- (MySQL 8.0.16+ CHECK는 실제 enforce됨.)
+
+-- Step 3. 기존 avatar_icon_resource 데이터를 부모의 icon_uri로 이전
+--   네이밍 규약:
+--     body icon:  name LIKE 'ava_icon_body_%'  pairs with  body whose name is 'ava_' || SUBSTRING(i.name FROM 10)
+--     face icon:  name LIKE 'ava_icon_face_%'  pairs with  face whose name is 'ava_' || SUBSTRING(i.name FROM 10)
+--   pair_type 컬럼(tinyint ordinal)에 의존하지 않고 이름 접두어로 판별 — 더 방어적.
+UPDATE avatar_body_resource b
+INNER JOIN avatar_icon_resource i
+        ON i.name LIKE 'ava_icon_body_%'
+       AND i.name = CONCAT('ava_icon_', SUBSTRING(b.name, 5))
+SET b.icon_uri = i.resource_uri;
+
+UPDATE avatar_face_resource f
+INNER JOIN avatar_icon_resource i
+        ON i.name LIKE 'ava_icon_face_%'
+       AND i.name = CONCAT('ava_icon_', SUBSTRING(f.name, 5))
+SET f.icon_uri = i.resource_uri;
+
+-- Step 4. avatar_icon_resource DROP (PairType enum도 동반 삭제 PR)
+DROP TABLE avatar_icon_resource;
+```
+
+### 4.11.4 불변식 체크리스트
+
+| 불변식 | Enforce | 비고 |
+|---|---|---|
+| body/face `name` 전역 UNIQUE | V3에서 이미 추가 (`uk_avatar_body_name`, `uk_avatar_face_name`) | 유지 |
+| lifecycle 값 범위 | `CHECK` 제약 | V12 추가 |
+| lifecycle 전이 단방향 (`DRAFT → PUBLISHED → RETIRED`) | **애플리케이션 레이어** (aggregate method) | DB trigger는 유지보수 부담 이유로 배제 |
+| `is_default_setting=true` → `obtainable_type=BASIC AND lifecycle=PUBLISHED` | 애플리케이션 레이어 | |
+| `obtainable_type=BASIC` → `obtainable_score=0` | 애플리케이션 레이어 | |
+| `icon_uri` NULL 허용 | 컬럼 NULL | 업로드 실패 후 재시도 시나리오 대응. 장기적으로 NOT NULL 타이트화 검토 |
+
+### 4.11.5 주의 사항
+
+- MySQL은 DDL이 **암시적 커밋**을 유발하므로 Step 1/2/3/4 사이 트랜잭션 경계가 나뉜다. Step 2 실패 시 Step 1은 커밋된 상태로 남는다. **pre-launch 단계에서는 허용**. 실패 시 V13 보정 마이그레이션으로 대응.
+- `lifecycle_status DEFAULT 'PUBLISHED'`는 **V12 이전 존재하던 15+1행을 PUBLISHED로 올려야** 하기 때문. 신규 INSERT(어드민 CRUD) 시에는 DB default에 의존하지 않고 `AvatarBodyResource.draft(...)` 팩토리가 `lifecycle_status='DRAFT'`를 명시적으로 세팅해 INSERT한다. JPA 엔티티 기본값 설정으로 강제 (§3.3.5 "엔티티 기본값 주의" 참고).
+- 기존 `AvatarIconResourceData` JPA 엔티티 + `AvatarIconResourceRepository` + `PairType` enum + `AvatarResourceQueryService.findByNameAndPairType(...)` 호출부 삭제는 V12 적용과 **반드시 동일 PR**에 묶인다 (PR 10). 분리 시 JPA 부트 실패.
+- V3 시드 주석 "`pair_type: BODY=0, FACE=1 (ORDINAL mapping of PairType enum)`"은 V12 실행 후 무효한 사실이 되지만, V3 SQL은 이미 flyway_schema_history에 기록된 불변 파일이라 수정하지 않는다 (Flyway 원칙).
+- `lifecycle_status` 전이 단방향 보장을 **DB trigger로 추가 강제**할지는 REVISIT-LATER 항목. 현재는 aggregate method만 보호. 과금 확장 시점에 재검토.
+- `lifecycle_status DEFAULT 'PUBLISHED'`는 V12 이후 역할이 끝남 (신규 INSERT는 aggregate가 `DRAFT` 명시). **REVISIT-LATER**: V12가 안정 후 후속 V13에서 `ALTER TABLE ... ALTER COLUMN lifecycle_status DROP DEFAULT`로 제거하면 aggregate 우회 INSERT 실수를 조기 차단 가능. 낮은 우선순위.
+
+### 4.11.6 V12 이후 스키마 모습 (요약)
+
+```sql
+avatar_body_resource:
+    id, name (UNIQUE), resource_uri,
+    icon_uri NULL,
+    obtainable_type VARCHAR(16),      -- BASIC | DJ_PNT | (future: PURCHASE, EVENT)
+    obtainable_score INT,
+    is_combinable BOOL,
+    is_default_setting BOOL,
+    combine_positionx/y INT,
+    lifecycle_status VARCHAR(16),     -- DRAFT | PUBLISHED | RETIRED
+    created_at/by, updated_at/by
+
+avatar_face_resource:
+    id, name (UNIQUE), resource_uri,
+    icon_uri NULL,
+    obtainable_type VARCHAR(16) DEFAULT 'BASIC',
+    lifecycle_status VARCHAR(16),
+    created_at/by, updated_at/by
+
+-- avatar_icon_resource: (DROP됨)
+```
 
 ---
 
