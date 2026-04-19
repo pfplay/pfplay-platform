@@ -11,7 +11,6 @@ env:
   GCE_ZONE: asia-northeast3-a
   IMAGE: ghcr.io/pfplay/pfplay-api
   TAG: prod
-  TARGET_DIR: /home/dev_pfplay_xyz
 
 jobs:
   build:
@@ -90,6 +89,10 @@ jobs:
             --project=${{ env.PROJECT_ID }}
 
       # 파일 배치 → deploy.sh 호출 (mysql/redis/pytube는 유지, app만 재기동).
+      # SSH 유저의 홈 디렉토리(~)에 배치 — gcloud compute ssh가 WIF 서비스 계정
+      # 기반 posix 유저로 접속하므로 해당 유저가 쓸 수 있는 곳이어야 함.
+      # docker compose는 -p pfplay-prod 프로젝트명으로 기존 mysql/redis/pytube
+      # 컨테이너를 식별하므로 compose 파일 위치와 무관하게 app만 재기동 가능.
       - name: Deploy via IAP tunnel
         env:
           GHCR_USER: ${{ github.actor }}
@@ -101,13 +104,13 @@ jobs:
             --project=${{ env.PROJECT_ID }} \
             --command="
               set -e
-              mv /tmp/.env.prod ${{ env.TARGET_DIR }}/.env.prod
-              chmod 600 ${{ env.TARGET_DIR }}/.env.prod
-              mv /tmp/docker-compose.prod.yml ${{ env.TARGET_DIR }}/
-              mkdir -p ${{ env.TARGET_DIR }}/scripts
-              mv /tmp/deploy.sh ${{ env.TARGET_DIR }}/scripts/deploy.sh
-              chmod +x ${{ env.TARGET_DIR }}/scripts/deploy.sh
-              cd ${{ env.TARGET_DIR }}
+              cd ~
+              mv /tmp/.env.prod .env.prod
+              chmod 600 .env.prod
+              mv /tmp/docker-compose.prod.yml .
+              mkdir -p scripts
+              mv /tmp/deploy.sh scripts/deploy.sh
+              chmod +x scripts/deploy.sh
               GHCR_USER='$GHCR_USER' GHCR_TOKEN='$GHCR_TOKEN' ./scripts/deploy.sh prod
               docker image prune -f
             "
