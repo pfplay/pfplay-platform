@@ -18,6 +18,7 @@ import com.pfplaybackend.api.party.domain.exception.CrewException;
 import com.pfplaybackend.api.party.domain.port.PartyroomAggregatePort;
 import com.pfplaybackend.api.party.domain.service.PartyroomAggregateService;
 import com.pfplaybackend.api.party.domain.specification.PartyroomEntrySpecification;
+import com.pfplaybackend.api.party.domain.value.CountryCode;
 import com.pfplaybackend.api.party.domain.value.CrewId;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import lombok.RequiredArgsConstructor;
@@ -43,7 +44,7 @@ public class PartyroomAccessCommandService {
     private final Clock clock;
 
     @Transactional
-    public CrewData tryEnter(PartyroomId partyroomId) {
+    public CrewData tryEnter(PartyroomId partyroomId, CountryCode countryCode) {
         AuthContext authContext = ThreadLocalContext.getAuthContext();
         UserId userId = authContext.getUserId();
         log.info("[tryEnter] START - userId={}, targetPartyroomId={}",
@@ -75,29 +76,32 @@ public class PartyroomAccessCommandService {
                 log.info("[tryEnter] Same room re-entry - userId={}, partyroomId={}", userId, partyroomId.getId());
                 CrewData crew = aggregatePort.findCrew(partyroomId, userId)
                         .orElseThrow();
+                crew.updateCountryCode(countryCode);
+                aggregatePort.saveCrew(crew);
                 publishAccessChangedEvent(partyroom.getPartyroomId(), crew, userId);
                 return crew;
             }
         }
 
-        CrewData crew = addOrActivateCrew(partyroom, userId);
+        CrewData crew = addOrActivateCrew(partyroom, userId, countryCode);
         log.info("[tryEnter] SUCCESS - userId={}, partyroomId={}, crewId={}", userId, partyroomId.getId(), crew.getId());
         publishAccessChangedEvent(partyroom.getPartyroomId(), crew, userId);
         return crew;
     }
 
-    private CrewData addOrActivateCrew(PartyroomData partyroom, UserId userId) {
+    private CrewData addOrActivateCrew(PartyroomData partyroom, UserId userId, CountryCode countryCode) {
         Optional<CrewData> existingCrew = aggregatePort.findCrew(partyroom.getPartyroomId(), userId);
         if (existingCrew.isPresent() && !existingCrew.get().isActive()) {
             CrewData crew = existingCrew.get();
             log.info("[addOrActivateCrew] Reactivating inactive crew - userId={}, partyroomId={}",
                     userId, partyroom.getPartyroomId().getId());
             crew.activatePresence(LocalDateTime.now(clock));
+            crew.updateCountryCode(countryCode);
             return aggregatePort.saveCrew(crew);
         } else {
             log.info("[addOrActivateCrew] Adding new crew - userId={}, partyroomId={}, gradeType=LISTENER",
                     userId, partyroom.getPartyroomId().getId());
-            CrewData crew = CrewData.create(partyroom.getPartyroomId(), userId, GradeType.LISTENER, LocalDateTime.now(clock));
+            CrewData crew = CrewData.create(partyroom.getPartyroomId(), userId, GradeType.LISTENER, countryCode, LocalDateTime.now(clock));
             return aggregatePort.saveCrew(crew);
         }
     }
@@ -108,7 +112,7 @@ public class PartyroomAccessCommandService {
 
     @Transactional
     public void enterByHost(UserId hostId, PartyroomData partyroom) {
-        CrewData crew = CrewData.create(partyroom.getPartyroomId(), hostId, GradeType.HOST, LocalDateTime.now(clock));
+        CrewData crew = CrewData.create(partyroom.getPartyroomId(), hostId, GradeType.HOST, null, LocalDateTime.now(clock));
         aggregatePort.saveCrew(crew);
     }
 

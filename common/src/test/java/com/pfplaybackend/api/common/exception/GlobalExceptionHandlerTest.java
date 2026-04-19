@@ -6,9 +6,15 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.core.MethodParameter;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.validation.BeanPropertyBindingResult;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+
+import java.lang.reflect.Method;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -115,5 +121,57 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().status()).isEqualTo(403);
+    }
+
+    @Test
+    @DisplayName("handleValidationFailure — @Valid 실패 시 400 상태코드를 반환한다")
+    void handleValidationFailureReturns400() throws NoSuchMethodException {
+        // given — build a MethodArgumentNotValidException with one field error
+        MethodParameter methodParameter = methodParameterForTarget();
+        BeanPropertyBindingResult bindingResult = new BeanPropertyBindingResult(new Object(), "target");
+        bindingResult.addError(new FieldError("target", "countryCode",
+                "countryCode는 대문자 2글자여야 합니다 (ISO 3166-1 alpha-2)."));
+        MethodArgumentNotValidException ex = new MethodArgumentNotValidException(methodParameter, bindingResult);
+
+        // when
+        ResponseEntity<ApiErrorResponse> response = handler.handleValidationFailure(ex);
+
+        // then
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().status()).isEqualTo(400);
+        assertThat(response.getBody().message()).contains("countryCode");
+        assertThat(response.getBody().message()).contains("대문자 2글자");
+    }
+
+    @Test
+    @DisplayName("handleValidationFailure — 다중 필드 에러는 메시지에 세미콜론으로 결합된다")
+    void handleValidationFailureConcatenatesMultipleErrors() throws NoSuchMethodException {
+        // given
+        MethodParameter methodParameter = methodParameterForTarget();
+        BeanPropertyBindingResult bindingResult = new BeanPropertyBindingResult(new Object(), "target");
+        bindingResult.addError(new FieldError("target", "fieldA", "A must not be null"));
+        bindingResult.addError(new FieldError("target", "fieldB", "B must be positive"));
+        MethodArgumentNotValidException ex = new MethodArgumentNotValidException(methodParameter, bindingResult);
+
+        // when
+        ResponseEntity<ApiErrorResponse> response = handler.handleValidationFailure(ex);
+
+        // then
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody().message())
+                .contains("fieldA: A must not be null")
+                .contains("fieldB: B must be positive")
+                .contains(";");
+    }
+
+    private static MethodParameter methodParameterForTarget() throws NoSuchMethodException {
+        Method method = GlobalExceptionHandlerTest.class.getDeclaredMethod("dummyTarget", String.class);
+        return new MethodParameter(method, 0);
+    }
+
+    @SuppressWarnings("unused")
+    private void dummyTarget(String arg) {
+        // placeholder for MethodParameter construction in tests
     }
 }

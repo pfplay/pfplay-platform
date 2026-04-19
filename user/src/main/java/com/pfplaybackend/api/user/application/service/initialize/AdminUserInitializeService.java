@@ -37,6 +37,9 @@ public class AdminUserInitializeService {
     @Transactional
     public UserId addAdminUser() {
         UserId adminId = new UserId(ADMIN_FIXED_ID);
+        if (memberRepository.findByUserId(adminId).isPresent()) {
+            return adminId;
+        }
         MemberData member = addAssociateMember(adminId);
         MemberData updatedMember = updateAvatarBody(member, new AvatarBodyUri("https://firebasestorage.googleapis.com/v0/b/pfplay-firebase.appspot.com/o/ava_basic%2Fava_basic_003.png?alt=media"));
         upgradeMember(updatedMember);

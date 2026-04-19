@@ -32,7 +32,6 @@ build/
 
 
 # docker
-db/
 .env
 .env.*
 !.env.example

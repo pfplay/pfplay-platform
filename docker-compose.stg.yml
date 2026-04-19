@@ -23,6 +23,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    command: ["redis-server", "--notify-keyspace-events", "Ex"]
     volumes:
       - redis-data:/data
     healthcheck:
