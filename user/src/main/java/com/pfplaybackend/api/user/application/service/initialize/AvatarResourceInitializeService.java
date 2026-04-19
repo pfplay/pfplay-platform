@@ -12,8 +12,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Optional;
-
 @Service
 @RequiredArgsConstructor
 public class AvatarResourceInitializeService {
@@ -57,16 +55,10 @@ public class AvatarResourceInitializeService {
     }
 
     private void addAvatarBody(AvatarBodyResourceData template) {
-        Optional<AvatarBodyResourceData> existing = avatarBodyResourceRepository.findByName(template.getName());
-        if (existing.isPresent()) {
-            AvatarBodyResourceData data = existing.get();
-            data.updateResource(template.getResourceUri(), template.getObtainableType(),
-                    template.getObtainableScore(), template.isCombinable(),
-                    template.isDefaultSetting(), template.getCombinePositionX(), template.getCombinePositionY());
-            avatarBodyResourceRepository.save(data);
-        } else {
-            avatarBodyResourceRepository.save(template);
+        if (avatarBodyResourceRepository.findByName(template.getName()).isPresent()) {
+            return;
         }
+        avatarBodyResourceRepository.save(template);
     }
 
     private void addAvatarFace(String name, String resourceUri) {
