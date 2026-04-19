@@ -26,12 +26,8 @@ public class ApplicationReadyEventListener {
 
     @EventListener(ApplicationReadyEvent.class)
     public void onApplicationEvent() {
-        // 시드 데이터는 schema가 fresh인 환경(ddl-auto=create: local, dev)에서만 의미가 있음.
-        // staging/prod(ddl-auto=validate)는 기존 데이터와 충돌하므로 스킵.
-        if (!environment.acceptsProfiles(Profiles.of("local", "dev"))) {
-            return;
-        }
-
+        // 모든 프로파일에서 실행. 각 initializer는 skip-if-exists로 멱등하므로
+        // 기존 데이터와 충돌 없이 빈 환경(예: 새 prod DB 초기화)에서만 실제 INSERT가 발생한다.
         avatarResourceInitializeService.addAvatarBodies();
         avatarResourceInitializeService.addAvatarFaces();
         avatarResourceInitializeService.addAvatarIcons();
@@ -40,6 +36,7 @@ public class ApplicationReadyEventListener {
         UserId adminId = adminUserInitializeService.addAdminUser();
         partyroomCommandService.initializeMainStage(adminId);
 
+        // 임시 테스트 유저는 로컬 개발 편의용 데이터 — 운영 환경에는 들어가지 않음
         if (environment.acceptsProfiles(Profiles.of("local"))) {
             temporaryUserInitializeService.addTemporaryUsers();
         }
