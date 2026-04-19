@@ -25,6 +25,13 @@ if [[ -n "${GHCR_TOKEN:-}" && -n "${GHCR_USER:-}" ]]; then
   echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
 fi
 
+# Remove any legacy non-compose container that would contend for the host port.
+# Prod had a 'pfplay-api' container from the pre-compose `docker run` workflow.
+# Safe no-op if the name is not present.
+for legacy in pfplay-api; do
+  docker rm -f "$legacy" 2>/dev/null || true
+done
+
 COMPOSE=(docker compose
   -f "docker-compose.${ENV}.yml"
   -p "pfplay-${ENV}"
