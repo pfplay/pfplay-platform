@@ -253,7 +253,7 @@ public class AdminDemoService {
         PartyroomData loadedPartyroom = adminPartyroomPort.findPartyroomById(partyroom.getPartyroomId().getId())
                 .orElseThrow();
 
-        CrewData crew = CrewData.create(loadedPartyroom.getPartyroomId(), userId, GradeType.LISTENER, LocalDateTime.now(clock));
+        CrewData crew = CrewData.create(loadedPartyroom.getPartyroomId(), userId, GradeType.LISTENER, null, LocalDateTime.now(clock));
         adminPartyroomPort.saveCrew(crew);
     }
 

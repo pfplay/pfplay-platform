@@ -3,6 +3,8 @@ package com.pfplaybackend.api.party.domain.entity.data;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.entity.BaseEntity;
 import com.pfplaybackend.api.party.domain.enums.GradeType;
+import com.pfplaybackend.api.party.domain.value.CountryCode;
+import com.pfplaybackend.api.party.domain.value.CountryCodeConverter;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import jakarta.persistence.*;
 import lombok.Builder;
@@ -56,6 +58,10 @@ public class CrewData extends BaseEntity {
     @Column(nullable = false)
     private LocalDateTime enteredAt;
     private LocalDateTime exitedAt;
+    // 입장 시점에 프론트엔드가 전달한 국가 코드 (ISO 3166-1 alpha-2). 전달되지 않으면 null.
+    @Column(name = "country_code", length = 2)
+    @Convert(converter = CountryCodeConverter.class)
+    private CountryCode countryCode;
 
     // 데이터 엔티티 생성자
     protected CrewData() {}
@@ -63,6 +69,7 @@ public class CrewData extends BaseEntity {
     @Builder
     public CrewData(Long id, PartyroomId partyroomId, UserId userId, GradeType gradeType,
                     boolean isActive, boolean isBanned, LocalDateTime enteredAt, LocalDateTime exitedAt,
+                    CountryCode countryCode,
                     LocalDateTime createdAt, LocalDateTime updatedAt) {
         this.id = id;
         this.partyroomId = partyroomId;
@@ -72,13 +79,15 @@ public class CrewData extends BaseEntity {
         this.isBanned = isBanned;
         this.enteredAt = enteredAt;
         this.exitedAt = exitedAt;
+        this.countryCode = countryCode;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
     }
 
     // ── Business Methods ──
 
-    public static CrewData create(PartyroomId partyroomId, UserId userId, GradeType gradeType, LocalDateTime now) {
+    public static CrewData create(PartyroomId partyroomId, UserId userId, GradeType gradeType,
+                                  CountryCode countryCode, LocalDateTime now) {
         return CrewData.builder()
                 .partyroomId(partyroomId)
                 .userId(userId)
@@ -86,11 +95,13 @@ public class CrewData extends BaseEntity {
                 .isActive(true)
                 .isBanned(false)
                 .enteredAt(now)
+                .countryCode(countryCode)
                 .build();
     }
 
-    public static CrewData create(PartyroomId partyroomId, UserId userId, GradeType gradeType) {
-        return create(partyroomId, userId, gradeType, LocalDateTime.now());
+    public static CrewData create(PartyroomId partyroomId, UserId userId, GradeType gradeType,
+                                  CountryCode countryCode) {
+        return create(partyroomId, userId, gradeType, countryCode, LocalDateTime.now());
     }
 
     public void deactivatePresence(LocalDateTime now) {
@@ -113,6 +124,10 @@ public class CrewData extends BaseEntity {
 
     public void updateGrade(GradeType gradeType) {
         this.gradeType = gradeType;
+    }
+
+    public void updateCountryCode(CountryCode countryCode) {
+        this.countryCode = countryCode;
     }
 
     public boolean isBelowGrade(GradeType threshold) {

@@ -4,6 +4,7 @@ import com.pfplaybackend.api.party.domain.entity.data.CrewData;
 import com.pfplaybackend.api.party.domain.enums.GradeType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.MediaType;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -17,19 +18,50 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class PartyroomAccessCommandControllerTest extends AbstractPartyCommandWebMvcTest {
 
     @Test
-    @DisplayName("enterPartyroom — 201 Created")
-    void enterPartyroomReturns201() throws Exception {
+    @DisplayName("enterPartyroom — countryCode 포함 요청 시 201 Created")
+    void enterPartyroomWithCountryCodeReturns201() throws Exception {
         // given
         CrewData crew = mock(CrewData.class);
         when(crew.getId()).thenReturn(1L);
         when(crew.getGradeType()).thenReturn(GradeType.CLUBBER);
-        when(partyroomAccessCommandService.tryEnter(any())).thenReturn(crew);
+        when(partyroomAccessCommandService.tryEnter(any(), any())).thenReturn(crew);
 
         // when & then
         mockMvc.perform(post("/api/v1/partyrooms/1/crews")
                         .with(jwt().authorities(() -> "ROLE_MEMBER"))
-                        .with(csrf()))
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"countryCode\":\"KR\"}"))
                 .andExpect(status().isCreated());
+    }
+
+    @Test
+    @DisplayName("enterPartyroom — countryCode null 요청도 201 Created")
+    void enterPartyroomWithNullCountryCodeReturns201() throws Exception {
+        // given
+        CrewData crew = mock(CrewData.class);
+        when(crew.getId()).thenReturn(1L);
+        when(crew.getGradeType()).thenReturn(GradeType.CLUBBER);
+        when(partyroomAccessCommandService.tryEnter(any(), any())).thenReturn(crew);
+
+        // when & then
+        mockMvc.perform(post("/api/v1/partyrooms/1/crews")
+                        .with(jwt().authorities(() -> "ROLE_MEMBER"))
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"countryCode\":null}"))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    @DisplayName("enterPartyroom — 잘못된 countryCode 형식은 400")
+    void enterPartyroomWithInvalidCountryCodeReturns400() throws Exception {
+        mockMvc.perform(post("/api/v1/partyrooms/1/crews")
+                        .with(jwt().authorities(() -> "ROLE_MEMBER"))
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"countryCode\":\"kr\"}"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
@@ -45,7 +77,9 @@ class PartyroomAccessCommandControllerTest extends AbstractPartyCommandWebMvcTes
     @DisplayName("enterPartyroom — 인증 없으면 401")
     void enterPartyroomUnauthenticatedReturns401() throws Exception {
         mockMvc.perform(post("/api/v1/partyrooms/1/crews")
-                        .with(csrf()))
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"countryCode\":\"KR\"}"))
                 .andExpect(status().isUnauthorized());
     }
 }
