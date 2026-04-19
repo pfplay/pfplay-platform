@@ -1,0 +1,113 @@
+name: Deploy to prod (GCP VM via IAP)
+
+# main 브랜치 push 시 트리거. 버전 태그 기반 전환은 후속 작업 예정.
+on:
+  push:
+    branches: [main]
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  GCE_INSTANCE: pfplay-api
+  GCE_ZONE: asia-northeast3-a
+  IMAGE: ghcr.io/pfplay/pfplay-api
+  TAG: prod
+  TARGET_DIR: /home/dev_pfplay_xyz
+
+jobs:
+  build:
+    name: Build & push image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: gradle
+
+      - name: Build jar
+        run: chmod +x ./gradlew && ./gradlew :app:bootJar -x test
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./app/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ env.TAG }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build
+    name: Deploy to GCE VM
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write  # WIF
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Generate .env.prod from secret
+        run: echo "${{ secrets.DOT_ENV }}" > .env.prod
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      # 리포가 단일 진실의 원천. 매 배포마다 compose/env/script 3종을 SCP로 VM에 동기화.
+      - name: Copy deploy assets to VM
+        run: |
+          gcloud compute scp \
+            .env.prod docker-compose.prod.yml scripts/deploy.sh \
+            ${{ env.GCE_INSTANCE }}:/tmp/ \
+            --zone=${{ env.GCE_ZONE }} \
+            --tunnel-through-iap \
+            --project=${{ env.PROJECT_ID }}
+
+      # 파일 배치 → deploy.sh 호출 (mysql/redis/pytube는 유지, app만 재기동).
+      - name: Deploy via IAP tunnel
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.PACKAGE_ACCESS_TOKEN }}
+        run: |
+          gcloud compute ssh ${{ env.GCE_INSTANCE }} \
+            --zone=${{ env.GCE_ZONE }} \
+            --tunnel-through-iap \
+            --project=${{ env.PROJECT_ID }} \
+            --command="
+              set -e
+              mv /tmp/.env.prod ${{ env.TARGET_DIR }}/.env.prod
+              chmod 600 ${{ env.TARGET_DIR }}/.env.prod
+              mv /tmp/docker-compose.prod.yml ${{ env.TARGET_DIR }}/
+              mkdir -p ${{ env.TARGET_DIR }}/scripts
+              mv /tmp/deploy.sh ${{ env.TARGET_DIR }}/scripts/deploy.sh
+              chmod +x ${{ env.TARGET_DIR }}/scripts/deploy.sh
+              cd ${{ env.TARGET_DIR }}
+              GHCR_USER='$GHCR_USER' GHCR_TOKEN='$GHCR_TOKEN' ./scripts/deploy.sh prod
+              docker image prune -f
+            "
