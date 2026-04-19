@@ -1,0 +1,33 @@
+name: Registry cleanup (pfplay-api)
+
+# Deletes untagged container image versions in ghcr.io/pfplay/pfplay-api.
+# With SHA tags dropped from deploy workflows, untagged versions are the
+# accumulation source: each floating-tag reassignment leaves the previous
+# image untagged. A small buffer is kept for emergency rollback.
+
+on:
+  workflow_dispatch:
+    inputs:
+      keep-count:
+        description: 'Number of most-recent untagged versions to keep'
+        default: '3'
+        required: true
+  schedule:
+    # Every Sunday at 18:00 UTC (03:00 KST Monday)
+    - cron: '0 18 * * 0'
+
+jobs:
+  cleanup:
+    name: Delete untagged versions
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - name: Delete old untagged pfplay-api versions
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: pfplay-api
+          package-type: container
+          owner: pfplay
+          min-versions-to-keep: ${{ github.event.inputs.keep-count || '3' }}
+          delete-only-untagged-versions: true
