@@ -40,8 +40,8 @@ public class PytubeSearchService implements YoutubeSearchService {
                 .toUri();
 
         HttpHeaders headers = new HttpHeaders();
-        headers.set("API_KEY", apiKey);
-        headers.set("API_SECRET", apiSecret);
+        headers.set("X-Api-Key", apiKey);
+        headers.set("X-Api-Secret", apiSecret);
 
         HttpEntity<String> entity = new HttpEntity<>(headers);
         ResponseEntity<SearchResultDto> response = restTemplate.exchange(
