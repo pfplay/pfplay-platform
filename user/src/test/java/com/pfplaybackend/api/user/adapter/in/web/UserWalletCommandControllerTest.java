@@ -1,11 +1,15 @@
 package com.pfplaybackend.api.user.adapter.in.web;
 
+import com.pfplaybackend.api.common.config.security.enums.ProviderType;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.enums.AuthorityTier;
 import com.pfplaybackend.api.user.domain.entity.data.MemberData;
+import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
+
+import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -22,10 +26,14 @@ class UserWalletCommandControllerTest extends AbstractUserWebMvcTest {
     void updateMyWalletMemberReturns200() throws Exception {
         // given
         MemberData member = mock(MemberData.class);
-        when(member.getUserId()).thenReturn(new UserId(1L));
-        when(member.getEmail()).thenReturn("test@gmail.com");
+        UserAccountData userAccount = mock(UserAccountData.class);
+        when(member.getUserAccountId()).thenReturn(1L);
         when(member.getAuthorityTier()).thenReturn(AuthorityTier.FM);
+        when(userAccount.getUserId()).thenReturn(new UserId(1L));
+        when(userAccount.getEmail()).thenReturn("test@gmail.com");
+        when(userAccount.getProviderType()).thenReturn(ProviderType.GOOGLE);
         when(userWalletService.updateMyWalletAddress(any())).thenReturn(member);
+        when(userAccountRepository.findById(any(UserId.class))).thenReturn(Optional.of(userAccount));
         when(jwtService.generateNonExpiringAccessToken(any())).thenReturn("mock-token");
 
         String body = """

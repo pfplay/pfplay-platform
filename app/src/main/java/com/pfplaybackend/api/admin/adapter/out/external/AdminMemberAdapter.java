@@ -6,14 +6,11 @@ import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.user.adapter.out.persistence.MemberRepository;
 import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
 import com.pfplaybackend.api.user.application.service.UserActivityCommandService;
-import com.pfplaybackend.api.user.domain.entity.data.ActivityData;
 import com.pfplaybackend.api.user.domain.entity.data.MemberData;
 import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
-import com.pfplaybackend.api.user.domain.enums.ActivityType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
-import java.util.Map;
 import java.util.Optional;
 
 @Service
@@ -58,7 +55,7 @@ public class AdminMemberAdapter implements AdminMemberPort {
     }
 
     @Override
-    public Map<ActivityType, ActivityData> createUserActivities(UserId userId) {
-        return userActivityCommandService.createUserActivities(userId);
+    public void createUserActivities(UserId userId) {
+        userActivityCommandService.createUserActivities(userId);
     }
 }

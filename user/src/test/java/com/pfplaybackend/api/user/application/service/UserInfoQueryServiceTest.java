@@ -5,8 +5,11 @@ import com.pfplaybackend.api.common.aspect.context.AuthContext;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.enums.AuthorityTier;
 import com.pfplaybackend.api.common.exception.http.UnauthorizedException;
+import com.pfplaybackend.api.user.adapter.out.persistence.GuestRepository;
+import com.pfplaybackend.api.user.adapter.out.persistence.MemberRepository;
 import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
 import com.pfplaybackend.api.user.application.dto.result.MyInfoResult;
+import com.pfplaybackend.api.user.domain.entity.data.MemberData;
 import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -28,6 +31,8 @@ import static org.mockito.Mockito.*;
 class UserInfoQueryServiceTest {
 
     @Mock UserAccountRepository userAccountRepository;
+    @Mock MemberRepository memberRepository;
+    @Mock GuestRepository guestRepository;
 
     @InjectMocks UserInfoQueryService userInfoQueryService;
 
@@ -48,15 +53,18 @@ class UserInfoQueryServiceTest {
     @Test
     @DisplayName("getMyInfo — 사용자 정보를 정상 반환한다")
     void getMyInfoSuccess() {
-        // given
+        // given — UserAccount carries identity fields; tier / profileUpdated
+        // live on Member post-V4.
         UserAccountData user = mock(UserAccountData.class);
         when(user.getUserId()).thenReturn(userId);
         when(user.getEmail()).thenReturn("test@gmail.com");
-        when(user.getAuthorityTier()).thenReturn(AuthorityTier.FM);
-        when(user.isProfileUpdated()).thenReturn(true);
         when(user.getCreatedAt()).thenReturn(LocalDateTime.of(2024, 1, 1, 0, 0));
-
         when(userAccountRepository.findByUserId(userId)).thenReturn(Optional.of(user));
+
+        MemberData member = mock(MemberData.class);
+        when(member.getAuthorityTier()).thenReturn(AuthorityTier.FM);
+        when(member.isProfileUpdated()).thenReturn(true);
+        when(memberRepository.findByUserAccountId(userId.getUid())).thenReturn(Optional.of(member));
 
         // when
         MyInfoResult result = userInfoQueryService.getMyInfo();

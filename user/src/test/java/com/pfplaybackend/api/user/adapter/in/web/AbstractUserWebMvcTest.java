@@ -1,5 +1,6 @@
 package com.pfplaybackend.api.user.adapter.in.web;
 
+import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
 import com.pfplaybackend.api.user.application.service.*;
 import com.pfplaybackend.api.user.application.service.initialize.TemporaryUserInitializeService;
 import com.pfplaybackend.api.user.application.validation.AvatarRequestValidator;
@@ -39,6 +40,7 @@ abstract class AbstractUserWebMvcTest {
     @MockBean protected UserAvatarQueryService userAvatarQueryService;
     @MockBean protected GuestSignService guestSignService;
     @MockBean protected TemporaryUserInitializeService temporaryUserInitializeService;
+    @MockBean protected UserAccountRepository userAccountRepository;
     @MockBean protected CookieUtil cookieUtil;
     @MockBean protected JwtService jwtService;
     @MockBean protected JwtDecoder jwtDecoder;

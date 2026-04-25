@@ -40,6 +40,7 @@ class MemberSignServiceTest {
     @Mock UserAccountRepository userAccountRepository;
     @Mock MemberRepository memberRepository;
     @Mock UserProfileCommandService userProfileCommandService;
+    @Mock UserActivityCommandService userActivityCommandService;
     @Mock PlaylistSetupPort playlistSetupPort;
     @Mock ApplicationEventPublisher applicationEventPublisher;
     @InjectMocks MemberSignService memberSignService;

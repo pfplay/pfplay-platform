@@ -6,6 +6,7 @@ import com.pfplaybackend.api.user.adapter.out.persistence.GuestRepository;
 import com.pfplaybackend.api.user.adapter.out.persistence.MemberRepository;
 import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
 import com.pfplaybackend.api.user.application.port.out.PlaylistSetupPort;
+import com.pfplaybackend.api.user.application.service.UserActivityCommandService;
 import com.pfplaybackend.api.user.application.service.UserProfileCommandService;
 import com.pfplaybackend.api.user.domain.entity.data.GuestData;
 import com.pfplaybackend.api.user.domain.entity.data.MemberData;
@@ -24,6 +25,7 @@ public class TemporaryUserInitializeService {
     private final GuestRepository guestRepository;
     private final MemberRepository memberRepository;
     private final UserProfileCommandService userProfileCommandService;
+    private final UserActivityCommandService userActivityCommandService;
     private final PlaylistSetupPort playlistSetupPort;
 
     private static final long GUEST_FIXED_ID = 1000000000000001L;
@@ -69,9 +71,10 @@ public class TemporaryUserInitializeService {
         ProfileData profile = userProfileCommandService.createProfileDataForGuest(userId);
         guest.initiateProfile(profile);
 
-        // TODO(Task 11): ActivityData init for guest (was previously implicit
-        //   via member.initializeActivityMap; guest activity init, if any,
-        //   will be wired in Task 11 once ActivityRepository is available).
+        // Note: Guests do NOT get ActivityData rows. Pre-V4 the
+        // initializeActivityMap call was member-scoped; guests have no DJ /
+        // referral / room-activity score by design. Promotion to Member runs
+        // through addAssociateMember which will seed activity rows then.
 
         guestRepository.save(guest);
     }
@@ -90,14 +93,12 @@ public class TemporaryUserInitializeService {
                     ProfileData profile = userProfileCommandService.createProfileDataForMember(userId);
                     member.initializeProfile(profile);
 
-                    // TODO(Task 11): Activity rows initialization. Pre-V4:
-                    //   Map<ActivityType, ActivityData> activityMap =
-                    //       userActivityCommandService.createUserActivities(userId);
-                    //   member.initializeActivityMap(activityMap);
-                    // Post-V4 with ActivityRepository (Task 11): persist
-                    // ActivityData rows directly, keyed by userId.
-
                     MemberData memberData = memberRepository.save(member);
+
+                    // 4) Persist activity rows directly via the repository.
+                    //    Member no longer owns the activity collection (Task 11).
+                    userActivityCommandService.createUserActivities(userId);
+
                     playlistSetupPort.createDefaultPlaylist(userId);
                     return memberData;
                 });

@@ -23,6 +23,7 @@ public class MemberSignService {
     private final UserAccountRepository userAccountRepository;
     private final MemberRepository memberRepository;
     private final UserProfileCommandService userProfileCommandService;
+    private final UserActivityCommandService userActivityCommandService;
     private final PlaylistSetupPort playlistSetupPort;
     private final ApplicationEventPublisher applicationEventPublisher;
 
@@ -90,14 +91,11 @@ public class MemberSignService {
                         userAccount.getEmail(),
                         userAccount.getProviderType()));
 
-        // TODO(Task 11): Activity init was here in the pre-V4 flow:
-        //   var activityMap = userActivityCommandService.createUserActivities(member.getUserId());
-        //   member.initializeActivityMap(activityMap);
-        // MemberData.initializeActivityMap was removed in Task 5 because Member no
-        // longer owns the activity collection (sharper aggregate boundary; see
-        // MemberData class comment). When ActivityRepository lands in Task 11,
-        // re-add activity bootstrapping here by persisting ActivityData rows
-        // directly (e.g. activityRepository.saveAll(...)) keyed by userAccountId.
+        // 6. Initialize activity rows. Member no longer owns the activity
+        // collection — UserActivityCommandService persists ActivityData
+        // directly via ActivityRepository (see Task 11).
+        userActivityCommandService.createUserActivities(userAccount.getUserId());
+
         return savedMember;
     }
 }

@@ -4,11 +4,10 @@ import com.pfplaybackend.api.common.ThreadLocalContext;
 import com.pfplaybackend.api.common.aspect.context.AuthContext;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.enums.AuthorityTier;
-import com.pfplaybackend.api.user.adapter.out.persistence.MemberRepository;
+import com.pfplaybackend.api.user.adapter.out.persistence.ActivityRepository;
 import com.pfplaybackend.api.user.application.dto.shared.AvatarBodyDto;
 import com.pfplaybackend.api.user.domain.entity.data.ActivityData;
 import com.pfplaybackend.api.user.domain.entity.data.AvatarBodyResourceData;
-import com.pfplaybackend.api.user.domain.entity.data.MemberData;
 import com.pfplaybackend.api.user.domain.enums.ActivityType;
 import com.pfplaybackend.api.user.domain.enums.ObtainmentType;
 import com.pfplaybackend.api.user.domain.service.UserAvatarDomainService;
@@ -22,8 +21,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyMap;
@@ -35,7 +32,7 @@ class UserAvatarQueryServiceTest {
 
     private static final String BODY1 = "body1";
 
-    @Mock MemberRepository memberRepository;
+    @Mock ActivityRepository activityRepository;
     @Mock UserAvatarDomainService userAvatarDomainService;
     @Mock AvatarResourceQueryService avatarResourceQueryService;
     @InjectMocks UserAvatarQueryService userAvatarQueryService;
@@ -100,15 +97,8 @@ class UserAvatarQueryServiceTest {
                 .build();
         when(avatarResourceQueryService.findAllAvatarBodies()).thenReturn(List.of(bodyDto));
 
-        Map<ActivityType, ActivityData> activityMap = Map.of(
-                ActivityType.DJ_PNT, ActivityData.create(userId, ActivityType.DJ_PNT, 200)
-        );
-        MemberData member = MemberData.builder()
-                .userId(userId)
-                .authorityTier(AuthorityTier.FM)
-                .activityDataMap(activityMap)
-                .build();
-        when(memberRepository.findByUserId(userId)).thenReturn(Optional.of(member));
+        ActivityData djActivity = ActivityData.create(userId, ActivityType.DJ_PNT, 200);
+        when(activityRepository.findAllByUserId(userId)).thenReturn(List.of(djActivity));
         when(userAvatarDomainService.isAvailableBody(eq(ObtainmentType.DJ_PNT), eq(100), anyMap()))
                 .thenReturn(true);
 

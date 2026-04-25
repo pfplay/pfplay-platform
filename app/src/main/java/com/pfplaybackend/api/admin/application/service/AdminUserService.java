@@ -92,13 +92,10 @@ public class AdminUserService {
         // 5. Persist Member (cascades the new ProfileData).
         MemberData savedMember = adminMemberPort.saveMember(member);
 
-        // TODO(Task 11): Activity-row initialization was here in the pre-V4 flow:
-        //   var activityMap = adminMemberPort.createUserActivities(savedAccount.getUserId());
-        //   savedMember.initializeActivityMap(activityMap);
-        // MemberData.initializeActivityMap was removed in Task 5 (Member no longer
-        // owns the activity collection). Re-add direct ActivityData persistence
-        // here once ActivityRepository lands in Task 11. Mirrors the deferral in
-        // MemberSignService.initializeNewMember.
+        // 5a. Initialize activity rows. Member no longer owns the activity
+        //     collection — AdminMemberPort.createUserActivities now persists
+        //     ActivityData rows directly via ActivityRepository (Task 11).
+        adminMemberPort.createUserActivities(savedAccount.getUserId());
 
         // 6. Create default GRABLIST playlist for the virtual member.
         adminPlaylistPort.createDefaultPlaylist(savedAccount.getUserId());

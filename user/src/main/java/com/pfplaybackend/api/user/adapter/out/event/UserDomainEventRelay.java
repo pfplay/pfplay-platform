@@ -21,7 +21,8 @@ public class UserDomainEventRelay {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void on(UserProfileChangedEvent event) {
-        MemberData member = memberRepository.findByUserId(event.getUserId()).orElseThrow();
+        // userAccountId equals UserAccount.userId.uid by construction (see Task 8).
+        MemberData member = memberRepository.findByUserAccountId(event.getUserId().getUid()).orElseThrow();
         ProfileData profile = member.getProfileData();
         var avatar = profile.getAvatarSetting();
         ProfileChangedEvent message = new ProfileChangedEvent(

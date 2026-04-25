@@ -6,6 +6,7 @@ import com.pfplaybackend.api.user.adapter.out.persistence.MemberRepository;
 import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
 import com.pfplaybackend.api.user.application.dto.shared.AvatarBodyDto;
 import com.pfplaybackend.api.user.application.service.AvatarResourceQueryService;
+import com.pfplaybackend.api.user.application.service.UserActivityCommandService;
 import com.pfplaybackend.api.user.application.service.UserAvatarCommandService;
 import com.pfplaybackend.api.user.application.service.UserProfileCommandService;
 import com.pfplaybackend.api.user.domain.entity.data.MemberData;
@@ -28,6 +29,7 @@ public class AdminUserInitializeService {
     private final UserAccountRepository userAccountRepository;
     private final MemberRepository memberRepository;
     private final UserProfileCommandService userProfileCommandService;
+    private final UserActivityCommandService userActivityCommandService;
     private final AvatarResourceQueryService avatarResourceQueryService;
     private final UserAvatarCommandService userAvatarCommandService;
 
@@ -56,14 +58,13 @@ public class AdminUserInitializeService {
         ProfileData profile = userProfileCommandService.createProfileDataForMember(userId);
         member.initializeProfile(profile);
 
-        // TODO(Task 11): Activity rows initialization. Pre-V4:
-        //   Map<ActivityType, ActivityData> activityMap =
-        //       userActivityCommandService.createUserActivities(userId);
-        //   member.initializeActivityMap(activityMap);
-        // Post-V4 with ActivityRepository (Task 11): persist ActivityData rows
-        // directly, keyed by userId (legacy UserId VO == userAccountId by value).
+        MemberData savedMember = memberRepository.save(member);
 
-        return memberRepository.save(member);
+        // 4) Initialize activity rows. Member no longer owns the activity
+        //    collection — persist ActivityData directly via the repository.
+        userActivityCommandService.createUserActivities(userId);
+
+        return savedMember;
     }
 
     private void upgradeMember(MemberData member) {

@@ -5,10 +5,13 @@ import com.pfplaybackend.api.common.config.security.enums.AccessLevel;
 import com.pfplaybackend.api.common.config.security.jwt.CookieUtil;
 import com.pfplaybackend.api.common.config.security.jwt.JwtService;
 import com.pfplaybackend.api.common.config.security.jwt.dto.TokenClaimsRequest;
+import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.user.adapter.in.web.payload.request.UpdateMyWalletRequest;
+import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
 import com.pfplaybackend.api.user.application.dto.command.UpdateWalletCommand;
 import com.pfplaybackend.api.user.application.service.UserWalletCommandService;
 import com.pfplaybackend.api.user.domain.entity.data.MemberData;
+import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -29,6 +32,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class UserWalletCommandController {
 
     private final UserWalletCommandService userWalletService;
+    private final UserAccountRepository userAccountRepository;
     private final CookieUtil cookieUtil;
     private final JwtService jwtService;
 
@@ -38,9 +42,12 @@ public class UserWalletCommandController {
     @PreAuthorize("hasRole('ROLE_MEMBER')")
     public ResponseEntity<ApiCommonResponse<Void>> updateMyWallet(@Valid @RequestBody UpdateMyWalletRequest request, HttpServletResponse response) {
         MemberData member = userWalletService.updateMyWalletAddress(new UpdateWalletCommand(request.getWalletAddress()));
+        // Email and user_id live on UserAccount post-V4. Fetch the bound account
+        // for token claims rather than reaching through Member.
+        UserAccountData userAccount = userAccountRepository.findById(new UserId(member.getUserAccountId())).orElseThrow();
         cookieUtil.addAccessTokenCookie(response, jwtService.generateNonExpiringAccessToken(new TokenClaimsRequest(
-                member.getUserId().getUid().toString(),
-                member.getEmail(),
+                userAccount.getUserId().getUid().toString(),
+                userAccount.getEmail(),
                 AccessLevel.ROLE_MEMBER,
                 member.getAuthorityTier()
         )));

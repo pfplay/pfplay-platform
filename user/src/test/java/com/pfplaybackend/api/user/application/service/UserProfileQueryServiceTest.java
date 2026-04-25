@@ -2,10 +2,10 @@ package com.pfplaybackend.api.user.application.service;
 
 import com.pfplaybackend.api.common.ThreadLocalContext;
 import com.pfplaybackend.api.common.aspect.context.AuthContext;
-import com.pfplaybackend.api.common.config.security.enums.ProviderType;
 import com.pfplaybackend.api.common.domain.enums.AvatarCompositionType;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.enums.AuthorityTier;
+import com.pfplaybackend.api.user.adapter.out.persistence.ActivityRepository;
 import com.pfplaybackend.api.user.adapter.out.persistence.GuestRepository;
 import com.pfplaybackend.api.user.adapter.out.persistence.MemberRepository;
 import com.pfplaybackend.api.user.adapter.out.persistence.UserProfileRepository;
@@ -15,7 +15,12 @@ import com.pfplaybackend.api.user.domain.entity.data.GuestData;
 import com.pfplaybackend.api.user.domain.entity.data.MemberData;
 import com.pfplaybackend.api.user.domain.entity.data.ProfileData;
 import com.pfplaybackend.api.user.domain.enums.FaceSourceType;
-import com.pfplaybackend.api.user.domain.value.*;
+import com.pfplaybackend.api.user.domain.value.AvatarBodyUri;
+import com.pfplaybackend.api.user.domain.value.AvatarFaceUri;
+import com.pfplaybackend.api.user.domain.value.AvatarIconUri;
+import com.pfplaybackend.api.user.domain.value.Nickname;
+import com.pfplaybackend.api.user.domain.value.ProfileSummary;
+import com.pfplaybackend.api.user.domain.value.WalletAddress;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -30,7 +35,10 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class UserProfileQueryServiceTest {
@@ -38,6 +46,7 @@ class UserProfileQueryServiceTest {
     @Mock UserProfileRepository userProfileRepository;
     @Mock GuestRepository guestRepository;
     @Mock MemberRepository memberRepository;
+    @Mock ActivityRepository activityRepository;
 
     @InjectMocks UserProfileQueryService userProfileQueryService;
 
@@ -95,7 +104,7 @@ class UserProfileQueryServiceTest {
     @DisplayName("getUsersProfileSetting — 빈 사용자 목록에 대해 빈 맵을 반환한다")
     void getUsersProfileSettingEmptyList() {
         // given
-        when(userProfileRepository.findAllByUserIdIn(List.of())).thenReturn(List.of());
+        when(userProfileRepository.findAllByUserIdIn(anyList())).thenReturn(List.of());
 
         // when
         Map<UserId, ProfileSettingDto> result = userProfileQueryService.getUsersProfileSetting(List.of());
@@ -110,19 +119,22 @@ class UserProfileQueryServiceTest {
     @DisplayName("getMyProfileSummary — Member 사용자의 프로필 요약을 반환한다")
     void getMyProfileSummaryMember() {
         // given
-        MemberData member = MemberData.createWithFixedUserId(userId, "test@email.com", ProviderType.GOOGLE);
-        ProfileData profile = createProfileData(userId, "MemberNick");
-        member.initializeProfile(profile);
-        member.initializeActivityMap(Map.of());
+        MemberData member = mock(MemberData.class);
+        ProfileSummary summary = new ProfileSummary(
+                "MemberNick", null, "body", AvatarCompositionType.BODY_WITH_FACE,
+                0, 0, 0.0, 0.0, 0.0,
+                "face", "icon", "", List.of());
+        when(member.getProfileSummary(anyList())).thenReturn(summary);
 
-        when(memberRepository.findByUserId(userId)).thenReturn(Optional.of(member));
+        when(memberRepository.findByUserAccountId(userId.getUid())).thenReturn(Optional.of(member));
+        when(activityRepository.findAllByUserId(userId)).thenReturn(List.of());
 
         // when
-        ProfileSummaryDto summary = userProfileQueryService.getMyProfileSummary();
+        ProfileSummaryDto result = userProfileQueryService.getMyProfileSummary();
 
         // then
-        assertThat(summary).isNotNull();
-        assertThat(summary.nickname()).isEqualTo("MemberNick");
+        assertThat(result).isNotNull();
+        assertThat(result.nickname()).isEqualTo("MemberNick");
     }
 
     @Test
@@ -134,17 +146,17 @@ class UserProfileQueryServiceTest {
         when(guestContext.getAuthorityTier()).thenReturn(AuthorityTier.GT);
         ThreadLocalContext.setContext(guestContext);
 
-        GuestData guest = GuestData.createWithFixedUserId(userId, "test-agent");
+        GuestData guest = mock(GuestData.class);
         ProfileData profile = createProfileData(userId, "GuestNick");
-        guest.initiateProfile(profile);
+        when(guest.getProfileData()).thenReturn(profile);
 
-        when(guestRepository.findByUserId(userId)).thenReturn(Optional.of(guest));
+        when(guestRepository.findByUserAccountId(userId.getUid())).thenReturn(Optional.of(guest));
 
         // when
-        ProfileSummaryDto summary = userProfileQueryService.getMyProfileSummary();
+        ProfileSummaryDto result = userProfileQueryService.getMyProfileSummary();
 
         // then
-        assertThat(summary).isNotNull();
-        assertThat(summary.nickname()).isEqualTo("GuestNick");
+        assertThat(result).isNotNull();
+        assertThat(result.nickname()).isEqualTo("GuestNick");
     }
 }
