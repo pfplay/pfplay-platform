@@ -36,13 +36,17 @@ public class SecurityConfig {
                 )
                 .formLogin(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(request -> request
+                        // Public endpoints
                         .requestMatchers("/api/v1/auth/oauth/callback", "/api/v1/auth/oauth/url", "/api/v1/auth/logout",
                                 "/api/v1/users/members/sign/**", "/api/v1/users/guests/sign/**", "/api/v1/partyrooms/link/**").permitAll()
                         .requestMatchers("/actuator/health").permitAll()
-                        .requestMatchers("/api/v1/admin/**").permitAll()  // Admin API - no auth required (temporary)
-                        .requestMatchers("/api/**").authenticated()
                         .requestMatchers("/ws/**").permitAll()
                         .requestMatchers("/spec/**", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
+                        // Admin endpoints — role-gated. Method-level @PreAuthorize remains primary.
+                        // More specific subpaths (SUPER_ADMIN for /avatar, /system) arrive in later PRs.
+                        .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+                        // Everything else under /api requires auth
+                        .requestMatchers("/api/**").authenticated()
                         .anyRequest().denyAll()
                 )
                 .oauth2ResourceServer(oauth2 -> oauth2
