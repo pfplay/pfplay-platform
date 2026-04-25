@@ -1,80 +1,89 @@
 package com.pfplaybackend.api.user.domain.entity.data;
 
+import com.pfplaybackend.api.common.config.security.enums.ProviderType;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.entity.BaseEntity;
-import com.pfplaybackend.api.common.enums.AuthorityTier;
-import com.pfplaybackend.api.user.domain.value.ActivitySummary;
-import com.pfplaybackend.api.user.domain.value.ProfileSummary;
+import com.pfplaybackend.api.user.domain.event.UserAccountWithdrawnEvent;
 import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Builder;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import org.hibernate.annotations.DynamicInsert;
 import org.hibernate.annotations.DynamicUpdate;
 
 import java.time.LocalDateTime;
 
-@DynamicUpdate
-@DynamicInsert
-@Table(name = "USER_ACCOUNT")
-@Getter
 @Entity
-@Inheritance(strategy = InheritanceType.JOINED)
-@DiscriminatorColumn(name = "user_type", discriminatorType = DiscriminatorType.STRING)
-public abstract class UserAccountData extends BaseEntity {
+@Table(name = "user_account")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@DynamicInsert
+@DynamicUpdate
+public class UserAccountData extends BaseEntity {
 
     @EmbeddedId
     @AttributeOverride(name = "uid", column = @Column(name = "user_id"))
-    protected UserId userId;
+    private UserId userId;
 
-    @Column(nullable = false)
+    @Column(name = "email", nullable = false, length = 255)
+    private String email;
+
+    @Column(name = "provider_type", nullable = false, length = 16)
     @Enumerated(EnumType.STRING)
-    protected AuthorityTier authorityTier;
+    private ProviderType providerType;
 
-    @OneToOne(cascade = CascadeType.ALL)
-    @JoinColumn(name = "profile_id")
-    protected ProfileData profileData;
+    @Column(name = "password_hash", length = 255)
+    private String passwordHash;
 
-    @Column(nullable = false)
-    protected boolean isProfileUpdated;
+    @Column(name = "last_login_at")
+    private LocalDateTime lastLoginAt;
 
-    protected UserAccountData() {}
+    @Column(name = "withdrawn_at")
+    private LocalDateTime withdrawnAt;
 
-    protected UserAccountData(UserId userId, AuthorityTier authorityTier, ProfileData profileData,
-                              boolean isProfileUpdated, LocalDateTime createdAt, LocalDateTime updatedAt) {
+    @Builder(access = AccessLevel.PRIVATE)
+    private UserAccountData(UserId userId, String email, ProviderType providerType,
+                            String passwordHash, LocalDateTime lastLoginAt, LocalDateTime withdrawnAt) {
         this.userId = userId;
-        this.authorityTier = authorityTier;
-        this.profileData = profileData;
-        this.isProfileUpdated = isProfileUpdated;
-        this.createdAt = createdAt;
-        this.updatedAt = updatedAt;
+        this.email = email;
+        this.providerType = providerType;
+        this.passwordHash = passwordHash;
+        this.lastLoginAt = lastLoginAt;
+        this.withdrawnAt = withdrawnAt;
     }
 
-    public abstract boolean isGuest();
-
-    protected ProfileSummary buildProfileSummary(java.util.List<ActivitySummary> activitySummaries) {
-        var bio = this.profileData.getBio();
-        var avatar = this.profileData.getAvatarSetting();
-        return new ProfileSummary(
-                bio != null ? bio.getNicknameValue() : null,
-                bio != null ? bio.getIntroduction() : null,
-                avatar.getAvatarBodyUri().getValue(),
-                avatar.getAvatarCompositionType(),
-                avatar.getCombinePositionX(),
-                avatar.getCombinePositionY(),
-                avatar.getOffsetX(),
-                avatar.getOffsetY(),
-                avatar.getScale(),
-                avatar.getAvatarFaceUri().getValue(),
-                avatar.getAvatarIconUri().getValue(),
-                this.profileData.getWalletAddress().getValue(),
-                activitySummaries
-        );
+    public static UserAccountData createForSocial(UserId userId, String email, ProviderType providerType) {
+        if (providerType == ProviderType.LOCAL) {
+            throw new IllegalArgumentException("Use createForLocal for LOCAL provider");
+        }
+        return UserAccountData.builder()
+            .userId(userId)
+            .email(email)
+            .providerType(providerType)
+            .build();
     }
 
-    public ProfileSummary getProfileSummary() {
-        return buildProfileSummary(java.util.List.of());
+    public static UserAccountData createForLocal(UserId userId, String email, String passwordHash) {
+        return UserAccountData.builder()
+            .userId(userId)
+            .email(email)
+            .providerType(ProviderType.LOCAL)
+            .passwordHash(passwordHash)
+            .build();
     }
 
-    public String getEmail() {
-        return null;
+    public void recordLogin() {
+        this.lastLoginAt = LocalDateTime.now();
+    }
+
+    public void withdraw() {
+        this.withdrawnAt = LocalDateTime.now();
+        this.email = "withdrawn-" + this.userId.getUid() + "@withdrawn.local";
+        registerEvent(new UserAccountWithdrawnEvent(this.userId.getUid(), this.email));
+    }
+
+    public boolean isWithdrawn() {
+        return withdrawnAt != null;
     }
 }
