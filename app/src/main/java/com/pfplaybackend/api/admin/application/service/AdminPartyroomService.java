@@ -96,7 +96,7 @@ public class AdminPartyroomService {
                 totalVirtualMembers++;
             }
 
-            UserId hostUserId = virtualMembers.get(0).getUserId();
+            UserId hostUserId = new UserId(virtualMembers.get(0).getUserAccountId());
 
             PartyroomData partyroom = createPartyroom(
                     title,
@@ -108,11 +108,11 @@ public class AdminPartyroomService {
 
             for (int j = 1; j < virtualMembers.size(); j++) {
                 MemberData member = virtualMembers.get(j);
-                enterMemberAsRegularCrew(partyroom, member.getUserId());
+                enterMemberAsRegularCrew(partyroom, new UserId(member.getUserAccountId()));
             }
 
             List<String> crewUserIds = virtualMembers.stream()
-                    .map(m -> m.getUserId().getUid().toString())
+                    .map(m -> m.getUserAccountId().toString())
                     .collect(Collectors.toList());
 
             BulkPreviewResult.PartyroomSummary summary = new BulkPreviewResult.PartyroomSummary(

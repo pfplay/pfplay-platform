@@ -168,7 +168,12 @@ public class AdminUserService {
         // 2. Verify it's a virtual member
         requireLocalProviderForVirtualMemberOp(member, AdminException.NON_VIRTUAL_MEMBER_DELETE);
 
-        // 3. Delete
+        // 3. Clean up activity rows. Member no longer owns the activity
+        //    collection as a JPA association (Task 5/11), so they don't
+        //    cascade — clean up explicitly to avoid orphans.
+        adminMemberPort.deleteUserActivities(userId);
+
+        // 4. Delete
         adminMemberPort.deleteMemberById(userId.getUid());
 
         log.info("Virtual member deleted: userId={}", userId.getUid());

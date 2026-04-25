@@ -20,4 +20,12 @@ public interface AdminMemberPort {
      * via {@code ActivityRepository}.
      */
     void createUserActivities(UserId userId);
+
+    /**
+     * Delete every activity row owned by the given user. Member no longer
+     * owns the activity collection as a JPA association, so activity rows
+     * do not cascade on member deletion — callers must clean up explicitly.
+     * Used by {@code AdminUserService.deleteVirtualMember}.
+     */
+    void deleteUserActivities(UserId userId);
 }

@@ -23,4 +23,12 @@ public interface ActivityRepository extends JpaRepository<ActivityData, Long> {
     Optional<ActivityData> findByUserIdAndActivityType(UserId userId, ActivityType activityType);
 
     List<ActivityData> findAllByUserId(UserId userId);
+
+    /**
+     * Delete every activity row owned by the given user. Used when a virtual
+     * member is deleted via the admin API — activity rows are no longer
+     * cascaded by the Member aggregate (Task 5/11), so they must be cleaned
+     * up explicitly by the caller within the same transaction.
+     */
+    void deleteAllByUserId(UserId userId);
 }

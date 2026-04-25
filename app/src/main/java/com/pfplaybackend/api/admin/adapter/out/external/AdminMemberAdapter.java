@@ -3,6 +3,7 @@ package com.pfplaybackend.api.admin.adapter.out.external;
 import com.pfplaybackend.api.admin.application.port.out.AdminMemberPort;
 import com.pfplaybackend.api.common.config.security.enums.ProviderType;
 import com.pfplaybackend.api.common.domain.value.UserId;
+import com.pfplaybackend.api.user.adapter.out.persistence.ActivityRepository;
 import com.pfplaybackend.api.user.adapter.out.persistence.MemberRepository;
 import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
 import com.pfplaybackend.api.user.application.service.UserActivityCommandService;
@@ -20,6 +21,7 @@ public class AdminMemberAdapter implements AdminMemberPort {
     private final MemberRepository memberRepository;
     private final UserAccountRepository userAccountRepository;
     private final UserActivityCommandService userActivityCommandService;
+    private final ActivityRepository activityRepository;
 
     @Override
     public MemberData saveMember(MemberData member) {
@@ -57,5 +59,10 @@ public class AdminMemberAdapter implements AdminMemberPort {
     @Override
     public void createUserActivities(UserId userId) {
         userActivityCommandService.createUserActivities(userId);
+    }
+
+    @Override
+    public void deleteUserActivities(UserId userId) {
+        activityRepository.deleteAllByUserId(userId);
     }
 }

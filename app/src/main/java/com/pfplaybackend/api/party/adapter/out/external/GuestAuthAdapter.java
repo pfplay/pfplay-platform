@@ -21,7 +21,7 @@ public class GuestAuthAdapter implements GuestAuthPort {
     public String getOrCreateGuestToken() {
         GuestData guest = guestSignService.getGuestOrCreate();
         return jwtService.generateAccessToken(new TokenClaimsRequest(
-                guest.getUserId().getUid().toString(),
+                guest.getUserAccountId().toString(),
                 "N/A",
                 AccessLevel.ROLE_GUEST,
                 AuthorityTier.GT

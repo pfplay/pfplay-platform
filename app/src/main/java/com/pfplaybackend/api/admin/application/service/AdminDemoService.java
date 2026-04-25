@@ -143,7 +143,7 @@ public class AdminDemoService {
             MemberData member = adminUserService.createVirtualMember(nickname, avatarBody, avatarFace);
 
             if (i < SPECIAL_MEMBERS) {
-                createPlaylistAndTrack(member.getUserId());
+                createPlaylistAndTrack(new UserId(member.getUserAccountId()));
                 specialMembers.add(member);
                 log.debug("Created special member {}/{}: {} (combinable: {})",
                         i + 1, SPECIAL_MEMBERS, nickname, randomBody.isCombinable());
@@ -194,7 +194,7 @@ public class AdminDemoService {
         List<PartyroomData> rooms = new ArrayList<>();
 
         for (int i = 0; i < GENERAL_ROOMS_COUNT; i++) {
-            UserId hostUserId = specialMembers.get(i + 1).getUserId();
+            UserId hostUserId = new UserId(specialMembers.get(i + 1).getUserAccountId());
             String title = String.format("%s %d", command.titlePrefix(), i + 1);
             String linkDomain = String.format("demo-room-%d", i + 1);
 
@@ -227,11 +227,11 @@ public class AdminDemoService {
         int memberIndex = 0;
 
         MemberData mainStageDj = specialMembers.get(0);
-        enterMemberAsRegularCrew(mainStage, mainStageDj.getUserId());
+        enterMemberAsRegularCrew(mainStage, new UserId(mainStageDj.getUserAccountId()));
 
         for (int i = 0; i < MAIN_STAGE_CREW - 1 && memberIndex < regularMembers.size(); i++) {
             MemberData member = regularMembers.get(memberIndex++);
-            enterMemberAsRegularCrew(mainStage, member.getUserId());
+            enterMemberAsRegularCrew(mainStage, new UserId(member.getUserAccountId()));
         }
         log.info("Entered {} crew into main stage (including 1 special member as DJ)", MAIN_STAGE_CREW);
 
@@ -240,7 +240,7 @@ public class AdminDemoService {
 
             for (int i = 0; i < GENERAL_ROOM_CREW - 1 && memberIndex < regularMembers.size(); i++) {
                 MemberData member = regularMembers.get(memberIndex++);
-                enterMemberAsRegularCrew(room, member.getUserId());
+                enterMemberAsRegularCrew(room, new UserId(member.getUserAccountId()));
             }
             log.info("Entered {} crew into room {}/{}", GENERAL_ROOM_CREW, roomIdx + 1, GENERAL_ROOMS_COUNT);
         }
@@ -264,12 +264,12 @@ public class AdminDemoService {
 
         int djCount = 0;
 
-        registerDjInRoom(mainStage, specialMembers.get(0).getUserId());
+        registerDjInRoom(mainStage, new UserId(specialMembers.get(0).getUserAccountId()));
         djCount++;
 
         for (int i = 0; i < generalRooms.size(); i++) {
             PartyroomData room = generalRooms.get(i);
-            UserId hostUserId = specialMembers.get(i + 1).getUserId();
+            UserId hostUserId = new UserId(specialMembers.get(i + 1).getUserAccountId());
             registerDjInRoom(room, hostUserId);
             djCount++;
         }
@@ -335,7 +335,7 @@ public class AdminDemoService {
             int djsRegistered,
             long executionTime) {
 
-        UserId mainStageDjUserId = specialMembers.get(0).getUserId();
+        UserId mainStageDjUserId = new UserId(specialMembers.get(0).getUserAccountId());
         Long mainStagePlaylistId = findPlaylistId(mainStageDjUserId);
 
         DemoEnvironmentResult.PartyroomDetail mainStageDetail = new DemoEnvironmentResult.PartyroomDetail(
@@ -352,7 +352,7 @@ public class AdminDemoService {
         List<DemoEnvironmentResult.PartyroomDetail> generalRoomDetails = new ArrayList<>();
         for (int i = 0; i < generalRooms.size(); i++) {
             PartyroomData room = generalRooms.get(i);
-            UserId hostUserId = specialMembers.get(i + 1).getUserId();
+            UserId hostUserId = new UserId(specialMembers.get(i + 1).getUserAccountId());
             Long playlistId = findPlaylistId(hostUserId);
 
             DemoEnvironmentResult.PartyroomDetail detail = new DemoEnvironmentResult.PartyroomDetail(

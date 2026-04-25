@@ -4,6 +4,7 @@ import com.pfplaybackend.api.admin.application.service.AdminDemoService;
 import com.pfplaybackend.api.admin.application.service.AdminPartyroomService;
 import com.pfplaybackend.api.admin.application.service.AdminUserService;
 import com.pfplaybackend.api.admin.application.service.ChatSimulationService;
+import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
@@ -28,5 +29,6 @@ abstract class AbstractAdminWebMvcTest {
     @MockBean protected AdminPartyroomService adminPartyroomService;
     @MockBean protected AdminDemoService adminDemoService;
     @MockBean protected ChatSimulationService chatSimulationService;
+    @MockBean protected UserAccountRepository userAccountRepository;
     @MockBean protected JwtDecoder jwtDecoder;
 }

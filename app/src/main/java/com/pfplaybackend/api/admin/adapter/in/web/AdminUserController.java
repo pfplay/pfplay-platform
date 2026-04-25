@@ -5,7 +5,9 @@ import com.pfplaybackend.api.admin.adapter.in.web.payload.request.UpdateVirtualM
 import com.pfplaybackend.api.admin.adapter.in.web.payload.response.QueryVirtualMemberResponse;
 import com.pfplaybackend.api.admin.application.service.AdminUserService;
 import com.pfplaybackend.api.common.domain.value.UserId;
+import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
 import com.pfplaybackend.api.user.domain.entity.data.MemberData;
+import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
 import com.pfplaybackend.api.user.domain.value.AvatarBodyUri;
 import com.pfplaybackend.api.user.domain.value.AvatarFaceUri;
 import io.swagger.v3.oas.annotations.Operation;
@@ -35,6 +37,7 @@ import org.springframework.web.bind.annotation.*;
 public class AdminUserController {
 
     private final AdminUserService adminUserService;
+    private final UserAccountRepository userAccountRepository;
 
     @Operation(summary = "가상 멤버 생성", description = "테스트 및 데모용 가상 멤버를 생성합니다. 닉네임과 아바타를 선택적으로 지정할 수 있습니다.")
     @ApiResponses(value = {
@@ -137,12 +140,19 @@ public class AdminUserController {
 
     private QueryVirtualMemberResponse buildResponse(MemberData member) {
         var avatar = member.getProfileData().getAvatarSetting();
+
+        // Email + providerType moved from Member to UserAccount in Task 5/7.
+        // Fetch the bound UserAccount once for response shaping.
+        UserAccountData userAccount = userAccountRepository.findById(new UserId(member.getUserAccountId()))
+                .orElseThrow(() -> new IllegalStateException(
+                        "UserAccount missing for member " + member.getMemberId()));
+
         return QueryVirtualMemberResponse.builder()
-                .userId(member.getUserId().getUid().toString())
-                .email(member.getEmail())
+                .userId(userAccount.getUserId().getUid().toString())
+                .email(userAccount.getEmail())
                 .nickname(member.getProfileData().getNicknameValue())
                 .introduction(member.getProfileData().getIntroduction())
-                .providerType(member.getProviderType())
+                .providerType(userAccount.getProviderType())
                 .authorityTier(member.getAuthorityTier())
                 .avatarBodyUri(avatar.getAvatarBodyUri().getValue())
                 .avatarFaceUri(avatar.getAvatarFaceUri().getValue())
