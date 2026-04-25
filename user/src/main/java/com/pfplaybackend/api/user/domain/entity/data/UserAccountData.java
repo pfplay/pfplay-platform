@@ -30,7 +30,7 @@ public class UserAccountData extends BaseEntity {
     @Column(name = "email", nullable = false, length = 255)
     private String email;
 
-    @Column(name = "provider_type", nullable = false, length = 16)
+    @Column(name = "provider_type", nullable = false, length = 16, columnDefinition = "VARCHAR(16)")
     @Enumerated(EnumType.STRING)
     private ProviderType providerType;
 
