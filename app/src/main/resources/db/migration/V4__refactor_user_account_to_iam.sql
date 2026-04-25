@@ -37,11 +37,15 @@ CREATE TABLE member (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE guest (
-    guest_id         BIGINT          NOT NULL AUTO_INCREMENT,
-    user_account_id  BIGINT          NOT NULL,
-    agent            VARCHAR(255)    NULL,
-    created_at       DATETIME        DEFAULT CURRENT_TIMESTAMP,
-    updated_at       DATETIME        DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    guest_id             BIGINT          NOT NULL AUTO_INCREMENT,
+    user_account_id      BIGINT          NOT NULL,
+    authority_tier       ENUM('FM','AM','GT') NOT NULL DEFAULT 'GT',
+    profile_id           BIGINT UNSIGNED NULL,
+    is_profile_updated   BIT             NOT NULL DEFAULT 0,
+    agent                VARCHAR(255)    NULL,
+    created_at           DATETIME        DEFAULT CURRENT_TIMESTAMP,
+    updated_at           DATETIME        DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (guest_id),
-    UNIQUE KEY uk_guest_user_account (user_account_id)
+    UNIQUE KEY uk_guest_user_account (user_account_id),
+    CONSTRAINT fk_guest_profile FOREIGN KEY (profile_id) REFERENCES user_profile(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
