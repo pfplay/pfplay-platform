@@ -1,6 +1,5 @@
 package com.pfplaybackend.api.user.adapter.out.persistence.impl;
 
-import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.user.adapter.out.persistence.custom.GuestRepositoryCustom;
 import com.pfplaybackend.api.user.domain.entity.data.GuestData;
 import com.pfplaybackend.api.user.domain.entity.data.QGuestData;
@@ -16,7 +15,7 @@ public class GuestRepositoryImpl implements GuestRepositoryCustom {
     private final JPAQueryFactory queryFactory;
 
     @Override
-    public Optional<GuestData> findByUserId(UserId userId) {
+    public Optional<GuestData> findByUserAccountId(Long userAccountId) {
         QGuestData qGuestData = QGuestData.guestData;
         QProfileData qProfileData = QProfileData.profileData;
 
@@ -24,7 +23,7 @@ public class GuestRepositoryImpl implements GuestRepositoryCustom {
                 .select(qGuestData)
                 .from(qGuestData)
                 .leftJoin(qGuestData.profileData, qProfileData).fetchJoin()
-                .where(qGuestData.userId.eq(userId))
+                .where(qGuestData.userAccountId.eq(userAccountId))
                 .fetchOne();
 
         return Optional.ofNullable(guestData);
