@@ -3,87 +3,118 @@ package com.pfplaybackend.api.user.application.service;
 import com.pfplaybackend.api.common.config.security.enums.ProviderType;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.user.adapter.out.persistence.MemberRepository;
+import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
 import com.pfplaybackend.api.user.application.dto.command.SignMemberCommand;
 import com.pfplaybackend.api.user.application.port.out.OAuth2RedirectPort;
-import com.pfplaybackend.api.user.application.port.out.PlaylistSetupPort;
-import com.pfplaybackend.api.user.domain.entity.data.ActivityData;
 import com.pfplaybackend.api.user.domain.entity.data.MemberData;
-import com.pfplaybackend.api.user.domain.entity.data.ProfileData;
-import com.pfplaybackend.api.user.domain.enums.ActivityType;
-import com.pfplaybackend.api.user.domain.event.MemberRegisteredEvent;
+import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.context.ApplicationEventPublisher;
 
-import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class MemberSignServiceTest {
 
     private static final String GOOGLE = "google";
     private static final String CALLBACK_PATH = "/callback";
+    private static final String EMAIL = "test@example.com";
 
     @Mock OAuth2RedirectPort oauth2RedirectPort;
+    @Mock UserAccountRepository userAccountRepository;
     @Mock MemberRepository memberRepository;
-    @Mock UserProfileCommandService userProfileCommandService;
-    @Mock UserActivityCommandService userActivityCommandService;
-    @Mock PlaylistSetupPort playlistSetupPort;
-    @Mock ApplicationEventPublisher eventPublisher;
     @InjectMocks MemberSignService memberSignService;
 
     @Test
-    @DisplayName("getMemberOrCreate — 기존 회원이 있으면 그대로 반환한다")
-    void getMemberOrCreateExistingMember() {
+    @DisplayName("getMemberOrCreate — UserAccount 미존재 시 UserAccount와 Member를 모두 영속화한다")
+    void getMemberOrCreatePersistsBothWhenUserAccountMissing() {
         // given
-        String email = "test@example.com";
-        MemberData existing = mock(MemberData.class);
-        when(memberRepository.findByEmail(email)).thenReturn(Optional.of(existing));
+        when(userAccountRepository.findByEmailAndProviderType(EMAIL, ProviderType.GOOGLE))
+                .thenReturn(Optional.empty());
+        when(userAccountRepository.save(any(UserAccountData.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(memberRepository.findByUserAccountId(any(Long.class)))
+                .thenReturn(Optional.empty());
+        when(memberRepository.save(any(MemberData.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
 
         // when
-        MemberData result = memberSignService.getMemberOrCreate(email, ProviderType.GOOGLE);
-
-        // then
-        assertThat(result).isSameAs(existing);
-        verify(memberRepository, never()).save(any());
-        verify(playlistSetupPort, never()).createDefaultPlaylist(any());
-        verify(eventPublisher, never()).publishEvent(any(MemberRegisteredEvent.class));
-    }
-
-    @Test
-    @DisplayName("getMemberOrCreate — 신규 회원이면 프로필, 활동, 플레이리스트를 초기화하고 저장한다")
-    void getMemberOrCreateNewMember() {
-        // given
-        String email = "new@example.com";
-        when(memberRepository.findByEmail(email)).thenReturn(Optional.empty());
-
-        ProfileData profile = mock(ProfileData.class);
-        when(userProfileCommandService.createProfileDataForMember(any(UserId.class))).thenReturn(profile);
-
-        Map<ActivityType, ActivityData> activityMap = Map.of();
-        when(userActivityCommandService.createUserActivities(any(UserId.class))).thenReturn(activityMap);
-
-        when(memberRepository.save(any(MemberData.class))).thenAnswer(invocation -> invocation.getArgument(0));
-
-        // when
-        MemberData result = memberSignService.getMemberOrCreate(email, ProviderType.GOOGLE);
+        MemberData result = memberSignService.getMemberOrCreate(EMAIL, ProviderType.GOOGLE);
 
         // then
         assertThat(result).isNotNull();
-        assertThat(result.getEmail()).isEqualTo(email);
-        verify(userProfileCommandService).createProfileDataForMember(any(UserId.class));
-        verify(userActivityCommandService).createUserActivities(any(UserId.class));
-        verify(playlistSetupPort).createDefaultPlaylist(any(UserId.class));
+
+        ArgumentCaptor<UserAccountData> uaCaptor = ArgumentCaptor.forClass(UserAccountData.class);
+        verify(userAccountRepository).save(uaCaptor.capture());
+        UserAccountData savedAccount = uaCaptor.getValue();
+        assertThat(savedAccount.getEmail()).isEqualTo(EMAIL);
+        assertThat(savedAccount.getProviderType()).isEqualTo(ProviderType.GOOGLE);
+        assertThat(savedAccount.getLastLoginAt()).isNotNull();
+
+        ArgumentCaptor<MemberData> memberCaptor = ArgumentCaptor.forClass(MemberData.class);
+        verify(memberRepository).save(memberCaptor.capture());
+        MemberData savedMember = memberCaptor.getValue();
+        assertThat(savedMember.getUserAccountId()).isEqualTo(savedAccount.getUserId().getUid());
+    }
+
+    @Test
+    @DisplayName("getMemberOrCreate — UserAccount와 Member가 모두 있으면 어느 것도 새로 저장하지 않는다")
+    void getMemberOrCreateReturnsExistingWhenBothPresent() {
+        // given
+        UserAccountData existingAccount = UserAccountData.createForSocial(
+                new UserId(123L), EMAIL, ProviderType.GOOGLE);
+        MemberData existingMember = mock(MemberData.class);
+
+        when(userAccountRepository.findByEmailAndProviderType(EMAIL, ProviderType.GOOGLE))
+                .thenReturn(Optional.of(existingAccount));
+        when(memberRepository.findByUserAccountId(123L))
+                .thenReturn(Optional.of(existingMember));
+
+        // when
+        MemberData result = memberSignService.getMemberOrCreate(EMAIL, ProviderType.GOOGLE);
+
+        // then
+        assertThat(result).isSameAs(existingMember);
+        verify(userAccountRepository, never()).save(any(UserAccountData.class));
+        verify(memberRepository, never()).save(any(MemberData.class));
+        // last_login_at was still recorded on the existing entity (flush at tx end)
+        assertThat(existingAccount.getLastLoginAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("getMemberOrCreate — UserAccount는 있지만 Member가 없으면 Member만 새로 저장한다 (복구 시나리오)")
+    void getMemberOrCreateRecoversMissingMember() {
+        // given
+        UserAccountData existingAccount = UserAccountData.createForSocial(
+                new UserId(456L), EMAIL, ProviderType.GOOGLE);
+
+        when(userAccountRepository.findByEmailAndProviderType(EMAIL, ProviderType.GOOGLE))
+                .thenReturn(Optional.of(existingAccount));
+        when(memberRepository.findByUserAccountId(456L))
+                .thenReturn(Optional.empty());
+        when(memberRepository.save(any(MemberData.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        // when
+        MemberData result = memberSignService.getMemberOrCreate(EMAIL, ProviderType.GOOGLE);
+
+        // then
+        assertThat(result).isNotNull();
+        assertThat(result.getUserAccountId()).isEqualTo(456L);
+        verify(userAccountRepository, never()).save(any(UserAccountData.class));
         verify(memberRepository).save(any(MemberData.class));
-        verify(eventPublisher).publishEvent(any(MemberRegisteredEvent.class));
     }
 
     @Test

@@ -7,9 +7,12 @@ import com.pfplaybackend.api.common.config.security.enums.AccessLevel;
 import com.pfplaybackend.api.common.config.security.enums.ProviderType;
 import com.pfplaybackend.api.common.config.security.jwt.JwtService;
 import com.pfplaybackend.api.common.config.security.jwt.dto.TokenClaimsRequest;
+import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.exception.AuthenticationException;
+import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
 import com.pfplaybackend.api.user.application.service.MemberSignService;
 import com.pfplaybackend.api.user.domain.entity.data.MemberData;
+import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -25,6 +28,7 @@ public class AuthService {
 
     private final OAuthClientService oAuthClientService;
     private final MemberSignService memberSignService;
+    private final UserAccountRepository userAccountRepository;
     private final JwtService jwtService;
     private final Clock clock;
 
@@ -48,19 +52,27 @@ public class AuthService {
                     tokenResponse.accessToken()
             );
 
-            // 3. Get or Create Member
+            // 3. Get or Create Member (two-stage: UserAccount, then Member)
             ProviderType providerType = ProviderType.valueOf(provider.name());
             MemberData member = memberSignService.getMemberOrCreate(userProfile.email(), providerType);
 
-            // 4. Generate JWT tokens
+            // 4. Resolve UserAccount for JWT claims (Member no longer carries email).
+            //    JWT subject continues to carry the legacy Long userId/userAccountId
+            //    value as a string; existing JWT consumers in common/.../jwt/* unchanged.
+            UserAccountData userAccount = userAccountRepository
+                    .findByUserId(new UserId(member.getUserAccountId()))
+                    .orElseThrow(() -> new IllegalStateException(
+                            "UserAccount missing for member " + member.getMemberId()));
+
+            // 5. Generate JWT tokens
             String accessToken = jwtService.generateAccessToken(new TokenClaimsRequest(
-                    member.getUserId().getUid().toString(),
-                    member.getEmail(),
+                    String.valueOf(member.getUserAccountId()),
+                    userAccount.getEmail(),
                     AccessLevel.ROLE_MEMBER,
                     member.getAuthorityTier()
             ));
 
-            // 5. Build response
+            // 6. Build response
             return new AuthResult(accessToken, "Cookie", jwtService.getAccessTokenExpiration(), LocalDateTime.now(clock));
 
         } catch (Exception e) {

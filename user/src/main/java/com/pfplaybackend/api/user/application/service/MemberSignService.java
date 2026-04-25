@@ -1,57 +1,55 @@
 package com.pfplaybackend.api.user.application.service;
 
 import com.pfplaybackend.api.common.config.security.enums.ProviderType;
+import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.user.adapter.out.persistence.MemberRepository;
+import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
 import com.pfplaybackend.api.user.application.dto.command.SignMemberCommand;
 import com.pfplaybackend.api.user.application.port.out.OAuth2RedirectPort;
-import com.pfplaybackend.api.user.application.port.out.PlaylistSetupPort;
-import com.pfplaybackend.api.user.domain.entity.data.ActivityData;
 import com.pfplaybackend.api.user.domain.entity.data.MemberData;
-import com.pfplaybackend.api.user.domain.entity.data.ProfileData;
-import com.pfplaybackend.api.user.domain.enums.ActivityType;
-import com.pfplaybackend.api.user.domain.event.MemberRegisteredEvent;
+import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.util.Map;
-import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
 public class MemberSignService {
     private final OAuth2RedirectPort oauth2RedirectPort;
+    private final UserAccountRepository userAccountRepository;
     private final MemberRepository memberRepository;
-    private final UserProfileCommandService userProfileCommandService;
-    private final UserActivityCommandService userActivityCommandService;
-    private final PlaylistSetupPort playlistSetupPort;
-    private final ApplicationEventPublisher eventPublisher;
 
     public String getOAuth2RedirectUri(SignMemberCommand command, String redirectLocation) {
         return oauth2RedirectPort.getRedirectUri(command.oauth2Provider(), redirectLocation);
     }
 
+    /**
+     * Two-stage lookup-or-create for OAuth login.
+     *
+     * <ol>
+     *   <li>Look up {@link UserAccountData} by {@code (email, providerType)};
+     *       create one (with a fresh {@link UserId}) if none exists.</li>
+     *   <li>Mark the account's {@code last_login_at} via {@link UserAccountData#recordLogin()}.
+     *       The mutation flushes at transaction end (this method is {@code @Transactional}).</li>
+     *   <li>Look up {@link MemberData} by {@code userAccountId}; create one if none
+     *       exists (recovery-safe — handles the rare case of a UserAccount without a Member).</li>
+     * </ol>
+     *
+     * <p>Profile/activity/playlist initialization for new members is handled by
+     * downstream flows (Task 9+ init services and an upcoming MemberRegisteredEvent
+     * listener); this method now owns only identity-tier persistence.
+     */
     @Transactional
     public MemberData getMemberOrCreate(String email, ProviderType providerType) {
-        return tryFindMember(email).orElseGet(() -> registerNewMember(email, providerType));
-    }
+        UserAccountData userAccount = userAccountRepository
+                .findByEmailAndProviderType(email, providerType)
+                .orElseGet(() -> userAccountRepository.save(
+                        UserAccountData.createForSocial(new UserId(), email, providerType)));
 
-    private Optional<MemberData> tryFindMember(String email) {
-        return memberRepository.findByEmail(email);
-    }
+        userAccount.recordLogin();
 
-    private MemberData registerNewMember(String email, ProviderType providerType) {
-        MemberData member = MemberData.create(email, providerType);
-        ProfileData profile = userProfileCommandService.createProfileDataForMember(member.getUserId());
-        Map<ActivityType, ActivityData> activityMap = userActivityCommandService.createUserActivities(member.getUserId());
-        member.initializeProfile(profile);
-        member.initializeActivityMap(activityMap);
-
-        playlistSetupPort.createDefaultPlaylist(member.getUserId());
-
-        MemberData saved = memberRepository.save(member);
-        eventPublisher.publishEvent(new MemberRegisteredEvent(saved.getUserId(), saved.getEmail(), providerType));
-        return saved;
+        return memberRepository.findByUserAccountId(userAccount.getUserId().getUid())
+                .orElseGet(() -> memberRepository.save(
+                        MemberData.createForUserAccount(userAccount.getUserId().getUid())));
     }
 }
