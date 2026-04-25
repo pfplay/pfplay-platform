@@ -102,7 +102,7 @@ class AdminUserControllerTest extends AbstractAdminWebMvcTest {
 
         when(userAccount.getUserId()).thenReturn(new UserId(1L));
         when(userAccount.getEmail()).thenReturn("test@pfplay.system");
-        when(userAccount.getProviderType()).thenReturn(ProviderType.ADMIN);
+        when(userAccount.getProviderType()).thenReturn(ProviderType.LOCAL);
         when(userAccountRepository.findById(any(UserId.class))).thenReturn(Optional.of(userAccount));
 
         when(profileData.getNicknameValue()).thenReturn("TestUser");
