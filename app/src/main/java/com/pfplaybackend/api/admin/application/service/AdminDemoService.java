@@ -395,7 +395,7 @@ public class AdminDemoService {
 
     @Transactional(readOnly = true)
     public DemoStatusResult getDemoEnvironmentStatus() {
-        long virtualMemberCount = adminMemberPort.countMembersByProviderType(ProviderType.ADMIN);
+        long virtualMemberCount = adminMemberPort.countMembersByProviderType(ProviderType.LOCAL);
         long generalRoomCount = adminPartyroomPort.findAllPartyrooms().stream()
                 .filter(p -> !p.isTerminated() && p.getStageType() == StageType.GENERAL)
                 .count();

@@ -92,7 +92,7 @@ class AdminDemoServiceTest {
     @DisplayName("getDemoEnvironmentStatus \u2014 \uac00\uc0c1 \uba64\ubc84\uac00 \uc788\uc73c\uba74 initialized=true\ub97c \ubc18\ud658\ud55c\ub2e4")
     void getDemoEnvironmentStatusInitializedTrue() {
         // given
-        when(adminMemberPort.countMembersByProviderType(ProviderType.ADMIN)).thenReturn(10L);
+        when(adminMemberPort.countMembersByProviderType(ProviderType.LOCAL)).thenReturn(10L);
         PartyroomData generalRoom = createPartyroom(2L, StageType.GENERAL, "General Room", false);
         when(adminPartyroomPort.findAllPartyrooms()).thenReturn(List.of(generalRoom));
 
@@ -109,7 +109,7 @@ class AdminDemoServiceTest {
     @DisplayName("getDemoEnvironmentStatus \u2014 \uac00\uc0c1 \uba64\ubc84\uac00 \uc5c6\uc73c\uba74 initialized=false\ub97c \ubc18\ud658\ud55c\ub2e4")
     void getDemoEnvironmentStatusInitializedFalse() {
         // given
-        when(adminMemberPort.countMembersByProviderType(ProviderType.ADMIN)).thenReturn(0L);
+        when(adminMemberPort.countMembersByProviderType(ProviderType.LOCAL)).thenReturn(0L);
         when(adminPartyroomPort.findAllPartyrooms()).thenReturn(Collections.emptyList());
 
         // when
