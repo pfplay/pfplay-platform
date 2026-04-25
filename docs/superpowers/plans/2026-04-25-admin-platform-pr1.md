@@ -29,7 +29,7 @@
 
 ### Files Created
 - `app/src/main/resources/db/migration/V4__refactor_user_account_to_iam.sql` — Flyway migration (DROP + CREATE for `user_account`, `member`, `guest`)
-- `user/src/main/java/com/pfplaybackend/api/user/domain/event/UserAccountWithdrawn.java` — Domain event published by `UserAccount.withdraw()` (consumed in later PRs by Administration / User Profile listeners; the event contract lives in this PR for forward-compat)
+- `user/src/main/java/com/pfplaybackend/api/user/domain/event/UserAccountWithdrawnEvent.java` — Domain event published by `UserAccount.withdraw()` (consumed in later PRs by Administration / User Profile listeners; the event contract lives in this PR for forward-compat)
 - (Possibly new) `user/src/main/java/com/pfplaybackend/api/user/domain/value/UserAccountId.java` — value object wrapping `Long` for cross-BC identity. **Decision in Task 4** based on whether the reviewer wants to defer this until PR 2 (Administration also references it). Default: **defer to PR 2**, use raw `Long` userAccountId for now to minimize churn.
 - New tests for `UserAccount`, `Member`, `Guest` composition behaviour
 
@@ -72,7 +72,7 @@ A complete searchable list will be regenerated at the end of Chunk 3 via `./grad
 
 ## Chunk 1: Pre-refactor Preparations
 
-These tasks add new symbols (`LOCAL`, `UserAccountWithdrawn`) without touching the inheritance graph. The codebase stays compilable and all existing tests stay green.
+These tasks add new symbols (`LOCAL`, `UserAccountWithdrawnEvent`) without touching the inheritance graph. The codebase stays compilable and all existing tests stay green.
 
 ### Task 1: Add ProviderType.LOCAL value (keep ADMIN for now)
 
@@ -129,13 +129,13 @@ These tasks add new symbols (`LOCAL`, `UserAccountWithdrawn`) without touching t
 
 ---
 
-### Task 2: Create UserAccountWithdrawn domain event
+### Task 2: Create UserAccountWithdrawnEvent domain event
 
 **Files:**
-- Create: `user/src/main/java/com/pfplaybackend/api/user/domain/event/UserAccountWithdrawn.java`
-- Test: `user/src/test/java/com/pfplaybackend/api/user/domain/event/UserAccountWithdrawnTest.java` (basic record-shape test)
+- Create: `user/src/main/java/com/pfplaybackend/api/user/domain/event/UserAccountWithdrawnEvent.java`
+- Test: `user/src/test/java/com/pfplaybackend/api/user/domain/event/UserAccountWithdrawnEventTest.java` (basic record-shape test)
 
-**Background:** The spec (§4.1.3) requires `UserAccount.withdraw()` to publish a `UserAccountWithdrawn` event. PR 2 wires up the listener (Administration writes audit row); for PR 1 we ship the event class so the publication contract exists. Per verified codebase facts, `DomainEvent` is a **class** (not interface) — match the shape of `MemberRegisteredEvent` (extends `DomainEvent`, `@Getter`, overrides `getAggregateId()`).
+**Background:** The spec (§4.1.3) requires `UserAccount.withdraw()` to publish a `UserAccountWithdrawnEvent` event. PR 2 wires up the listener (Administration writes audit row); for PR 1 we ship the event class so the publication contract exists. Per verified codebase facts, `DomainEvent` is a **class** (not interface) — match the shape of `MemberRegisteredEvent` (extends `DomainEvent`, `@Getter`, overrides `getAggregateId()`).
 
 - [ ] **Step 1: Confirm the established event shape**
 
@@ -149,11 +149,11 @@ These tasks add new symbols (`LOCAL`, `UserAccountWithdrawn`) without touching t
   import org.junit.jupiter.api.Test;
   import static org.assertj.core.api.Assertions.assertThat;
 
-  class UserAccountWithdrawnTest {
+  class UserAccountWithdrawnEventTest {
 
       @Test
       void getters_exposeFields() {
-          var event = new UserAccountWithdrawn(42L, "withdrawn-42@withdrawn.local");
+          var event = new UserAccountWithdrawnEvent(42L, "withdrawn-42@withdrawn.local");
 
           assertThat(event.getUserAccountId()).isEqualTo(42L);
           assertThat(event.getAnonymizedEmail()).isEqualTo("withdrawn-42@withdrawn.local");
@@ -161,7 +161,7 @@ These tasks add new symbols (`LOCAL`, `UserAccountWithdrawn`) without touching t
 
       @Test
       void getAggregateId_returnsUserAccountIdAsString() {
-          var event = new UserAccountWithdrawn(42L, "withdrawn-42@withdrawn.local");
+          var event = new UserAccountWithdrawnEvent(42L, "withdrawn-42@withdrawn.local");
 
           assertThat(event.getAggregateId()).isEqualTo("42");
       }
@@ -170,8 +170,8 @@ These tasks add new symbols (`LOCAL`, `UserAccountWithdrawn`) without touching t
 
 - [ ] **Step 3: Run the test and confirm it fails**
 
-  Run: `./gradlew :user:test --tests "*UserAccountWithdrawnTest" --no-daemon`
-  Expected: COMPILATION FAILURE (`UserAccountWithdrawn` class doesn't exist).
+  Run: `./gradlew :user:test --tests "*UserAccountWithdrawnEventTest" --no-daemon`
+  Expected: COMPILATION FAILURE (`UserAccountWithdrawnEvent` class doesn't exist).
 
 - [ ] **Step 4: Write the event class extending DomainEvent**
 
@@ -182,11 +182,11 @@ These tasks add new symbols (`LOCAL`, `UserAccountWithdrawn`) without touching t
   import lombok.Getter;
 
   @Getter
-  public class UserAccountWithdrawn extends DomainEvent {
+  public class UserAccountWithdrawnEvent extends DomainEvent {
       private final Long userAccountId;
       private final String anonymizedEmail; // post-anonymization placeholder
 
-      public UserAccountWithdrawn(Long userAccountId, String anonymizedEmail) {
+      public UserAccountWithdrawnEvent(Long userAccountId, String anonymizedEmail) {
           this.userAccountId = userAccountId;
           this.anonymizedEmail = anonymizedEmail;
       }
@@ -202,7 +202,7 @@ These tasks add new symbols (`LOCAL`, `UserAccountWithdrawn`) without touching t
 
 - [ ] **Step 5: Run the test**
 
-  Run: `./gradlew :user:test --tests "*UserAccountWithdrawnTest" --no-daemon`
+  Run: `./gradlew :user:test --tests "*UserAccountWithdrawnEventTest" --no-daemon`
   Expected: PASS.
 
 - [ ] **Step 6: Run the full module test suite to confirm no regression**
@@ -213,9 +213,9 @@ These tasks add new symbols (`LOCAL`, `UserAccountWithdrawn`) without touching t
 - [ ] **Step 7: Commit**
 
   ```bash
-  git add user/src/main/java/com/pfplaybackend/api/user/domain/event/UserAccountWithdrawn.java \
-          user/src/test/java/com/pfplaybackend/api/user/domain/event/UserAccountWithdrawnTest.java
-  git commit -m "feat(iam): add UserAccountWithdrawn domain event
+  git add user/src/main/java/com/pfplaybackend/api/user/domain/event/UserAccountWithdrawnEvent.java \
+          user/src/test/java/com/pfplaybackend/api/user/domain/event/UserAccountWithdrawnEventTest.java
+  git commit -m "feat(iam): add UserAccountWithdrawnEvent domain event
 
   Event published by UserAccount.withdraw() (wired in Task 4). Listener
   on Administration side ships in PR 2 with the audit-log subsystem.
@@ -336,11 +336,11 @@ This chunk performs the inheritance-to-composition surgery. Compilation breaks a
 - Modify: `user/src/main/java/com/pfplaybackend/api/user/domain/entity/data/UserAccountData.java`
 - Test: `user/src/test/java/com/pfplaybackend/api/user/domain/entity/data/UserAccountDataTest.java` (new)
 
-**Background:** Strip `@Inheritance(JOINED)` and `@DiscriminatorColumn`. Drop `authorityTier`, `profileData`, `isProfileUpdated`, `getProfileSummary()`, `buildProfileSummary()`, `isGuest()` (these move to Member/Guest). Add `email`, `providerType` (`@Enumerated(STRING)`), `passwordHash`, `lastLoginAt`, `withdrawnAt`. Add `withdraw()` method that publishes `UserAccountWithdrawn`.
+**Background:** Strip `@Inheritance(JOINED)` and `@DiscriminatorColumn`. Drop `authorityTier`, `profileData`, `isProfileUpdated`, `getProfileSummary()`, `buildProfileSummary()`, `isGuest()` (these move to Member/Guest). Add `email`, `providerType` (`@Enumerated(STRING)`), `passwordHash`, `lastLoginAt`, `withdrawnAt`. Add `withdraw()` method that publishes `UserAccountWithdrawnEvent`.
 
 **Identity decision:** The current `userId` field is `@EmbeddedId UserId` (a value object wrapping a Long). Keep this — it's already in `common` and used across modules. The new column name `user_id BIGINT` matches V4 DDL exactly.
 
-**Domain event publication strategy:** Per verified codebase facts in the plan header, `BaseEntity` already provides `protected void registerEvent(DomainEvent e)` and `public List<DomainEvent> pollDomainEvents()`. `withdraw()` calls `registerEvent(new UserAccountWithdrawn(...))`. The application service that invokes `withdraw()` is responsible for draining `pollDomainEvents()` and forwarding to `ApplicationEventPublisher` after the JPA save (the `UserDomainEventRelay` pattern already established in this module). Wiring of that drain happens in Chunk 3 inside whichever application service implements account withdrawal — for PR 1 we ship the entity-side contract only.
+**Domain event publication strategy:** Per verified codebase facts in the plan header, `BaseEntity` already provides `protected void registerEvent(DomainEvent e)` and `public List<DomainEvent> pollDomainEvents()`. `withdraw()` calls `registerEvent(new UserAccountWithdrawnEvent(...))`. The application service that invokes `withdraw()` is responsible for draining `pollDomainEvents()` and forwarding to `ApplicationEventPublisher` after the JPA save (the `UserDomainEventRelay` pattern already established in this module). Wiring of that drain happens in Chunk 3 inside whichever application service implements account withdrawal — for PR 1 we ship the entity-side contract only.
 
 - [ ] **Step 1: Confirm the event/audit infrastructure shape**
 
@@ -358,7 +358,7 @@ This chunk performs the inheritance-to-composition surgery. Compilation breaks a
 
   import com.pfplaybackend.api.common.config.security.enums.ProviderType;
   import com.pfplaybackend.api.common.domain.value.UserId;
-  import com.pfplaybackend.api.user.domain.event.UserAccountWithdrawn;
+  import com.pfplaybackend.api.user.domain.event.UserAccountWithdrawnEvent;
   import org.junit.jupiter.api.Test;
 
   import static org.assertj.core.api.Assertions.assertThat;
@@ -407,8 +407,8 @@ This chunk performs the inheritance-to-composition surgery. Compilation breaks a
 
           var events = account.pollDomainEvents();
           assertThat(events).hasSize(1);
-          assertThat(events.get(0)).isInstanceOf(UserAccountWithdrawn.class);
-          var withdrawn = (UserAccountWithdrawn) events.get(0);
+          assertThat(events.get(0)).isInstanceOf(UserAccountWithdrawnEvent.class);
+          var withdrawn = (UserAccountWithdrawnEvent) events.get(0);
           assertThat(withdrawn.getUserAccountId()).isEqualTo(7L);
           assertThat(withdrawn.getAnonymizedEmail()).startsWith("withdrawn-7@");
       }
@@ -439,7 +439,7 @@ This chunk performs the inheritance-to-composition surgery. Compilation breaks a
   import com.pfplaybackend.api.common.config.security.enums.ProviderType;
   import com.pfplaybackend.api.common.domain.value.UserId;
   import com.pfplaybackend.api.common.entity.BaseEntity;
-  import com.pfplaybackend.api.user.domain.event.UserAccountWithdrawn;
+  import com.pfplaybackend.api.user.domain.event.UserAccountWithdrawnEvent;
   import jakarta.persistence.*;
   import lombok.AccessLevel;
   import lombok.Builder;
@@ -516,7 +516,7 @@ This chunk performs the inheritance-to-composition surgery. Compilation breaks a
       public void withdraw() {
           this.withdrawnAt = LocalDateTime.now();
           this.email = "withdrawn-" + this.userId.getUid() + "@withdrawn.local";
-          registerEvent(new UserAccountWithdrawn(this.userId.getUid(), this.email));
+          registerEvent(new UserAccountWithdrawnEvent(this.userId.getUid(), this.email));
       }
 
       public boolean isWithdrawn() {

@@ -4,11 +4,11 @@ import com.pfplaybackend.api.common.domain.event.DomainEvent;
 import lombok.Getter;
 
 @Getter
-public class UserAccountWithdrawn extends DomainEvent {
+public class UserAccountWithdrawnEvent extends DomainEvent {
     private final Long userAccountId;
     private final String anonymizedEmail; // post-anonymization placeholder
 
-    public UserAccountWithdrawn(Long userAccountId, String anonymizedEmail) {
+    public UserAccountWithdrawnEvent(Long userAccountId, String anonymizedEmail) {
         this.userAccountId = userAccountId;
         this.anonymizedEmail = anonymizedEmail;
     }
