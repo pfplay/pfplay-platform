@@ -6,6 +6,7 @@ import com.pfplaybackend.api.user.domain.event.UserAccountWithdrawnEvent;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class UserAccountDataTest {
 
@@ -66,5 +67,37 @@ class UserAccountDataTest {
         account.recordLogin();
 
         assertThat(account.getLastLoginAt()).isNotNull();
+    }
+
+    @Test
+    void withdraw_isIdempotent() {
+        var account = UserAccountData.createForSocial(
+            new UserId(1L), "alice@gmail.com", ProviderType.GOOGLE);
+        account.withdraw();
+        var firstWithdrawnAt = account.getWithdrawnAt();
+        var firstEmail = account.getEmail();
+        account.pollDomainEvents(); // drain first event
+
+        account.withdraw(); // second call should be no-op
+
+        assertThat(account.getWithdrawnAt()).isEqualTo(firstWithdrawnAt);
+        assertThat(account.getEmail()).isEqualTo(firstEmail);
+        assertThat(account.pollDomainEvents()).isEmpty();
+    }
+
+    @Test
+    void createForSocial_rejectsLocalProvider() {
+        assertThatThrownBy(() -> UserAccountData.createForSocial(
+            new UserId(1L), "x@y.com", ProviderType.LOCAL))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("LOCAL");
+    }
+
+    @Test
+    void createForSocial_rejectsNullProviderType() {
+        assertThatThrownBy(() -> UserAccountData.createForSocial(
+            new UserId(1L), "x@y.com", null))
+            .isInstanceOf(NullPointerException.class)
+            .hasMessageContaining("providerType");
     }
 }

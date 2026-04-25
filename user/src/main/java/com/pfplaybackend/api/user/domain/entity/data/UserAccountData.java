@@ -13,6 +13,7 @@ import org.hibernate.annotations.DynamicInsert;
 import org.hibernate.annotations.DynamicUpdate;
 
 import java.time.LocalDateTime;
+import java.util.Objects;
 
 @Entity
 @Table(name = "user_account")
@@ -54,6 +55,7 @@ public class UserAccountData extends BaseEntity {
     }
 
     public static UserAccountData createForSocial(UserId userId, String email, ProviderType providerType) {
+        Objects.requireNonNull(providerType, "providerType must not be null");
         if (providerType == ProviderType.LOCAL) {
             throw new IllegalArgumentException("Use createForLocal for LOCAL provider");
         }
@@ -78,6 +80,9 @@ public class UserAccountData extends BaseEntity {
     }
 
     public void withdraw() {
+        if (isWithdrawn()) {
+            return; // idempotent
+        }
         this.withdrawnAt = LocalDateTime.now();
         this.email = "withdrawn-" + this.userId.getUid() + "@withdrawn.local";
         registerEvent(new UserAccountWithdrawnEvent(this.userId.getUid(), this.email));
