@@ -11,8 +11,8 @@ import com.pfplaybackend.api.common.config.security.jwt.JwtService;
 import com.pfplaybackend.api.common.config.security.jwt.properties.JwtProperties;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.exception.http.UnauthorizedException;
-import com.pfplaybackend.api.user.adapter.out.persistence.MemberRepository;
 import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
+import com.pfplaybackend.api.user.application.service.MemberSignService;
 import com.pfplaybackend.api.user.domain.entity.data.MemberData;
 import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
 import org.junit.jupiter.api.BeforeEach;
@@ -35,7 +35,7 @@ class AdminLoginServiceTest {
 
     @Mock UserAccountRepository userAccountRepository;
     @Mock AdministratorRepository administratorRepository;
-    @Mock MemberRepository memberRepository;
+    @Mock MemberSignService memberSignService;
     @Mock PasswordEncoder passwordEncoder;
     @Mock JwtService jwtService;
     @Mock AdminLoginRateLimiter rateLimiter;
@@ -48,7 +48,7 @@ class AdminLoginServiceTest {
     @BeforeEach
     void setup() {
         sut = new AdminLoginService(
-                userAccountRepository, administratorRepository, memberRepository,
+                userAccountRepository, administratorRepository, memberSignService,
                 passwordEncoder, jwtService, rateLimiter, jwtProperties, clock);
     }
 
@@ -88,35 +88,16 @@ class AdminLoginServiceTest {
     }
 
     @Test
-    void successful_login_without_member_issues_admin_token_only() {
+    void successful_login_lazy_creates_member_when_missing_and_issues_both_tokens() {
         UserAccountData ua = stubLocalAccount(42L, "admin@x.com", "$2a$12$h");
         AdministratorData adm = stubActiveAdmin(AdminRole.ADMIN);
+        MemberData newMember = stubMember();
         when(userAccountRepository.findByEmailAndProviderType("admin@x.com", ProviderType.LOCAL))
                 .thenReturn(Optional.of(ua));
         when(passwordEncoder.matches("right", ua.getPasswordHash())).thenReturn(true);
         when(administratorRepository.findByUserAccountId(42L)).thenReturn(Optional.of(adm));
-        when(memberRepository.findByUserAccountId(42L)).thenReturn(Optional.empty());
-        when(jwtService.mintAdminAccessToken(any())).thenReturn("admin-jwt");
-        when(jwtProperties.getAdminAccessTokenExpirationMs()).thenReturn(900_000L);
-
-        AdminAuthResult res = sut.login(new AdminLoginCommand("admin@x.com", "right", "1.1.1.1"));
-
-        assertThat(res.adminAccessToken()).isEqualTo("admin-jwt");
-        assertThat(res.sharedSessionToken()).isNull();
-        verify(rateLimiter).onLoginSuccess("admin@x.com");
-        verify(jwtService, never()).mintSharedSessionToken(any());
-    }
-
-    @Test
-    void successful_login_with_member_issues_both_tokens() {
-        UserAccountData ua = stubLocalAccount(42L, "admin@x.com", "$2a$12$h");
-        AdministratorData adm = stubActiveAdmin(AdminRole.SUPER_ADMIN);
-        MemberData mem = stubMember(42L);
-        when(userAccountRepository.findByEmailAndProviderType("admin@x.com", ProviderType.LOCAL))
-                .thenReturn(Optional.of(ua));
-        when(passwordEncoder.matches("right", ua.getPasswordHash())).thenReturn(true);
-        when(administratorRepository.findByUserAccountId(42L)).thenReturn(Optional.of(adm));
-        when(memberRepository.findByUserAccountId(42L)).thenReturn(Optional.of(mem));
+        when(memberSignService.getMemberOrCreate("admin@x.com", ProviderType.LOCAL))
+                .thenReturn(newMember);
         when(jwtService.mintAdminAccessToken(any())).thenReturn("admin-jwt");
         when(jwtService.mintSharedSessionToken(any())).thenReturn("shared-jwt");
         when(jwtProperties.getAdminAccessTokenExpirationMs()).thenReturn(900_000L);
@@ -126,7 +107,31 @@ class AdminLoginServiceTest {
 
         assertThat(res.adminAccessToken()).isEqualTo("admin-jwt");
         assertThat(res.sharedSessionToken()).isEqualTo("shared-jwt");
+        assertThat(res.role()).isEqualTo(AdminRole.ADMIN);
+        verify(memberSignService).getMemberOrCreate("admin@x.com", ProviderType.LOCAL);
+        verify(rateLimiter).onLoginSuccess("admin@x.com");
+    }
+
+    @Test
+    void super_admin_token_includes_super_admin_authority() {
+        UserAccountData ua = stubLocalAccount(42L, "admin@x.com", "$2a$12$h");
+        AdministratorData adm = stubActiveAdmin(AdminRole.SUPER_ADMIN);
+        MemberData mem = stubMember();
+        when(userAccountRepository.findByEmailAndProviderType("admin@x.com", ProviderType.LOCAL))
+                .thenReturn(Optional.of(ua));
+        when(passwordEncoder.matches("right", ua.getPasswordHash())).thenReturn(true);
+        when(administratorRepository.findByUserAccountId(42L)).thenReturn(Optional.of(adm));
+        when(memberSignService.getMemberOrCreate("admin@x.com", ProviderType.LOCAL))
+                .thenReturn(mem);
+        when(jwtService.mintAdminAccessToken(any())).thenReturn("admin-jwt");
+        when(jwtService.mintSharedSessionToken(any())).thenReturn("shared-jwt");
+        when(jwtProperties.getAdminAccessTokenExpirationMs()).thenReturn(900_000L);
+        when(jwtProperties.getSharedSessionTokenExpirationMs()).thenReturn(86_400_000L);
+
+        AdminAuthResult res = sut.login(new AdminLoginCommand("admin@x.com", "right", "1.1.1.1"));
+
         assertThat(res.role()).isEqualTo(AdminRole.SUPER_ADMIN);
+        assertThat(res.sharedSessionToken()).isEqualTo("shared-jwt");
     }
 
     private UserAccountData stubLocalAccount(long id, String email, String passwordHash) {
@@ -150,8 +155,7 @@ class AdminLoginServiceTest {
         return a;
     }
 
-    private MemberData stubMember(long userAccountId) {
-        MemberData m = mock(MemberData.class);
-        return m;
+    private MemberData stubMember() {
+        return mock(MemberData.class);
     }
 }

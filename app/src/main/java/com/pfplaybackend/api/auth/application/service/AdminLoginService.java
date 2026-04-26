@@ -13,8 +13,8 @@ import com.pfplaybackend.api.common.config.security.jwt.JwtService;
 import com.pfplaybackend.api.common.config.security.jwt.dto.TokenClaimsRequest;
 import com.pfplaybackend.api.common.config.security.jwt.properties.JwtProperties;
 import com.pfplaybackend.api.common.exception.ExceptionCreator;
-import com.pfplaybackend.api.user.adapter.out.persistence.MemberRepository;
 import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
+import com.pfplaybackend.api.user.application.service.MemberSignService;
 import com.pfplaybackend.api.user.domain.entity.data.MemberData;
 import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
 import lombok.RequiredArgsConstructor;
@@ -35,7 +35,7 @@ public class AdminLoginService {
 
     private final UserAccountRepository userAccountRepository;
     private final AdministratorRepository administratorRepository;
-    private final MemberRepository memberRepository;
+    private final MemberSignService memberSignService;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final AdminLoginRateLimiter rateLimiter;
@@ -77,45 +77,41 @@ public class AdminLoginService {
             throw ExceptionCreator.create(AdminAuthException.ACCOUNT_REVOKED);
         }
 
+        // Admins must function as platform members too (partyroom access).
+        // Lazy-create the linked Member if missing.
+        MemberData member = memberSignService.getMemberOrCreate(cmd.email(), ProviderType.LOCAL);
+
         List<AccessLevel> adminLevels = new ArrayList<>();
         adminLevels.add(AccessLevel.ROLE_ADMIN);
         if (adm.getRole() == AdminRole.SUPER_ADMIN) {
             adminLevels.add(AccessLevel.ROLE_SUPER_ADMIN);
         }
 
-        Optional<MemberData> memberOpt = memberRepository.findByUserAccountId(ua.getUserId().getUid());
-
         String adminToken = jwtService.mintAdminAccessToken(new TokenClaimsRequest(
                 String.valueOf(ua.getUserId().getUid()),
                 ua.getEmail(),
                 adminLevels,
-                memberOpt.map(MemberData::getAuthorityTier).orElse(null)
+                member.getAuthorityTier()
         ));
 
-        String sharedToken = null;
-        long sharedTtl = 0L;
-        if (memberOpt.isPresent()) {
-            MemberData m = memberOpt.get();
-            sharedToken = jwtService.mintSharedSessionToken(new TokenClaimsRequest(
-                    String.valueOf(ua.getUserId().getUid()),
-                    ua.getEmail(),
-                    List.of(AccessLevel.ROLE_MEMBER),
-                    m.getAuthorityTier()
-            ));
-            sharedTtl = jwtProperties.getSharedSessionTokenExpirationMs();
-        }
+        String sharedToken = jwtService.mintSharedSessionToken(new TokenClaimsRequest(
+                String.valueOf(ua.getUserId().getUid()),
+                ua.getEmail(),
+                List.of(AccessLevel.ROLE_MEMBER),
+                member.getAuthorityTier()
+        ));
 
         rateLimiter.onLoginSuccess(cmd.email());
 
-        log.info("admin_login.success user_id={} role={} member_linked={}",
-                ua.getUserId().getUid(), adm.getRole(), memberOpt.isPresent());
+        log.info("admin_login.success user_id={} role={}",
+                ua.getUserId().getUid(), adm.getRole());
 
         return new AdminAuthResult(
                 adminToken,
                 sharedToken,
                 adm.getRole(),
                 jwtProperties.getAdminAccessTokenExpirationMs(),
-                sharedTtl,
+                jwtProperties.getSharedSessionTokenExpirationMs(),
                 LocalDateTime.now(clock)
         );
     }
