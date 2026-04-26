@@ -35,7 +35,7 @@
 
 9. **`MemberSignService` refactor — extract `getOrCreateMemberFor(UserAccountData ua)`.** Reusing today's `getMemberOrCreate(email, providerType)` for the invite path has a hidden side effect: `MemberSignService.java:57` calls `userAccount.recordLogin()` *unconditionally*, bumping `last_login_at` of the freshly-invited admin to "now" — which is wrong (they have not logged in yet) and pollutes the list-endpoint `lastLoginAt` field. We extract the Member-only side effects into `getOrCreateMemberFor(UserAccountData ua)` (lookup-or-create Member, no `recordLogin`). The existing `getMemberOrCreate(email, providerType)` becomes a thin wrapper: lookup UA → `recordLogin` → delegate to `getOrCreateMemberFor`. Same JavaDoc notes that the `createForSocial` fallback in the wrapper still throws on LOCAL — invite path uses the extracted method directly with a UA the caller has already saved. PR 6 owns this refactor (small, blast radius confined to login path which already passes-through the same logic).
 
-10. **`UserAccountData` mutations added in this PR (minimal API surface):** `createForLocalWithMandatoryChange(userId, email, passwordHash)` — factory mirroring `createForLocal` but with `mustChangePassword=true`; `changePasswordHash(String newHash)` — clears `mustChangePassword` to false in the same call (single method to avoid lifecycle drift between password-rotated-but-still-must-change combinations); `requirePasswordChange(String newHash)` — sets new hash AND `mustChangePassword=true` (used by reset-password). The existing `replacePlaceholderCredentials(email, hash)` (V5 seed) does NOT touch the flag — operator-chosen pwd, default 0 is correct.
+10. **`UserAccountData` mutations added in this PR (minimal API surface, intent-named):** `createForLocalWithMandatoryChange(userId, email, passwordHash)` — factory mirroring `createForLocal` but with `mustChangePassword=true`; `completePasswordChange(String newHash)` — caller has just completed their own password change, so set new hash AND clear the must-change flag in one call (used by self-change endpoint); `requirePasswordChange(String newHash)` — admin-driven reset, sets new hash AND `mustChangePassword=true` (used by reset-password endpoint). Names are intent-shaped (caller's purpose), not state-shaped (what fields they touch) — avoids the side-effect-hiding gotcha of e.g. `setPasswordHash`. The existing `replacePlaceholderCredentials(email, hash)` (V5 seed) does NOT touch the flag — operator-chosen pwd, default 0 is correct.
 
 11. **Last-super-admin protection — application-level guard, NOT DB.** The functional unique index `uk_administrator_super_admin` (V5) prevents creating a *second* SUPER_ADMIN; it does NOT prevent revoking the only one. Service-side check: a SUPER_ADMIN cannot revoke themselves; AND `revoke(superAdmin)` returns 409 if they're the last unrevoked super admin (always true at MVP — single super admin invariant). Similarly, `reset-password` on a SUPER_ADMIN by anyone other than themselves is allowed (a super admin has only themselves to call it with) — but the spec calls this out only for self-change, so `reset-password` for SUPER_ADMIN is permitted but logged. Self-revoke prevention applies regardless of role. **Race-window note:** two concurrent revoke calls against two distinct super-admins could each see `count=2` and both succeed, leaving zero. Vanishingly improbable at MVP (single super admin always; no concurrent revoke targets), but a future PR can add `@Lock(LockModeType.PESSIMISTIC_WRITE)` on the count query or move the guard to a DB CHECK constraint.
 
@@ -175,7 +175,7 @@ Expected: BUILD SUCCESSFUL. Any failure → reconcile before starting PR 6 — w
 
 - **`AdminRole`** (`app/.../administration/domain/value/AdminRole.java`): enum `SUPER_ADMIN`, `ADMIN`. Stored as VARCHAR(32) (V5 DDL line 161).
 
-- **`UserAccountData`** (`user/.../domain/entity/data/UserAccountData.java:24-105`): `@EmbeddedId UserId userId`, `email` (UNIQUE in V4), `providerType` (VARCHAR(16)), `passwordHash` (length 255, nullable for social), `lastLoginAt`, `withdrawnAt`. Factories: `createForSocial`, `createForLocal`. Mutations: `recordLogin`, `withdraw`, `replacePlaceholderCredentials` (V5 seed only). PR 6 adds: a new column `mustChangePassword` (V13), factory `createForLocalWithMandatoryChange`, mutations `changePasswordHash`, `requirePasswordChange`.
+- **`UserAccountData`** (`user/.../domain/entity/data/UserAccountData.java:24-105`): `@EmbeddedId UserId userId`, `email` (UNIQUE in V4), `providerType` (VARCHAR(16)), `passwordHash` (length 255, nullable for social), `lastLoginAt`, `withdrawnAt`. Factories: `createForSocial`, `createForLocal`. Mutations: `recordLogin`, `withdraw`, `replacePlaceholderCredentials` (V5 seed only). PR 6 adds: a new column `mustChangePassword` (V13), factory `createForLocalWithMandatoryChange`, mutations `completePasswordChange`, `requirePasswordChange`.
 
 - **`UserAccountRepository`** (`user/.../adapter/out/persistence/UserAccountRepository.java`): has `findByEmailAndProviderType`. PR 6 needs `findByEmail(String email)` (UNIQUE so `Optional` semantics) and `findAllByUserIdIn(Collection<UserId>)` for list-endpoint bulk loading. (Verify before Task 5; if `findAllById` from `JpaRepository` works on `UserId` embedded PK, prefer that.)
 
@@ -330,10 +330,10 @@ void createForLocal_keepsFlagFalseByDefault() {
 }
 
 @Test
-void changePasswordHash_clearsFlag() {
+void completePasswordChange_clearsFlag() {
     UserAccountData ua = UserAccountData.createForLocalWithMandatoryChange(
             new UserId(123L), "x@y.z", "old");
-    ua.changePasswordHash("new");
+    ua.completePasswordChange("new");
     assertThat(ua.getPasswordHash()).isEqualTo("new");
     assertThat(ua.isMustChangePassword()).isFalse();
 }
@@ -362,7 +362,7 @@ void replacePlaceholderCredentials_doesNotTouchMustChangeFlag() {
 JAVA_HOME="C:/Users/Eisen/.jdks/ms-21.0.7" ./gradlew :user:test --tests "*UserAccountDataTest*"
 ```
 
-Expected: COMPILE failure — `createForLocalWithMandatoryChange`, `changePasswordHash`, `requirePasswordChange`, `isMustChangePassword` not found.
+Expected: COMPILE failure — `createForLocalWithMandatoryChange`, `completePasswordChange`, `requirePasswordChange`, `isMustChangePassword` not found.
 
 - [ ] **Step 3: Add field + factory + mutations**
 
@@ -398,7 +398,7 @@ public static UserAccountData createForLocalWithMandatoryChange(
         .build();
 }
 
-public void changePasswordHash(String newHash) {
+public void completePasswordChange(String newHash) {
     Objects.requireNonNull(newHash, "newHash must not be null");
     this.passwordHash = newHash;
     this.mustChangePassword = false;
@@ -1888,7 +1888,7 @@ void changePassword_validCurrent_clearsMustChangeFlag() {
 
     service.changePassword(userId, "oldPwd", "NewP@ssw0rd1");
 
-    verify(uaFixture).changePasswordHash("BCRYPT-NEW");
+    verify(uaFixture).completePasswordChange("BCRYPT-NEW");
 }
 
 @Test
@@ -1936,7 +1936,7 @@ public class AdminPasswordService {
         } catch (IllegalArgumentException e) {
             throw ExceptionCreator.create(AdministratorManagementException.INVALID_NEW_PASSWORD);
         }
-        ua.changePasswordHash(passwordEncoder.encode(newPassword));
+        ua.completePasswordChange(passwordEncoder.encode(newPassword));
         log.info("admin_password.self_change user_id={}", userId.getUid());
     }
 }

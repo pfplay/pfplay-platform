@@ -129,10 +129,10 @@ class UserAccountDataTest {
     }
 
     @Test
-    void changePasswordHash_clearsFlag() {
+    void completePasswordChange_clearsFlag() {
         UserAccountData ua = UserAccountData.createForLocalWithMandatoryChange(
                 new UserId(123L), "x@y.z", "old");
-        ua.changePasswordHash("new");
+        ua.completePasswordChange("new");
         assertThat(ua.getPasswordHash()).isEqualTo("new");
         assertThat(ua.isMustChangePassword()).isFalse();
     }

@@ -43,6 +43,11 @@ public class UserAccountData extends BaseEntity {
     @Column(name = "withdrawn_at")
     private LocalDateTime withdrawnAt;
 
+    // Primitive (not Boolean) is intentional: combined with @DynamicInsert it lets
+    // social/local factories omit this field from their builder calls — Hibernate
+    // then drops it from INSERT and the DB DEFAULT 0 fills the row. If this is
+    // ever switched to Boolean, factories must explicitly set it or INSERT will
+    // fail the NOT NULL constraint.
     @Column(name = "must_change_password", nullable = false)
     private boolean mustChangePassword;
 
@@ -91,12 +96,23 @@ public class UserAccountData extends BaseEntity {
             .build();
     }
 
-    public void changePasswordHash(String newHash) {
+    /**
+     * Self-change path: caller has just verified the current password and chosen
+     * a new one, so set the new hash AND clear the must-change flag in one call.
+     * Used by the admin self-change endpoint (§5.6).
+     */
+    public void completePasswordChange(String newHash) {
         Objects.requireNonNull(newHash, "newHash must not be null");
         this.passwordHash = newHash;
         this.mustChangePassword = false;
     }
 
+    /**
+     * Admin-driven reset path: an authorized admin (or system) has rotated this
+     * account's hash to a server-generated temporary value and the user must
+     * change it themselves at next login. Used by the reset-password endpoint
+     * (§5.6) and POST /administrators (initial admin invite).
+     */
     public void requirePasswordChange(String newHash) {
         Objects.requireNonNull(newHash, "newHash must not be null");
         this.passwordHash = newHash;
