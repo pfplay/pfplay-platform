@@ -32,7 +32,7 @@ public class CookieBearerTokenResolver implements BearerTokenResolver {
 
     private String pickCookieName(HttpServletRequest request) {
         String path = request.getServletPath();
-        if (path == null) path = request.getRequestURI();
+        if (path == null || path.isEmpty()) path = request.getRequestURI();
         boolean adminPath = matcher.match(ADMIN_PATH_PATTERN, path);
         return adminPath
                 ? jwtProperties.getCookie().getAdmin().getName()
