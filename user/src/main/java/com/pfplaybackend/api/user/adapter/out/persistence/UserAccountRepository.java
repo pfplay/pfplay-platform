@@ -5,6 +5,8 @@ import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 public interface UserAccountRepository extends JpaRepository<UserAccountData, UserId> {
@@ -18,4 +20,6 @@ public interface UserAccountRepository extends JpaRepository<UserAccountData, Us
     boolean existsByEmail(String email);
 
     long countByProviderType(ProviderType providerType);
+
+    List<UserAccountData> findAllByUserIdIn(Collection<UserId> userIds);
 }
