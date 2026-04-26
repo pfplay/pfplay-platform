@@ -39,7 +39,7 @@ class AdminUserControllerTest extends AbstractAdminWebMvcTest {
 
         // when & then
         mockMvc.perform(post("/api/v1/admin/users/virtual")
-                        .with(jwt().authorities(() -> "FM"))
+                        .with(jwt().authorities(() -> "ROLE_ADMIN"))
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
@@ -70,7 +70,7 @@ class AdminUserControllerTest extends AbstractAdminWebMvcTest {
 
         // when & then
         mockMvc.perform(get("/api/v1/admin/users/virtual/1")
-                        .with(jwt().authorities(() -> "FM")))
+                        .with(jwt().authorities(() -> "ROLE_ADMIN")))
                 .andExpect(status().isOk());
     }
 
@@ -79,7 +79,7 @@ class AdminUserControllerTest extends AbstractAdminWebMvcTest {
     void deleteVirtualMemberWithFmAuthorityReturns204() throws Exception {
         // when & then
         mockMvc.perform(delete("/api/v1/admin/users/virtual/1")
-                        .with(jwt().authorities(() -> "FM"))
+                        .with(jwt().authorities(() -> "ROLE_ADMIN"))
                         .with(csrf()))
                 .andExpect(status().isNoContent());
     }

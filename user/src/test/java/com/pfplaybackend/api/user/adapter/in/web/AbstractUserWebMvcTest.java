@@ -5,15 +5,13 @@ import com.pfplaybackend.api.user.application.service.*;
 import com.pfplaybackend.api.user.application.service.initialize.TemporaryUserInitializeService;
 import com.pfplaybackend.api.user.application.validation.AvatarRequestValidator;
 import com.pfplaybackend.api.common.config.security.jwt.AdminCookieWriter;
-import com.pfplaybackend.api.common.config.security.jwt.AdminTokenRenewalFilter;
 import com.pfplaybackend.api.common.config.security.jwt.JwtService;
 import com.pfplaybackend.api.common.config.security.jwt.SharedSessionCookieWriter;
 import com.pfplaybackend.api.common.config.security.jwt.properties.JwtProperties;
-import com.pfplaybackend.api.common.config.security.web.AdminOriginGuardFilter;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
@@ -30,9 +28,9 @@ import org.springframework.test.web.servlet.MockMvc;
         EasyUserManagementController.class
 })
 @Import(AbstractUserWebMvcTest.SharedMethodSecurityConfig.class)
-@AutoConfigureMockMvc(addFilters = false)
 abstract class AbstractUserWebMvcTest {
 
+    @Configuration
     @EnableMethodSecurity
     static class SharedMethodSecurityConfig {}
 
@@ -52,6 +50,4 @@ abstract class AbstractUserWebMvcTest {
     @MockBean protected JwtService jwtService;
     @MockBean protected JwtProperties jwtProperties;
     @MockBean protected JwtDecoder jwtDecoder;
-    @MockBean protected AdminTokenRenewalFilter adminTokenRenewalFilter;
-    @MockBean protected AdminOriginGuardFilter adminOriginGuardFilter;
 }

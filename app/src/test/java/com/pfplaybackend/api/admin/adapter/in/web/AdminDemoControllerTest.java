@@ -46,7 +46,7 @@ class AdminDemoControllerTest extends AbstractAdminWebMvcTest {
 
         // when & then
         mockMvc.perform(get("/api/v1/admin/demo/partyrooms")
-                        .with(jwt().authorities(() -> "FM")))
+                        .with(jwt().authorities(() -> "ROLE_ADMIN")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.partyrooms").isArray());
     }
@@ -73,7 +73,7 @@ class AdminDemoControllerTest extends AbstractAdminWebMvcTest {
 
         // when & then
         mockMvc.perform(post("/api/v1/admin/demo/init")
-                        .with(jwt().authorities(() -> "FM"))
+                        .with(jwt().authorities(() -> "ROLE_ADMIN"))
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
@@ -93,7 +93,7 @@ class AdminDemoControllerTest extends AbstractAdminWebMvcTest {
 
         // when & then
         mockMvc.perform(post("/api/v1/admin/demo/partyrooms/1/reactions")
-                        .with(jwt().authorities(() -> "FM"))
+                        .with(jwt().authorities(() -> "ROLE_ADMIN"))
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))

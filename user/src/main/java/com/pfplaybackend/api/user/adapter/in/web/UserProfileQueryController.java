@@ -25,7 +25,7 @@ public class UserProfileQueryController {
     @Operation(summary = "내 프로필 요약 조회", description = "현재 인증된 사용자(게스트 또는 회원)의 프로필 요약 정보를 조회합니다. 닉네임, 아바타, 자기소개 등 프로필 핵심 정보가 포함됩니다.")
     @SecurityRequirement(name = "cookieAuth")
     @GetMapping("/me/profile/summary")
-    @PreAuthorize("hasAnyRole('ROLE_GUEST', 'ROLE_MEMBER')")
+    @PreAuthorize("hasAnyRole('GUEST', 'MEMBER')")
     public ResponseEntity<ApiCommonResponse<QueryMyProfileSummaryResponse>> getMyProfileSummary() {
         ProfileSummaryDto profileSummaryDto = userProfileQueryService.getMyProfileSummary();
         return ResponseEntity.ok().body(ApiCommonResponse.success(QueryMyProfileSummaryResponse.from(profileSummaryDto)));

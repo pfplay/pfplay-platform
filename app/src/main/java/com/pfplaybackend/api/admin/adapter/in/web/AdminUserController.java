@@ -49,7 +49,7 @@ public class AdminUserController {
     })
     @SecurityRequirement(name = "cookieAuth")
     @PostMapping("/virtual")
-    @PreAuthorize("hasAuthority('FM')")
+    @PreAuthorize("@adminAuth.canChangeMemberTier()")
     public ResponseEntity<QueryVirtualMemberResponse> createVirtualMember(
             @Valid @RequestBody(required = false) CreateVirtualMemberRequest request) {
 
@@ -77,7 +77,7 @@ public class AdminUserController {
     })
     @SecurityRequirement(name = "cookieAuth")
     @GetMapping("/virtual/{userId}")
-    @PreAuthorize("hasAuthority('FM')")
+    @PreAuthorize("@adminAuth.canChangeMemberTier()")
     public ResponseEntity<QueryVirtualMemberResponse> getVirtualMember(
             @Parameter(description = "조회할 가상 멤버의 사용자 ID") @PathVariable String userId) {
         UserId userIdObj = UserId.fromString(userId);
@@ -98,7 +98,7 @@ public class AdminUserController {
     })
     @SecurityRequirement(name = "cookieAuth")
     @PutMapping("/virtual/{userId}/avatar")
-    @PreAuthorize("hasAuthority('FM')")
+    @PreAuthorize("@adminAuth.canChangeMemberTier()")
     public ResponseEntity<QueryVirtualMemberResponse> updateVirtualMemberAvatar(
             @Parameter(description = "아바타를 수정할 가상 멤버의 사용자 ID") @PathVariable String userId,
             @Valid @RequestBody UpdateVirtualMemberAvatarRequest request) {
@@ -129,7 +129,7 @@ public class AdminUserController {
     })
     @SecurityRequirement(name = "cookieAuth")
     @DeleteMapping("/virtual/{userId}")
-    @PreAuthorize("hasAuthority('FM')")
+    @PreAuthorize("@adminAuth.canChangeMemberTier()")
     public ResponseEntity<Void> deleteVirtualMember(
             @Parameter(description = "삭제할 가상 멤버의 사용자 ID") @PathVariable String userId) {
         UserId userIdObj = UserId.fromString(userId);

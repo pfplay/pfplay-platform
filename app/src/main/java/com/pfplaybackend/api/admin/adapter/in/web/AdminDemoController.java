@@ -71,7 +71,7 @@ public class AdminDemoController {
     })
     @SecurityRequirement(name = "cookieAuth")
     @GetMapping("/partyrooms")
-    @PreAuthorize("hasAuthority('FM')")
+    @PreAuthorize("@adminAuth.isAdmin()")
     public ResponseEntity<QueryAdminPartyroomListResponse> getPartyrooms() {
         AdminPartyroomListResult result = adminDemoService.getPartyrooms();
         QueryAdminPartyroomListResponse response = QueryAdminPartyroomListResponse.builder()
@@ -100,7 +100,7 @@ public class AdminDemoController {
     })
     @SecurityRequirement(name = "cookieAuth")
     @PostMapping("/init")
-    @PreAuthorize("hasAuthority('FM')")
+    @PreAuthorize("@adminAuth.isAdmin()")
     public ResponseEntity<InitializeDemoEnvironmentResponse> initializeDemoEnvironment(
             @Valid @RequestBody InitializeDemoEnvironmentRequest request) {
 
@@ -141,7 +141,7 @@ public class AdminDemoController {
     })
     @SecurityRequirement(name = "cookieAuth")
     @PostMapping("/partyrooms/{partyroomId}/reactions")
-    @PreAuthorize("hasAuthority('FM')")
+    @PreAuthorize("@adminAuth.isAdmin()")
     public ResponseEntity<SimulateReactionsResponse> simulateReactions(
             @Parameter(description = "리액션을 시뮬레이션할 파티룸 ID") @PathVariable Long partyroomId,
             @Valid @RequestBody SimulateReactionsRequest request) {
@@ -179,7 +179,7 @@ public class AdminDemoController {
     })
     @SecurityRequirement(name = "cookieAuth")
     @PostMapping("/partyrooms/{partyroomId}/chat")
-    @PreAuthorize("hasAuthority('FM')")
+    @PreAuthorize("@adminAuth.isAdmin()")
     public ResponseEntity<ChatSimulationStartResponse> startChatSimulation(
             @Parameter(description = "채팅 시뮬레이션을 시작할 파티룸 ID") @PathVariable Long partyroomId,
             @Valid @RequestBody StartChatSimulationRequest request) {
@@ -201,7 +201,7 @@ public class AdminDemoController {
     })
     @SecurityRequirement(name = "cookieAuth")
     @DeleteMapping("/partyrooms/{partyroomId}/chat")
-    @PreAuthorize("hasAuthority('FM')")
+    @PreAuthorize("@adminAuth.isAdmin()")
     public ResponseEntity<ChatSimulationStopResponse> stopChatSimulation(
             @Parameter(description = "채팅 시뮬레이션을 중지할 파티룸 ID") @PathVariable Long partyroomId) {
 

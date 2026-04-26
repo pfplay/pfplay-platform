@@ -39,7 +39,7 @@ public class UserWalletCommandController {
     @Operation(summary = "지갑 주소 수정", description = "현재 인증된 회원의 지갑 주소를 수정합니다. 수정 후 갱신된 정보로 액세스 토큰이 재발급됩니다. 회원만 사용 가능합니다.")
     @SecurityRequirement(name = "cookieAuth")
     @PutMapping("/me/profile/wallet")
-    @PreAuthorize("hasRole('ROLE_MEMBER')")
+    @PreAuthorize("hasRole('MEMBER')")
     public ResponseEntity<ApiCommonResponse<Void>> updateMyWallet(@Valid @RequestBody UpdateMyWalletRequest request, HttpServletResponse response) {
         MemberData member = userWalletService.updateMyWalletAddress(new UpdateWalletCommand(request.getWalletAddress()));
         // Email and user_id live on UserAccount post-V4. Fetch the bound account

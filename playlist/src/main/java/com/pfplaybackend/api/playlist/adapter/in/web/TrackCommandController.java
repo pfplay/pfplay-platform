@@ -37,7 +37,7 @@ public class TrackCommandController {
     @SecurityRequirement(name = "cookieAuth")
     @ApiErrorCodes({PlaylistException.class, TrackException.class})
     @PostMapping("{playlistId}/tracks")
-    @PreAuthorize("hasRole('ROLE_MEMBER')")
+    @PreAuthorize("hasRole('MEMBER')")
     public ResponseEntity<ApiCommonResponse<CreateTrackResponse>> addTrack(
             @Parameter(description = "트랙을 추가할 플레이리스트 ID") @PathVariable Long playlistId,
             @Valid @RequestBody AddTrackRequest request) {
@@ -65,7 +65,7 @@ public class TrackCommandController {
     @SecurityRequirement(name = "cookieAuth")
     @ApiErrorCodes({PlaylistException.class, TrackException.class})
     @PatchMapping("{playlistId}/tracks/{trackId}/move")
-    @PreAuthorize("hasRole('ROLE_MEMBER')")
+    @PreAuthorize("hasRole('MEMBER')")
     public ResponseEntity<Void> moveTrack(
             @Parameter(description = "현재 플레이리스트 ID") @PathVariable Long playlistId,
             @Parameter(description = "이동할 트랙 ID") @PathVariable Long trackId,

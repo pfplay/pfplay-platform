@@ -27,7 +27,7 @@ public class UserAvatarQueryController implements UserAvatarApi {
 
     @Operation(summary = "아바타 바디 목록 조회", description = "사용 가능한 아바타 바디 리소스 목록을 조회합니다. 게스트와 회원 모두 조회 가능합니다.")
     @SecurityRequirement(name = "cookieAuth")
-    @PreAuthorize("hasAnyRole('ROLE_GUEST', 'ROLE_MEMBER')")
+    @PreAuthorize("hasAnyRole('GUEST', 'MEMBER')")
     @GetMapping("/me/profile/avatar/bodies")
     public ResponseEntity<ApiCommonResponse<List<AvatarBodyDto>>> getMyAllAvatarBodies() {
         List<AvatarBodyDto> avatarBodies = userAvatarQueryService.findMyAvatarBodies();
@@ -36,7 +36,7 @@ public class UserAvatarQueryController implements UserAvatarApi {
 
     @Operation(summary = "아바타 얼굴 목록 조회", description = "사용 가능한 아바타 얼굴 리소스 목록을 조회합니다. 게스트와 회원 모두 조회 가능합니다.")
     @SecurityRequirement(name = "cookieAuth")
-    @PreAuthorize("hasAnyRole('ROLE_GUEST', 'ROLE_MEMBER')")
+    @PreAuthorize("hasAnyRole('GUEST', 'MEMBER')")
     @GetMapping("/me/profile/avatar/faces")
     public ResponseEntity<ApiCommonResponse<List<AvatarFaceDto>>> getMyDefaultAvatarFaces() {
         return ResponseEntity.ok().body(ApiCommonResponse.success(
