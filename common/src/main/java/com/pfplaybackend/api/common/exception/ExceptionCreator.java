@@ -15,6 +15,7 @@ public class ExceptionCreator {
             case FORBIDDEN -> new ForbiddenException(errorCode, message);
             case NOT_FOUND -> new NotFoundException(errorCode, message);
             case CONFLICT -> new ConflictException(errorCode, message);
+            case TOO_MANY_REQUESTS -> new TooManyRequestsException(errorCode, message);
         };
     }
 }
