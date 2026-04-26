@@ -177,7 +177,7 @@ Expected: BUILD SUCCESSFUL. Any failure → reconcile before starting PR 6 — w
 
 - **`UserAccountData`** (`user/.../domain/entity/data/UserAccountData.java:24-105`): `@EmbeddedId UserId userId`, `email` (UNIQUE in V4), `providerType` (VARCHAR(16)), `passwordHash` (length 255, nullable for social), `lastLoginAt`, `withdrawnAt`. Factories: `createForSocial`, `createForLocal`. Mutations: `recordLogin`, `withdraw`, `replacePlaceholderCredentials` (V5 seed only). PR 6 adds: a new column `mustChangePassword` (V13), factory `createForLocalWithMandatoryChange`, mutations `completePasswordChange`, `requirePasswordChange`.
 
-- **`UserAccountRepository`** (`user/.../adapter/out/persistence/UserAccountRepository.java`): has `findByEmailAndProviderType`. PR 6 needs `findByEmail(String email)` (UNIQUE so `Optional` semantics) and `findAllByUserIdIn(Collection<UserId>)` for list-endpoint bulk loading. (Verify before Task 5; if `findAllById` from `JpaRepository` works on `UserId` embedded PK, prefer that.)
+- **`UserAccountRepository`** (`user/.../adapter/out/persistence/UserAccountRepository.java`): has `findByEmailAndProviderType` AND already has `findByEmail(String email)`. **Decision (closed by Task 3):** use the inherited `JpaRepository.findAllById(Iterable<UserId>)` for bulk loading by PK — `UserId` is the `@EmbeddedId`, so no derived method is needed. No changes to `UserAccountRepository` for PR 6.
 
 - **`MemberData`** (`user/.../domain/entity/data/MemberData.java:41`): factories include `createForUserAccount(userAccountId)`. `MemberRepository.findByUserAccountId(Long)`. We need `findAllByUserAccountIdIn(Collection<Long>)` for bulk list (verify; add if missing).
 
@@ -1220,7 +1220,7 @@ public class AdministratorManagementService {
         Set<Long> userAccountIds = filtered.stream()
                 .map(AdministratorData::getUserAccountId).collect(Collectors.toSet());
         Map<Long, UserAccountData> uaMap = userAccountRepository
-                .findAllByUserIdIn(userAccountIds.stream().map(UserId::new).toList())
+                .findAllById(userAccountIds.stream().map(UserId::new).toList())
                 .stream().collect(Collectors.toMap(ua -> ua.getUserId().getUid(), ua -> ua));
         Map<Long, MemberData> memberMap = memberRepository
                 .findAllByUserAccountIdIn(userAccountIds)
