@@ -145,6 +145,13 @@ app:
         - https://localhost:3000
         - http://localhost:3000
         - https://admin.pfplay.xyz
+    admin-csrf:
+      enabled: true
+      cookie-name: XSRF-TOKEN
+      header-name: X-XSRF-TOKEN
+      cookie-domain: ${ADMIN_COOKIE_DOMAIN:localhost}
+      same-site: Strict
+      secure: true
 
   webclient:
     timeout:
@@ -337,3 +344,7 @@ app:
       shared:
         secure: false
         same-site: Lax
+  security:
+    admin-csrf:
+      secure: false
+      same-site: Lax
