@@ -1,10 +1,14 @@
 package com.pfplaybackend.api.common.config.security;
 
 import com.pfplaybackend.api.common.config.security.cors.properties.CorsProperties;
+import com.pfplaybackend.api.common.config.security.jwt.AdminCookieWriter;
 import com.pfplaybackend.api.common.config.security.jwt.AdminTokenRenewalFilter;
 import com.pfplaybackend.api.common.config.security.jwt.CookieBearerTokenResolver;
 import com.pfplaybackend.api.common.config.security.jwt.CustomJwtAuthenticationConverter;
+import com.pfplaybackend.api.common.config.security.jwt.JwtService;
+import com.pfplaybackend.api.common.config.security.jwt.properties.JwtProperties;
 import com.pfplaybackend.api.common.config.security.web.AdminOriginGuardFilter;
+import com.pfplaybackend.api.common.config.security.web.properties.AdminOriginProperties;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
@@ -28,8 +32,10 @@ public class SecurityConfig {
     private final CookieBearerTokenResolver customBearerTokenResolver;
     private final CustomJwtAuthenticationConverter jwtAuthenticationConverter;
     private final CorsProperties corsProperties;
-    private final AdminTokenRenewalFilter adminTokenRenewalFilter;
-    private final AdminOriginGuardFilter adminOriginGuardFilter;
+    private final JwtProperties jwtProperties;
+    private final JwtService jwtService;
+    private final AdminCookieWriter adminCookieWriter;
+    private final AdminOriginProperties adminOriginProperties;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -61,9 +67,19 @@ public class SecurityConfig {
                                 .jwtAuthenticationConverter(jwtAuthenticationConverter)
                         )
                 )
-                .addFilterBefore(adminOriginGuardFilter, UsernamePasswordAuthenticationFilter.class)
-                .addFilterAfter(adminTokenRenewalFilter, BearerTokenAuthenticationFilter.class);
+                .addFilterBefore(adminOriginGuardFilter(), UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(adminTokenRenewalFilter(), BearerTokenAuthenticationFilter.class);
         return http.build();
+    }
+
+    @Bean
+    public AdminTokenRenewalFilter adminTokenRenewalFilter() {
+        return new AdminTokenRenewalFilter(jwtProperties, jwtService, adminCookieWriter);
+    }
+
+    @Bean
+    public AdminOriginGuardFilter adminOriginGuardFilter() {
+        return new AdminOriginGuardFilter(adminOriginProperties);
     }
 
     @Bean

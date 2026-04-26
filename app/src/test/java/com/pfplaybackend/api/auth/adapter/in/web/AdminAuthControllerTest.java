@@ -5,7 +5,11 @@ import com.pfplaybackend.api.auth.application.dto.result.AdminAuthResult;
 import com.pfplaybackend.api.auth.application.service.AdminLoginService;
 import com.pfplaybackend.api.auth.domain.exception.AdminAuthException;
 import com.pfplaybackend.api.common.config.security.jwt.AdminCookieWriter;
+import com.pfplaybackend.api.common.config.security.jwt.AdminTokenRenewalFilter;
+import com.pfplaybackend.api.common.config.security.jwt.JwtService;
 import com.pfplaybackend.api.common.config.security.jwt.SharedSessionCookieWriter;
+import com.pfplaybackend.api.common.config.security.jwt.properties.JwtProperties;
+import com.pfplaybackend.api.common.config.security.web.AdminOriginGuardFilter;
 import com.pfplaybackend.api.common.exception.ExceptionCreator;
 import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.DisplayName;
@@ -37,7 +41,11 @@ class AdminAuthControllerTest {
     @MockBean AdminLoginService adminLoginService;
     @MockBean AdminCookieWriter adminCookieWriter;
     @MockBean SharedSessionCookieWriter sharedSessionCookieWriter;
+    @MockBean JwtService jwtService;
+    @MockBean JwtProperties jwtProperties;
     @MockBean JwtDecoder jwtDecoder;
+    @MockBean AdminTokenRenewalFilter adminTokenRenewalFilter;
+    @MockBean AdminOriginGuardFilter adminOriginGuardFilter;
 
     private static final String VALID_BODY = """
             {"email":"super@pfplay.local","password":"DevSeed123!"}
