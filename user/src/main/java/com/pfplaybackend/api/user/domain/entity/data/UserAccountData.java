@@ -91,4 +91,15 @@ public class UserAccountData extends BaseEntity {
     public boolean isWithdrawn() {
         return withdrawnAt != null;
     }
+
+    /**
+     * Seed-only API: replaces the V5-seeded placeholder email and password hash
+     * with operator-supplied values. Called exactly once per environment by
+     * SuperAdminSeedService at ApplicationReadyEvent. Do NOT call from normal
+     * application flow — there is no IAM lifecycle event for this.
+     */
+    public void replacePlaceholderCredentials(String email, String passwordHash) {
+        this.email = email;
+        this.passwordHash = passwordHash;
+    }
 }

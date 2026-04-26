@@ -100,4 +100,15 @@ class UserAccountDataTest {
             .isInstanceOf(NullPointerException.class)
             .hasMessageContaining("providerType");
     }
+
+    @Test
+    void replacePlaceholderCredentials_mutatesEmailAndHash() {
+        var account = UserAccountData.createForLocal(
+            new UserId(1L), "__placeholder__", "__placeholder_hash__");
+
+        account.replacePlaceholderCredentials("real@admin.com", "$2a$12$encoded");
+
+        assertThat(account.getEmail()).isEqualTo("real@admin.com");
+        assertThat(account.getPasswordHash()).isEqualTo("$2a$12$encoded");
+    }
 }
