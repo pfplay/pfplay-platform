@@ -1,6 +1,9 @@
 package com.pfplaybackend.api.common.config.security;
 
 import com.pfplaybackend.api.common.config.security.cors.properties.CorsProperties;
+import com.pfplaybackend.api.common.config.security.csrf.AdminCsrfRequestMatcher;
+import com.pfplaybackend.api.common.config.security.csrf.AdminCsrfTokenRepositoryFactory;
+import com.pfplaybackend.api.common.config.security.csrf.properties.AdminCsrfProperties;
 import com.pfplaybackend.api.common.config.security.jwt.AdminCookieWriter;
 import com.pfplaybackend.api.common.config.security.jwt.AdminTokenRenewalFilter;
 import com.pfplaybackend.api.common.config.security.jwt.CookieBearerTokenResolver;
@@ -10,6 +13,8 @@ import com.pfplaybackend.api.common.config.security.jwt.properties.JwtProperties
 import com.pfplaybackend.api.common.config.security.web.AdminOriginGuardFilter;
 import com.pfplaybackend.api.common.config.security.web.properties.AdminOriginProperties;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.context.annotation.Bean;
@@ -38,12 +43,25 @@ public class SecurityConfig {
     private final JwtService jwtService;
     private final AdminCookieWriter adminCookieWriter;
     private final AdminOriginProperties adminOriginProperties;
+    private final AdminCsrfTokenRepositoryFactory adminCsrfTokenRepositoryFactory;
+    private final AdminCsrfProperties adminCsrfProperties;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-                .csrf(AbstractHttpConfigurer::disable)
+                .csrf(csrf -> {
+                    if (!adminCsrfProperties.isEnabled()) {
+                        csrf.disable();
+                        return;
+                    }
+                    CookieCsrfTokenRepository repo = adminCsrfTokenRepositoryFactory.build();
+                    CsrfTokenRequestAttributeHandler handler = new CsrfTokenRequestAttributeHandler();
+                    csrf
+                            .csrfTokenRepository(repo)
+                            .csrfTokenRequestHandler(handler)
+                            .requireCsrfProtectionMatcher(new AdminCsrfRequestMatcher());
+                })
                 .sessionManagement(sessionManagement ->
                         sessionManagement.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )

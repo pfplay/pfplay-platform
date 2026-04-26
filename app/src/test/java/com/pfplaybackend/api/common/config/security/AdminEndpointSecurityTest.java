@@ -10,6 +10,7 @@ import org.springframework.security.test.context.support.WithAnonymousUser;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -31,6 +32,7 @@ class AdminEndpointSecurityTest extends AbstractIntegrationTest {
     @WithAnonymousUser
     void anonymousRequest_toAdminEndpoint_returns401() throws Exception {
         mockMvc.perform(post("/api/v1/admin/partyrooms")
+                        .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isUnauthorized());
@@ -40,6 +42,7 @@ class AdminEndpointSecurityTest extends AbstractIntegrationTest {
     @WithMockUser(roles = {"MEMBER"})
     void authenticatedMember_toAdminEndpoint_returns403() throws Exception {
         mockMvc.perform(post("/api/v1/admin/partyrooms")
+                        .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isForbidden());
@@ -51,6 +54,7 @@ class AdminEndpointSecurityTest extends AbstractIntegrationTest {
         // Endpoint may return 200/201/400/404/500 depending on internals,
         // but NOT 401/403 (URL gate is transparent to ADMIN).
         mockMvc.perform(post("/api/v1/admin/partyrooms")
+                        .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().is(Matchers.not(Matchers.isOneOf(401, 403))));
