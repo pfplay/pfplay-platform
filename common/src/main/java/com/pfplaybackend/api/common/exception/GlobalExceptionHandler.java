@@ -67,6 +67,12 @@ public class GlobalExceptionHandler {
         return createExceptionResponse(e);
     }
 
+    @ExceptionHandler(TooManyRequestsException.class)
+    public ResponseEntity<ApiErrorResponse> handleTooManyRequestsException(TooManyRequestsException e) {
+        log.error(e.getMessage());
+        return createExceptionResponse(e);
+    }
+
     private ResponseEntity<ApiErrorResponse> createExceptionResponse(AbstractHTTPException e) {
         return ResponseEntity
                 .status(e.getStatus())
