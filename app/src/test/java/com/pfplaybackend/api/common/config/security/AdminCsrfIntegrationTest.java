@@ -10,6 +10,7 @@ import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -43,12 +44,20 @@ class AdminCsrfIntegrationTest extends AbstractIntegrationTest {
     @Test
     @WithMockUser(roles = "ADMIN")
     void postWithValidCsrf_passesGate() throws Exception {
-        // Send matching XSRF-TOKEN cookie and X-XSRF-TOKEN header — CSRF gate passes.
+        // Use Spring Security's csrf() post-processor to inject a valid CSRF token.
         // Auth gate also passes via @WithMockUser(roles="ADMIN").
-        String tokenValue = "test-csrf-token-value";
-        mockMvc.perform(post(ADMIN_PROBE)
-                        .cookie(new Cookie(CSRF_COOKIE, tokenValue))
-                        .header(CSRF_HEADER, tokenValue)
+        //
+        // NOTE: We do NOT manually set the XSRF-TOKEN cookie + X-XSRF-TOKEN header here.
+        // Spring Security Test's csrf() post-processor replaces the CsrfFilter's repository
+        // with TestCsrfTokenRepository(HttpSessionCsrfTokenRepository) on first use in any
+        // test sharing this Spring context. If that mutation has already occurred (because
+        // another test class running earlier in the :app:integrationTest suite also called
+        // csrf()), then manually setting cookie/header values will be compared against an
+        // HttpSession-based token — and the comparison fails with 403. Using csrf() here
+        // is order-independent: TestCsrfTokenRepository activates its request-attribute path
+        // when enabled by the post-processor, so the token always matches regardless of which
+        // underlying repository is currently installed on the CsrfFilter.
+        mockMvc.perform(post(ADMIN_PROBE).with(csrf())
                         .contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().is(Matchers.not(Matchers.is(403))));
     }
