@@ -1,9 +1,11 @@
 package com.pfplaybackend.api.common.config.security;
 
 import com.pfplaybackend.api.common.config.security.cors.properties.CorsProperties;
+import com.pfplaybackend.api.common.config.security.jwt.AdminTokenRenewalFilter;
 import com.pfplaybackend.api.common.config.security.jwt.CookieBearerTokenResolver;
 import com.pfplaybackend.api.common.config.security.jwt.CustomJwtAuthenticationConverter;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -24,6 +26,7 @@ public class SecurityConfig {
     private final CookieBearerTokenResolver customBearerTokenResolver;
     private final CustomJwtAuthenticationConverter jwtAuthenticationConverter;
     private final CorsProperties corsProperties;
+    private final AdminTokenRenewalFilter adminTokenRenewalFilter;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -54,7 +57,8 @@ public class SecurityConfig {
                         .jwt(jwt -> jwt
                                 .jwtAuthenticationConverter(jwtAuthenticationConverter)
                         )
-                );
+                )
+                .addFilterAfter(adminTokenRenewalFilter, BearerTokenAuthenticationFilter.class);
         return http.build();
     }
 
