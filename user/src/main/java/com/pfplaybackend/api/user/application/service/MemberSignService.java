@@ -56,6 +56,21 @@ public class MemberSignService {
 
         userAccount.recordLogin();
 
+        return getOrCreateMemberFor(userAccount);
+    }
+
+    /**
+     * Returns the existing {@link MemberData} for {@code userAccount} or creates one
+     * with the standard onboarding side effects (profile, default playlist, registered
+     * event, activity rows). Does NOT touch {@code last_login_at} — caller's
+     * responsibility. Use this directly for paths where "now" is not actually a
+     * login event (e.g. admin invite).
+     *
+     * <p>Callers that ARE login events should go through {@link #getMemberOrCreate}
+     * instead, which records the login before delegating here.
+     */
+    @Transactional
+    public MemberData getOrCreateMemberFor(UserAccountData userAccount) {
         return memberRepository.findByUserAccountId(userAccount.getUserId().getUid())
                 .orElseGet(() -> initializeNewMember(userAccount));
     }

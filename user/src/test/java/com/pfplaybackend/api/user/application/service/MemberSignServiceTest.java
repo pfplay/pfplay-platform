@@ -146,6 +146,77 @@ class MemberSignServiceTest {
     }
 
     @Test
+    @DisplayName("getOrCreateMemberFor — Member 미존재 시 새 Member를 저장하고 onboarding 부수효과를 수행하되 recordLogin을 호출하지 않는다")
+    void getOrCreateMemberForCreatesMemberWithoutRecordingLogin() {
+        // given
+        UserAccountData existingAccount = UserAccountData.createForSocial(
+                new UserId(789L), EMAIL, ProviderType.GOOGLE);
+        when(memberRepository.findByUserAccountId(789L)).thenReturn(Optional.empty());
+        when(memberRepository.save(any(MemberData.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(userProfileCommandService.createProfileDataForMember(any(UserId.class)))
+                .thenReturn(mock(ProfileData.class));
+
+        // when
+        MemberData result = memberSignService.getOrCreateMemberFor(existingAccount);
+
+        // then
+        assertThat(result).isNotNull();
+        assertThat(result.getUserAccountId()).isEqualTo(789L);
+        verify(memberRepository).save(any(MemberData.class));
+        verify(userProfileCommandService).createProfileDataForMember(existingAccount.getUserId());
+        verify(playlistSetupPort).createDefaultPlaylist(existingAccount.getUserId());
+        verify(applicationEventPublisher).publishEvent(any(MemberRegisteredEvent.class));
+        // Critical: no recordLogin side effect on the UA.
+        assertThat(existingAccount.getLastLoginAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("getOrCreateMemberFor — Member가 이미 존재하면 그것을 그대로 반환하고 어느 부수효과도 수행하지 않는다")
+    void getOrCreateMemberForReturnsExistingMember() {
+        // given
+        UserAccountData existingAccount = UserAccountData.createForSocial(
+                new UserId(790L), EMAIL, ProviderType.GOOGLE);
+        MemberData existingMember = mock(MemberData.class);
+        when(memberRepository.findByUserAccountId(790L)).thenReturn(Optional.of(existingMember));
+
+        // when
+        MemberData result = memberSignService.getOrCreateMemberFor(existingAccount);
+
+        // then
+        assertThat(result).isSameAs(existingMember);
+        verify(memberRepository, never()).save(any(MemberData.class));
+        verify(userProfileCommandService, never()).createProfileDataForMember(any(UserId.class));
+        verify(playlistSetupPort, never()).createDefaultPlaylist(any(UserId.class));
+        verify(applicationEventPublisher, never()).publishEvent(any(MemberRegisteredEvent.class));
+        // No recordLogin side effect.
+        assertThat(existingAccount.getLastLoginAt()).isNull();
+    }
+
+    @Test
+    @DisplayName("getOrCreateMemberFor — LOCAL provider도 동일하게 처리되어 admin invite 경로가 동작한다")
+    void getOrCreateMemberForHandlesLocalProvider() {
+        // given — admin invite path: UA was created via createForLocalWithMandatoryChange
+        UserAccountData adminAccount = UserAccountData.createForLocalWithMandatoryChange(
+                new UserId(791L), "admin@x", "bcrypt-temp-hash");
+        when(memberRepository.findByUserAccountId(791L)).thenReturn(Optional.empty());
+        when(memberRepository.save(any(MemberData.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(userProfileCommandService.createProfileDataForMember(any(UserId.class)))
+                .thenReturn(mock(ProfileData.class));
+
+        // when
+        MemberData result = memberSignService.getOrCreateMemberFor(adminAccount);
+
+        // then — works identically to the social path
+        assertThat(result).isNotNull();
+        verify(memberRepository).save(any(MemberData.class));
+        assertThat(adminAccount.getLastLoginAt()).isNull();
+        // mustChangePassword stays true; no flag mutation in this method
+        assertThat(adminAccount.isMustChangePassword()).isTrue();
+    }
+
+    @Test
     @DisplayName("getOAuth2RedirectUri — OAuth2 리다이렉트 URI를 반환한다")
     void getOAuth2RedirectUriSuccess() {
         // given
