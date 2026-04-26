@@ -13,10 +13,14 @@ import com.pfplaybackend.api.common.config.security.jwt.properties.JwtProperties
 import com.pfplaybackend.api.common.config.security.web.AdminOriginGuardFilter;
 import com.pfplaybackend.api.common.config.security.web.properties.AdminOriginProperties;
 import lombok.RequiredArgsConstructor;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.http.MediaType;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.config.annotation.ObjectPostProcessor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -60,7 +64,18 @@ public class SecurityConfig {
                     csrf
                             .csrfTokenRepository(repo)
                             .csrfTokenRequestHandler(handler)
-                            .requireCsrfProtectionMatcher(new AdminCsrfRequestMatcher());
+                            .requireCsrfProtectionMatcher(new AdminCsrfRequestMatcher())
+                            .withObjectPostProcessor(new ObjectPostProcessor<CsrfFilter>() {
+                                @Override
+                                public <O extends CsrfFilter> O postProcess(O filter) {
+                                    filter.setAccessDeniedHandler((req, res, ex) -> {
+                                        res.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                                        res.setContentType(MediaType.APPLICATION_JSON_VALUE);
+                                        res.getWriter().write("{\"status\":403,\"error\":\"CSRF token validation failed\"}");
+                                    });
+                                    return filter;
+                                }
+                            });
                 })
                 .sessionManagement(sessionManagement ->
                         sessionManagement.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
@@ -70,6 +85,7 @@ public class SecurityConfig {
                 )
                 .formLogin(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(request -> request
+                        .requestMatchers("/error").permitAll()
                         .requestMatchers("/api/v1/auth/oauth/callback", "/api/v1/auth/oauth/url", "/api/v1/auth/logout",
                                 "/api/v1/auth/admin/login",
                                 "/api/v1/users/members/sign/**", "/api/v1/users/guests/sign/**", "/api/v1/partyrooms/link/**").permitAll()

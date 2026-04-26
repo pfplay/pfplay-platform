@@ -28,7 +28,7 @@ public class AdminCsrfRequestMatcher implements RequestMatcher {
     public boolean matches(HttpServletRequest request) {
         if (isSafeMethod(request.getMethod())) return false;
         String path = request.getServletPath();
-        if (path == null) path = request.getRequestURI();
+        if (path == null || path.isEmpty()) path = request.getRequestURI();
         if (path == null) return false;
         if (path.startsWith(ADMIN_PATH_PREFIX)) return true;
         if (ADMIN_LOGOUT_PATH.equals(path)) return true;
