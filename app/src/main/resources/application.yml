@@ -129,6 +129,15 @@ app:
         same-site: None
         max-age-seconds: 86400
 
+  ratelimit:
+    admin-login:
+      ip:
+        capacity: 10
+        window-seconds: 300
+      email:
+        capacity: 5
+        window-seconds: 900
+
   webclient:
     timeout:
       connection: 5000
