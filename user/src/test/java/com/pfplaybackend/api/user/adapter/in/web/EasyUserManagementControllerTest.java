@@ -34,7 +34,7 @@ class EasyUserManagementControllerTest extends AbstractUserWebMvcTest {
         when(userAccount.getProviderType()).thenReturn(ProviderType.GOOGLE);
         when(temporaryUserInitializeService.addAssociateMember(any(UserId.class), anyString())).thenReturn(member);
         when(userAccountRepository.findById(any(UserId.class))).thenReturn(Optional.of(userAccount));
-        when(jwtService.generateNonExpiringAccessToken(any())).thenReturn("mock-token");
+        when(jwtService.mintSharedSessionToken(any())).thenReturn("mock-token");
 
         // when & then
         mockMvc.perform(post("/api/v1/users/members/sign/temporary/associate-member")
@@ -57,7 +57,7 @@ class EasyUserManagementControllerTest extends AbstractUserWebMvcTest {
         when(temporaryUserInitializeService.addAssociateMember(any(UserId.class), anyString())).thenReturn(member);
         when(temporaryUserInitializeService.upgradeMember(any(MemberData.class))).thenReturn(member);
         when(userAccountRepository.findById(any(UserId.class))).thenReturn(Optional.of(userAccount));
-        when(jwtService.generateNonExpiringAccessToken(any())).thenReturn("mock-token");
+        when(jwtService.mintSharedSessionToken(any())).thenReturn("mock-token");
 
         // when & then
         mockMvc.perform(post("/api/v1/users/members/sign/temporary/full-member")

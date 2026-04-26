@@ -45,10 +45,10 @@ public class UserWalletCommandController {
         // Email and user_id live on UserAccount post-V4. Fetch the bound account
         // for token claims rather than reaching through Member.
         UserAccountData userAccount = userAccountRepository.findById(new UserId(member.getUserAccountId())).orElseThrow();
-        cookieUtil.addAccessTokenCookie(response, jwtService.generateNonExpiringAccessToken(new TokenClaimsRequest(
+        cookieUtil.addAccessTokenCookie(response, jwtService.mintSharedSessionToken(new TokenClaimsRequest(
                 userAccount.getUserId().getUid().toString(),
                 userAccount.getEmail(),
-                AccessLevel.ROLE_MEMBER,
+                java.util.List.of(AccessLevel.ROLE_MEMBER),
                 member.getAuthorityTier()
         )));
 

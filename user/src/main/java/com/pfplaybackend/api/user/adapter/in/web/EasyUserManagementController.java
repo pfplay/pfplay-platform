@@ -37,10 +37,10 @@ public class EasyUserManagementController {
         UserId userId = new UserId();
         MemberData member = temporaryUserInitializeService.addAssociateMember(userId, userId.getUid().toString().substring(0,12) + "@gmail.com");
         UserAccountData userAccount = loadUserAccount(member);
-        cookieUtil.addAccessTokenCookie(response, jwtService.generateNonExpiringAccessToken(new TokenClaimsRequest(
+        cookieUtil.addAccessTokenCookie(response, jwtService.mintSharedSessionToken(new TokenClaimsRequest(
                 userAccount.getUserId().getUid().toString(),
                 userAccount.getEmail(),
-                AccessLevel.ROLE_MEMBER,
+                java.util.List.of(AccessLevel.ROLE_MEMBER),
                 member.getAuthorityTier()
         )));
 
@@ -55,10 +55,10 @@ public class EasyUserManagementController {
         MemberData member = temporaryUserInitializeService.upgradeMember(
                 temporaryUserInitializeService.addAssociateMember(userId, userId.getUid().toString().substring(0,12) + "@gmail.com"));
         UserAccountData userAccount = loadUserAccount(member);
-        cookieUtil.addAccessTokenCookie(response, jwtService.generateNonExpiringAccessToken(new TokenClaimsRequest(
+        cookieUtil.addAccessTokenCookie(response, jwtService.mintSharedSessionToken(new TokenClaimsRequest(
                 userAccount.getUserId().getUid().toString(),
                 userAccount.getEmail(),
-                AccessLevel.ROLE_MEMBER,
+                java.util.List.of(AccessLevel.ROLE_MEMBER),
                 member.getAuthorityTier()
         )));
 

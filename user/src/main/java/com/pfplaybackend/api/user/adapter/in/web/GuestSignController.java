@@ -35,10 +35,10 @@ public class GuestSignController {
         GuestData guest = guestSignService.getGuestOrCreate();
         // user_id moved off Guest in the V4 IAM refactor — Guest now keys on
         // user_account_id (which equals UserAccount.userId.uid by construction).
-        cookieUtil.addAccessTokenCookie(response, jwtService.generateAccessToken(new TokenClaimsRequest(
+        cookieUtil.addAccessTokenCookie(response, jwtService.mintSharedSessionToken(new TokenClaimsRequest(
                 guest.getUserAccountId().toString(),
                 "N/A",
-                AccessLevel.ROLE_GUEST,
+                java.util.List.of(AccessLevel.ROLE_GUEST),
                 AuthorityTier.GT
         )));
 

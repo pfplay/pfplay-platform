@@ -34,7 +34,7 @@ class UserWalletCommandControllerTest extends AbstractUserWebMvcTest {
         when(userAccount.getProviderType()).thenReturn(ProviderType.GOOGLE);
         when(userWalletService.updateMyWalletAddress(any())).thenReturn(member);
         when(userAccountRepository.findById(any(UserId.class))).thenReturn(Optional.of(userAccount));
-        when(jwtService.generateNonExpiringAccessToken(any())).thenReturn("mock-token");
+        when(jwtService.mintSharedSessionToken(any())).thenReturn("mock-token");
 
         String body = """
                 {"walletAddress": "0x1234567890abcdef"}""";

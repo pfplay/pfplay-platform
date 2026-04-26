@@ -20,7 +20,7 @@ class GuestSignControllerTest extends AbstractUserWebMvcTest {
         // given
         GuestData guest = GuestData.createForUserAccount(1L, "test-agent");
         when(guestSignService.getGuestOrCreate()).thenReturn(guest);
-        when(jwtService.generateAccessToken(any())).thenReturn("mock-jwt-token");
+        when(jwtService.mintSharedSessionToken(any())).thenReturn("mock-jwt-token");
 
         // when & then
         mockMvc.perform(post("/api/v1/users/guests/sign")

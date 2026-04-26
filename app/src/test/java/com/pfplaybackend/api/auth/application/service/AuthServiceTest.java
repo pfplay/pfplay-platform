@@ -8,6 +8,7 @@ import com.pfplaybackend.api.auth.application.port.out.StateStorePort;
 import com.pfplaybackend.api.auth.domain.enums.OAuthProvider;
 import com.pfplaybackend.api.common.config.security.enums.ProviderType;
 import com.pfplaybackend.api.common.config.security.jwt.JwtService;
+import com.pfplaybackend.api.common.config.security.jwt.properties.JwtProperties;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.enums.AuthorityTier;
 import com.pfplaybackend.api.common.exception.AuthenticationException;
@@ -42,6 +43,7 @@ class AuthServiceTest {
     @Mock MemberSignService memberSignService;
     @Mock UserAccountRepository userAccountRepository;
     @Mock JwtService jwtService;
+    @Mock JwtProperties jwtProperties;
     @Mock StateStorePort stateStorePort;
     @Mock Clock clock;
 
@@ -79,8 +81,8 @@ class AuthServiceTest {
         when(userAccountRepository.findByUserId(any(UserId.class)))
                 .thenReturn(Optional.of(userAccount));
 
-        when(jwtService.generateAccessToken(any())).thenReturn("jwt-token");
-        when(jwtService.getAccessTokenExpiration()).thenReturn(3600L);
+        when(jwtService.mintSharedSessionToken(any())).thenReturn("jwt-token");
+        when(jwtProperties.getSharedSessionTokenExpirationMs()).thenReturn(3600L);
 
         // when
         AuthResult result = authService.processOAuthLogin(command);
@@ -138,8 +140,8 @@ class AuthServiceTest {
     @DisplayName("validateToken은 JwtService에 위임한다")
     void validateTokenDelegatesToJwtService() {
         // given
-        when(jwtService.validateAccessToken("valid-token")).thenReturn(true);
-        when(jwtService.validateAccessToken("invalid-token")).thenReturn(false);
+        when(jwtService.validate("valid-token")).thenReturn(true);
+        when(jwtService.validate("invalid-token")).thenReturn(false);
 
         // when & then
         assertThat(authService.validateToken("valid-token")).isTrue();

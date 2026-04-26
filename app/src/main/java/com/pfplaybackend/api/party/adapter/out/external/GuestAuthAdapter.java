@@ -10,6 +10,8 @@ import com.pfplaybackend.api.user.domain.entity.data.GuestData;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
+
 @Service
 @RequiredArgsConstructor
 public class GuestAuthAdapter implements GuestAuthPort {
@@ -20,10 +22,10 @@ public class GuestAuthAdapter implements GuestAuthPort {
     @Override
     public String getOrCreateGuestToken() {
         GuestData guest = guestSignService.getGuestOrCreate();
-        return jwtService.generateAccessToken(new TokenClaimsRequest(
+        return jwtService.mintSharedSessionToken(new TokenClaimsRequest(
                 guest.getUserAccountId().toString(),
                 "N/A",
-                AccessLevel.ROLE_GUEST,
+                List.of(AccessLevel.ROLE_GUEST),
                 AuthorityTier.GT
         ));
     }
