@@ -58,6 +58,9 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/health").permitAll()
                         .requestMatchers("/ws/**").permitAll()
                         .requestMatchers("/spec/**", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
+                        // Spec §5.2.3 — order matters: most specific first.
+                        .requestMatchers("/api/v1/admin/system/**").hasRole("SUPER_ADMIN")
+                        .requestMatchers("/api/v1/admin/avatar/**").hasRole("SUPER_ADMIN")
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/v1/auth/admin/**").authenticated()
                         .requestMatchers("/api/**").authenticated()
