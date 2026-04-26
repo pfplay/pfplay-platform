@@ -102,4 +102,15 @@ class ProfileDataTest {
         // then
         assertThat(profile.getWalletAddress().getValue()).isEqualTo("0xABC123");
     }
+
+    @Test
+    void updateNickname_whenBioPresent_delegatesToBioPreservingIntroduction() {
+        ProfileData profile = ProfileData.builder()
+                .nickname(new Nickname("old"))
+                .introduction("intro")
+                .build();
+        profile.updateNickname("new");
+        assertThat(profile.getNicknameValue()).isEqualTo("new");
+        assertThat(profile.getIntroduction()).isEqualTo("intro");
+    }
 }

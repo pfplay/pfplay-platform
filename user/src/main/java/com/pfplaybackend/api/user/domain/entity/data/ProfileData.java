@@ -98,6 +98,14 @@ public class ProfileData extends BaseEntity {
         }
     }
 
+    public void updateNickname(String nickname) {
+        if (this.bio == null) {
+            this.bio = new Bio(new Nickname(nickname), null);
+        } else {
+            this.bio.updateNickname(nickname);
+        }
+    }
+
     // --- AvatarSetting delegates ---
 
     public void updateAvatarBody(AvatarBodyUri avatarBodyUri, int combinePositionX, int combinePositionY) {
