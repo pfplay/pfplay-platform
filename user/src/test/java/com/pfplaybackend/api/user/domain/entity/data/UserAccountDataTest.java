@@ -111,4 +111,46 @@ class UserAccountDataTest {
         assertThat(account.getEmail()).isEqualTo("real@admin.com");
         assertThat(account.getPasswordHash()).isEqualTo("$2a$12$encoded");
     }
+
+    @Test
+    void createForLocalWithMandatoryChange_setsFlagTrue() {
+        UserAccountData ua = UserAccountData.createForLocalWithMandatoryChange(
+                new UserId(123L), "x@y.z", "hash");
+        assertThat(ua.isMustChangePassword()).isTrue();
+        assertThat(ua.getProviderType()).isEqualTo(ProviderType.LOCAL);
+        assertThat(ua.getPasswordHash()).isEqualTo("hash");
+    }
+
+    @Test
+    void createForLocal_keepsFlagFalseByDefault() {
+        UserAccountData ua = UserAccountData.createForLocal(
+                new UserId(123L), "x@y.z", "hash");
+        assertThat(ua.isMustChangePassword()).isFalse();
+    }
+
+    @Test
+    void changePasswordHash_clearsFlag() {
+        UserAccountData ua = UserAccountData.createForLocalWithMandatoryChange(
+                new UserId(123L), "x@y.z", "old");
+        ua.changePasswordHash("new");
+        assertThat(ua.getPasswordHash()).isEqualTo("new");
+        assertThat(ua.isMustChangePassword()).isFalse();
+    }
+
+    @Test
+    void requirePasswordChange_setsHashAndFlag() {
+        UserAccountData ua = UserAccountData.createForLocal(
+                new UserId(123L), "x@y.z", "old");
+        ua.requirePasswordChange("temp");
+        assertThat(ua.getPasswordHash()).isEqualTo("temp");
+        assertThat(ua.isMustChangePassword()).isTrue();
+    }
+
+    @Test
+    void replacePlaceholderCredentials_doesNotTouchMustChangeFlag() {
+        UserAccountData ua = UserAccountData.createForLocal(
+                new UserId(1L), "__SUPER_ADMIN_PLACEHOLDER_EMAIL__", "__placeholder__");
+        ua.replacePlaceholderCredentials("ops@pfplay.xyz", "real-bcrypt");
+        assertThat(ua.isMustChangePassword()).isFalse();
+    }
 }

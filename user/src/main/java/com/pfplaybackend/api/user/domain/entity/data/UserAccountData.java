@@ -43,15 +43,20 @@ public class UserAccountData extends BaseEntity {
     @Column(name = "withdrawn_at")
     private LocalDateTime withdrawnAt;
 
+    @Column(name = "must_change_password", nullable = false)
+    private boolean mustChangePassword;
+
     @Builder(access = AccessLevel.PRIVATE)
     private UserAccountData(UserId userId, String email, ProviderType providerType,
-                            String passwordHash, LocalDateTime lastLoginAt, LocalDateTime withdrawnAt) {
+                            String passwordHash, LocalDateTime lastLoginAt,
+                            LocalDateTime withdrawnAt, boolean mustChangePassword) {
         this.userId = userId;
         this.email = email;
         this.providerType = providerType;
         this.passwordHash = passwordHash;
         this.lastLoginAt = lastLoginAt;
         this.withdrawnAt = withdrawnAt;
+        this.mustChangePassword = mustChangePassword;
     }
 
     public static UserAccountData createForSocial(UserId userId, String email, ProviderType providerType) {
@@ -73,6 +78,29 @@ public class UserAccountData extends BaseEntity {
             .providerType(ProviderType.LOCAL)
             .passwordHash(passwordHash)
             .build();
+    }
+
+    public static UserAccountData createForLocalWithMandatoryChange(
+            UserId userId, String email, String passwordHash) {
+        return UserAccountData.builder()
+            .userId(userId)
+            .email(email)
+            .providerType(ProviderType.LOCAL)
+            .passwordHash(passwordHash)
+            .mustChangePassword(true)
+            .build();
+    }
+
+    public void changePasswordHash(String newHash) {
+        Objects.requireNonNull(newHash, "newHash must not be null");
+        this.passwordHash = newHash;
+        this.mustChangePassword = false;
+    }
+
+    public void requirePasswordChange(String newHash) {
+        Objects.requireNonNull(newHash, "newHash must not be null");
+        this.passwordHash = newHash;
+        this.mustChangePassword = true;
     }
 
     public void recordLogin() {
