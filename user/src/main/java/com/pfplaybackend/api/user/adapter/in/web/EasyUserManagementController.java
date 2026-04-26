@@ -2,8 +2,8 @@ package com.pfplaybackend.api.user.adapter.in.web;
 
 import com.pfplaybackend.api.common.ApiCommonResponse;
 import com.pfplaybackend.api.common.config.security.enums.AccessLevel;
-import com.pfplaybackend.api.common.config.security.jwt.CookieUtil;
 import com.pfplaybackend.api.common.config.security.jwt.JwtService;
+import com.pfplaybackend.api.common.config.security.jwt.SharedSessionCookieWriter;
 import com.pfplaybackend.api.common.config.security.jwt.dto.TokenClaimsRequest;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/users")
 public class EasyUserManagementController {
 
-    private final CookieUtil cookieUtil;
+    private final SharedSessionCookieWriter sharedSessionCookieWriter;
     private final JwtService jwtService;
     private final UserAccountRepository userAccountRepository;
 
@@ -37,7 +37,7 @@ public class EasyUserManagementController {
         UserId userId = new UserId();
         MemberData member = temporaryUserInitializeService.addAssociateMember(userId, userId.getUid().toString().substring(0,12) + "@gmail.com");
         UserAccountData userAccount = loadUserAccount(member);
-        cookieUtil.addAccessTokenCookie(response, jwtService.mintSharedSessionToken(new TokenClaimsRequest(
+        sharedSessionCookieWriter.write(response, jwtService.mintSharedSessionToken(new TokenClaimsRequest(
                 userAccount.getUserId().getUid().toString(),
                 userAccount.getEmail(),
                 java.util.List.of(AccessLevel.ROLE_MEMBER),
@@ -55,7 +55,7 @@ public class EasyUserManagementController {
         MemberData member = temporaryUserInitializeService.upgradeMember(
                 temporaryUserInitializeService.addAssociateMember(userId, userId.getUid().toString().substring(0,12) + "@gmail.com"));
         UserAccountData userAccount = loadUserAccount(member);
-        cookieUtil.addAccessTokenCookie(response, jwtService.mintSharedSessionToken(new TokenClaimsRequest(
+        sharedSessionCookieWriter.write(response, jwtService.mintSharedSessionToken(new TokenClaimsRequest(
                 userAccount.getUserId().getUid().toString(),
                 userAccount.getEmail(),
                 java.util.List.of(AccessLevel.ROLE_MEMBER),

@@ -109,18 +109,25 @@ app:
 
   jwt:
     secret: ${JWT_SECRET}
-    expiration-ms: 86400000 # 24시간
-    refresh-expiration-ms: 604800000 # 7일
+    admin-access-token-expiration-ms: 900000      # 15 min
+    shared-session-token-expiration-ms: 86400000  # 24h
 
     cookie:
-      access-token-name: AccessToken
-      refresh-token-name: RefreshToken
-      domain: localhost
-      path: /
-      access-token-expiry-seconds: 86400
-      refresh-token-expiry-seconds: 604800
-      secure: true
-      same-site: None
+      admin:
+        name: AdminAccessToken
+        domain: ${ADMIN_COOKIE_DOMAIN:localhost}
+        path: /
+        secure: true
+        same-site: Strict
+        max-age-seconds: 900
+        renewal-threshold-seconds: 300
+      shared:
+        name: SharedSessionToken
+        domain: ${COOKIE_DOMAIN:localhost}
+        path: /
+        secure: true
+        same-site: None
+        max-age-seconds: 86400
 
   webclient:
     timeout:
@@ -173,9 +180,14 @@ server:
 app:
   jwt:
     cookie:
-      domain: ${COOKIE_DOMAIN}
-      secure: ${COOKIE_SECURE:true}
-      same-site: ${COOKIE_SAME_SITE:Lax}
+      admin:
+        domain: ${ADMIN_COOKIE_DOMAIN}
+        secure: ${COOKIE_SECURE:true}
+        same-site: Strict
+      shared:
+        domain: ${COOKIE_DOMAIN}
+        secure: ${COOKIE_SECURE:true}
+        same-site: ${COOKIE_SAME_SITE:Lax}
 
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS}
@@ -221,9 +233,14 @@ logging:
 app:
   jwt:
     cookie:
-      domain: ${COOKIE_DOMAIN}
-      secure: true
-      same-site: Lax
+      admin:
+        domain: ${ADMIN_COOKIE_DOMAIN}
+        secure: true
+        same-site: Strict
+      shared:
+        domain: ${COOKIE_DOMAIN}
+        secure: true
+        same-site: Lax
 
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS}
@@ -269,9 +286,14 @@ logging:
 app:
   jwt:
     cookie:
-      domain: ${COOKIE_DOMAIN}
-      secure: true
-      same-site: Lax
+      admin:
+        domain: ${ADMIN_COOKIE_DOMAIN}
+        secure: true
+        same-site: Strict
+      shared:
+        domain: ${COOKIE_DOMAIN}
+        secure: true
+        same-site: Lax
 
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS}
@@ -281,3 +303,20 @@ springdoc:
     enabled: false
   api-docs:
     enabled: false
+
+---
+# 🔵 로컬 개발 환경
+spring:
+  config:
+    activate:
+      on-profile: local
+
+app:
+  jwt:
+    cookie:
+      admin:
+        secure: false
+        same-site: Lax       # Strict would block cross-tab navigation from devtools
+      shared:
+        secure: false
+        same-site: Lax

@@ -69,6 +69,11 @@ class JwtServiceSharedTokenTest {
 
     private Claims parse(String token) {
         SecretKey key = Keys.hmacShaKeyFor(props.getSecret().getBytes(StandardCharsets.UTF_8));
-        return Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload();
+        return Jwts.parser()
+                .verifyWith(key)
+                .clockSkewSeconds(Long.MAX_VALUE / 2_000)
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
     }
 }

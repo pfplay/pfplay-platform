@@ -4,8 +4,8 @@ import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
 import com.pfplaybackend.api.user.application.service.*;
 import com.pfplaybackend.api.user.application.service.initialize.TemporaryUserInitializeService;
 import com.pfplaybackend.api.user.application.validation.AvatarRequestValidator;
-import com.pfplaybackend.api.common.config.security.jwt.CookieUtil;
 import com.pfplaybackend.api.common.config.security.jwt.JwtService;
+import com.pfplaybackend.api.common.config.security.jwt.SharedSessionCookieWriter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
@@ -41,7 +41,7 @@ abstract class AbstractUserWebMvcTest {
     @MockBean protected GuestSignService guestSignService;
     @MockBean protected TemporaryUserInitializeService temporaryUserInitializeService;
     @MockBean protected UserAccountRepository userAccountRepository;
-    @MockBean protected CookieUtil cookieUtil;
+    @MockBean protected SharedSessionCookieWriter sharedSessionCookieWriter;
     @MockBean protected JwtService jwtService;
     @MockBean protected JwtDecoder jwtDecoder;
 }

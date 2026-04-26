@@ -2,8 +2,8 @@ package com.pfplaybackend.api.user.adapter.in.web;
 
 import com.pfplaybackend.api.common.ApiCommonResponse;
 import com.pfplaybackend.api.common.config.security.enums.AccessLevel;
-import com.pfplaybackend.api.common.config.security.jwt.CookieUtil;
 import com.pfplaybackend.api.common.config.security.jwt.JwtService;
+import com.pfplaybackend.api.common.config.security.jwt.SharedSessionCookieWriter;
 import com.pfplaybackend.api.common.config.security.jwt.dto.TokenClaimsRequest;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.user.adapter.in.web.payload.request.UpdateMyWalletRequest;
@@ -33,7 +33,7 @@ public class UserWalletCommandController {
 
     private final UserWalletCommandService userWalletService;
     private final UserAccountRepository userAccountRepository;
-    private final CookieUtil cookieUtil;
+    private final SharedSessionCookieWriter sharedSessionCookieWriter;
     private final JwtService jwtService;
 
     @Operation(summary = "지갑 주소 수정", description = "현재 인증된 회원의 지갑 주소를 수정합니다. 수정 후 갱신된 정보로 액세스 토큰이 재발급됩니다. 회원만 사용 가능합니다.")
@@ -45,7 +45,7 @@ public class UserWalletCommandController {
         // Email and user_id live on UserAccount post-V4. Fetch the bound account
         // for token claims rather than reaching through Member.
         UserAccountData userAccount = userAccountRepository.findById(new UserId(member.getUserAccountId())).orElseThrow();
-        cookieUtil.addAccessTokenCookie(response, jwtService.mintSharedSessionToken(new TokenClaimsRequest(
+        sharedSessionCookieWriter.write(response, jwtService.mintSharedSessionToken(new TokenClaimsRequest(
                 userAccount.getUserId().getUid().toString(),
                 userAccount.getEmail(),
                 java.util.List.of(AccessLevel.ROLE_MEMBER),

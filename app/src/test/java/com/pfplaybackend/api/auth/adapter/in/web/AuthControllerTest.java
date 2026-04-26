@@ -7,7 +7,7 @@ import com.pfplaybackend.api.auth.application.service.AuthService;
 import com.pfplaybackend.api.auth.application.service.LogoutService;
 import com.pfplaybackend.api.auth.application.service.OAuthUrlService;
 import com.pfplaybackend.api.auth.domain.enums.OAuthProvider;
-import com.pfplaybackend.api.common.config.security.jwt.CookieUtil;
+import com.pfplaybackend.api.common.config.security.jwt.SharedSessionCookieWriter;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,7 +34,7 @@ class AuthControllerTest {
     @MockBean OAuthUrlService oAuthUrlService;
     @MockBean AuthService authService;
     @MockBean LogoutService logoutService;
-    @MockBean CookieUtil cookieUtil;
+    @MockBean SharedSessionCookieWriter sharedSessionCookieWriter;
     @MockBean JwtDecoder jwtDecoder;
 
     @Test
@@ -100,7 +100,7 @@ class AuthControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.tokenType").value("Cookie"));
 
-        verify(cookieUtil).addAccessTokenCookie(any(), eq("access-token"));
+        verify(sharedSessionCookieWriter).write(any(), eq("access-token"));
     }
 
     @Test
