@@ -138,6 +138,14 @@ app:
         capacity: 5
         window-seconds: 900
 
+  security:
+    admin-origin-guard:
+      enabled: true
+      allowed:
+        - https://localhost:3000
+        - http://localhost:3000
+        - https://admin.pfplay.xyz
+
   webclient:
     timeout:
       connection: 5000

@@ -4,8 +4,10 @@ import com.pfplaybackend.api.common.config.security.cors.properties.CorsProperti
 import com.pfplaybackend.api.common.config.security.jwt.AdminTokenRenewalFilter;
 import com.pfplaybackend.api.common.config.security.jwt.CookieBearerTokenResolver;
 import com.pfplaybackend.api.common.config.security.jwt.CustomJwtAuthenticationConverter;
+import com.pfplaybackend.api.common.config.security.web.AdminOriginGuardFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -27,6 +29,7 @@ public class SecurityConfig {
     private final CustomJwtAuthenticationConverter jwtAuthenticationConverter;
     private final CorsProperties corsProperties;
     private final AdminTokenRenewalFilter adminTokenRenewalFilter;
+    private final AdminOriginGuardFilter adminOriginGuardFilter;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -58,6 +61,7 @@ public class SecurityConfig {
                                 .jwtAuthenticationConverter(jwtAuthenticationConverter)
                         )
                 )
+                .addFilterBefore(adminOriginGuardFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterAfter(adminTokenRenewalFilter, BearerTokenAuthenticationFilter.class);
         return http.build();
     }
