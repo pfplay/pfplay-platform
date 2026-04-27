@@ -5,6 +5,8 @@ import com.pfplaybackend.api.administration.domain.entity.data.PartyroomAdminAct
 import com.pfplaybackend.api.administration.domain.enums.AdminActionTargetType;
 import com.pfplaybackend.api.administration.domain.enums.PartyroomAdminActionType;
 import com.pfplaybackend.api.administration.domain.value.JsonMetadata;
+import com.pfplaybackend.api.party.domain.event.AdminCrewPenalizedEvent;
+import com.pfplaybackend.api.party.domain.event.AdminCrewPenaltyReleasedEvent;
 import com.pfplaybackend.api.party.domain.event.PartyroomDisplayFlagChangedEvent;
 import com.pfplaybackend.api.party.domain.event.PartyroomMetaUpdatedEvent;
 import com.pfplaybackend.api.party.domain.event.PartyroomRestoredEvent;
@@ -15,6 +17,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -107,6 +110,39 @@ public class PartyroomAdminActionListener {
                         "old_flag", event.getOldFlag().name(),
                         "new_flag", event.getNewFlag().name()
                 )),
+                event.getOccurredAt()
+        ));
+    }
+
+    @EventListener
+    public void on(AdminCrewPenalizedEvent event) {
+        Map<String, Object> meta = new HashMap<>();
+        meta.put("penalty_type", event.getPenaltyType().name());
+        if (event.getCrewPenaltyHistoryId() != null) {
+            meta.put("crew_penalty_history_id", event.getCrewPenaltyHistoryId());
+        }
+        save(PartyroomAdminActionData.of(
+                event.getAdministratorId(),
+                PartyroomAdminActionType.PENALIZE_CREW,
+                AdminActionTargetType.CREW,
+                event.getPunishedCrewId().getId(),
+                event.getPartyroomId().getId(),
+                event.getReason(),
+                JsonMetadata.of(meta),
+                event.getOccurredAt()
+        ));
+    }
+
+    @EventListener
+    public void on(AdminCrewPenaltyReleasedEvent event) {
+        save(PartyroomAdminActionData.of(
+                event.getAdministratorId(),
+                PartyroomAdminActionType.RELEASE_CREW_PENALTY,
+                AdminActionTargetType.CREW,
+                event.getReleasedCrewId().getId(),
+                event.getPartyroomId().getId(),
+                null,                                   // release는 unstructured reason 받지 않음
+                JsonMetadata.of(Map.of("crew_penalty_history_id", event.getCrewPenaltyHistoryId())),
                 event.getOccurredAt()
         ));
     }
