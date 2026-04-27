@@ -97,6 +97,11 @@ public class CrewPenaltyCommandService {
         CrewPenaltyHistoryData historyData = crewPenaltyHistoryRepository.findByIdAndPartyroomIdAndReleasedIsFalse(penaltyId, partyroomId)
                 .orElseThrow(() -> ExceptionCreator.create(PenaltyException.PENALTY_HISTORY_NOT_FOUND));
 
+        // [PR 9] admin-applied 페널티는 admin endpoint를 통해서만 release 가능 (spec §4.3)
+        if (historyData.getPunisherType() == PunisherType.ADMIN) {
+            throw ExceptionCreator.create(PenaltyException.ADMIN_APPLIED_PENALTY_REQUIRES_ADMIN_RELEASE);
+        }
+
         // 1. Release ban on crew
         CrewData crew = aggregatePort.findCrewById(historyData.getPunishedCrewId().getId())
                 .orElseThrow();
