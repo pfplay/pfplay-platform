@@ -13,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -176,5 +177,24 @@ class PartyroomRepositoryAtomicUpdateIT extends AbstractIntegrationTest {
 
         assertThat(result).isPresent();
         assertThat(result.get().getStatus()).isEqualTo(PartyroomStatus.SUSPENDED);
+    }
+
+    // ── findAllUnusedPartyroomDataByDay (spec §12.1 cleanup job 회귀 가드) ──
+
+    @Test
+    @DisplayName("findAllUnusedPartyroomDataByDay — TERMINATED 룸은 결과에서 제외 (cleanup job이 strict terminate 가드와 충돌하지 않도록)")
+    void unused_excludes_terminated() {
+        // given: ACTIVE room and TERMINATED room (IDs outside 1001-2002 range used above)
+        PartyroomData active = createAndSaveActive(2010L);
+        PartyroomData terminated = createAndSaveTerminated(2011L);
+
+        // when: days=0 so updatedAt.before(now.minusDays(0)) == updatedAt.before(now) —
+        // all recently-saved rows qualify as "unused" (created microseconds before the query)
+        List<PartyroomData> unused = partyroomRepository.findAllUnusedPartyroomDataByDay(0);
+
+        // then: ACTIVE room is in the result, TERMINATED room is excluded
+        assertThat(unused).extracting(PartyroomData::getId)
+                .contains(active.getId())
+                .doesNotContain(terminated.getId());
     }
 }

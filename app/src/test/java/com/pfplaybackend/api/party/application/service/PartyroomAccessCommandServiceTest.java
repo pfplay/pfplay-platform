@@ -3,6 +3,7 @@ package com.pfplaybackend.api.party.application.service;
 import com.pfplaybackend.api.common.ThreadLocalContext;
 import com.pfplaybackend.api.common.aspect.context.AuthContext;
 import com.pfplaybackend.api.common.domain.value.UserId;
+import com.pfplaybackend.api.common.enums.AuthorityTier;
 import com.pfplaybackend.api.party.application.dto.partyroom.ActivePartyroomDto;
 import com.pfplaybackend.api.party.application.port.out.PlaybackControlPort;
 import com.pfplaybackend.api.party.domain.entity.data.CrewData;
@@ -13,6 +14,7 @@ import com.pfplaybackend.api.party.domain.enums.PartyroomStatus;
 import com.pfplaybackend.api.party.domain.event.CrewAccessedEvent;
 import com.pfplaybackend.api.party.domain.port.PartyroomAggregatePort;
 import com.pfplaybackend.api.party.domain.service.PartyroomAggregateService;
+import com.pfplaybackend.api.party.domain.value.CountryCode;
 import com.pfplaybackend.api.party.domain.value.CrewId;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import org.junit.jupiter.api.AfterEach;
@@ -24,7 +26,10 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionStatus;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -32,6 +37,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -62,7 +68,7 @@ class PartyroomAccessCommandServiceTest {
         partyroomId = new PartyroomId(1L);
 
         AuthContext authContext = mock(AuthContext.class);
-        when(authContext.getUserId()).thenReturn(userId);
+        lenient().when(authContext.getUserId()).thenReturn(userId);
         ThreadLocalContext.setContext(authContext);
 
         // @PostConstruct does not run with @InjectMocks — manually wire the TransactionTemplate
@@ -172,5 +178,54 @@ class PartyroomAccessCommandServiceTest {
 
         // then — EXIT event (from old room exit) + ENTER event (new room) = exactly 2 publish calls
         verify(eventPublisher, times(2)).publishEvent(any(Object.class));
+    }
+
+    @Test
+    @DisplayName("tryEnter INSERT race 패배자는 winner를 별 트랜잭션에서 조회하고 ENTER 이벤트를 발행하지 않는다")
+    void tryEnterConcurrentInsertLoserShouldNotPublishEnter() {
+        // given
+        PartyroomId racePartyroomId = new PartyroomId(700L);
+        UserId raceUserId = new UserId(8001L);
+        AuthContext authContext = new AuthContext(raceUserId, AuthorityTier.GT);
+        ThreadLocalContext.setContext(authContext);
+
+        try {
+            PartyroomData partyroom = mock(PartyroomData.class);
+            when(partyroom.getPartyroomId()).thenReturn(racePartyroomId);
+            when(partyroom.getStatus()).thenReturn(PartyroomStatus.ACTIVE);
+            when(partyroom.isSuspended()).thenReturn(false);
+            when(partyroomQueryService.getPartyroomById(racePartyroomId)).thenReturn(partyroom);
+            when(aggregatePort.countActiveCrews(racePartyroomId)).thenReturn(0L);
+            when(partyroomQueryService.getMyActivePartyroom(raceUserId)).thenReturn(Optional.empty());
+
+            // INSERT race scenario: activateCrew=0 (no existing row), findCrew initially empty,
+            // saveCrew throws UNIQUE constraint violation simulating concurrent INSERT.
+            // findCrew is called 3 times for this path:
+            //   1. tryEnter line 69: existingCrew (for PartyroomEntrySpecification + same-room guard)
+            //   2. ensureCrewActive line 138: existing (row missing check → triggers INSERT attempt)
+            //   3. findCrewInNewTransaction (REQUIRES_NEW SELECT): winner row
+            when(aggregatePort.activateCrew(eq(racePartyroomId), eq(raceUserId), any())).thenReturn(0);
+            CrewData winnerCrew = mock(CrewData.class);
+            when(aggregatePort.findCrew(eq(racePartyroomId), eq(raceUserId)))
+                    .thenReturn(Optional.empty())               // call 1: tryEnter existingCrew check
+                    .thenReturn(Optional.empty())               // call 2: ensureCrewActive row-missing check → INSERT
+                    .thenReturn(Optional.of(winnerCrew));       // call 3: REQUIRES_NEW SELECT → winner
+            when(aggregatePort.saveCrew(any())).thenThrow(new DataIntegrityViolationException("uk_crew_partyroom_user"));
+
+            // Initialize requiresNewReadOnlyTx (skipped by @InjectMocks since @PostConstruct doesn't fire)
+            TransactionStatus txStatus = mock(TransactionStatus.class);
+            when(transactionManager.getTransaction(any())).thenReturn(txStatus);
+            ReflectionTestUtils.invokeMethod(partyroomAccessCommandService, "initTxTemplates");
+
+            // when
+            CrewData result = partyroomAccessCommandService.tryEnter(racePartyroomId, CountryCode.of("KR"));
+
+            // then: returned crew is the winner row found in the REQUIRES_NEW transaction
+            assertThat(result).isSameAs(winnerCrew);
+            // No ENTER event published — concurrent insert loser must not inflate the counter
+            verify(eventPublisher, never()).publishEvent(any(CrewAccessedEvent.class));
+        } finally {
+            ThreadLocalContext.clearContext();
+        }
     }
 }
