@@ -4,6 +4,9 @@ import com.pfplaybackend.api.admin.application.service.AdminDemoService;
 import com.pfplaybackend.api.admin.application.service.AdminPartyroomService;
 import com.pfplaybackend.api.admin.application.service.AdminUserService;
 import com.pfplaybackend.api.admin.application.service.ChatSimulationService;
+import com.pfplaybackend.api.administration.adapter.in.web.AdministratorManagementController;
+import com.pfplaybackend.api.administration.application.AdminContext;
+import com.pfplaybackend.api.administration.application.service.AdministratorManagementService;
 import com.pfplaybackend.api.common.config.security.authorization.AdminAuthorizationSpEL;
 import com.pfplaybackend.api.common.config.security.jwt.AdminCookieWriter;
 import com.pfplaybackend.api.common.config.security.jwt.JwtService;
@@ -22,13 +25,14 @@ import org.springframework.test.web.servlet.MockMvc;
 @WebMvcTest({
         AdminUserController.class,
         AdminPartyroomController.class,
-        AdminDemoController.class
+        AdminDemoController.class,
+        AdministratorManagementController.class
 })
 @Import({
         AbstractAdminWebMvcTest.SharedMethodSecurityConfig.class,
         AdminAuthorizationSpEL.class
 })
-abstract class AbstractAdminWebMvcTest {
+public abstract class AbstractAdminWebMvcTest {
 
     @Configuration
     @EnableMethodSecurity
@@ -45,4 +49,6 @@ abstract class AbstractAdminWebMvcTest {
     @MockBean protected JwtProperties jwtProperties;
     @MockBean protected SharedSessionCookieWriter sharedSessionCookieWriter;
     @MockBean protected AdminCookieWriter adminCookieWriter;
+    @MockBean protected AdministratorManagementService administratorManagementService;
+    @MockBean protected AdminContext adminContext;
 }
