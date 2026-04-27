@@ -19,6 +19,7 @@ import com.pfplaybackend.api.user.domain.entity.data.MemberData;
 import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -86,9 +87,18 @@ public class AdministratorManagementService {
         String tempPwd = tempPasswordGenerator.generate();
         String hash = passwordEncoder.encode(tempPwd);
 
-        UserAccountData ua = userAccountRepository.save(
-                UserAccountData.createForLocalWithMandatoryChange(
-                        new UserId(), req.getEmail(), hash));
+        UserAccountData ua;
+        try {
+            ua = userAccountRepository.save(
+                    UserAccountData.createForLocalWithMandatoryChange(
+                            new UserId(), req.getEmail(), hash));
+        } catch (DataIntegrityViolationException dup) {
+            // Decision 14 race window: a concurrent create call inserted the same
+            // email between our findByEmail check (line 82) and the save above.
+            // V4 uk_user_account_email surfaces here as DataIntegrityViolation —
+            // translate to the same clean 409 the early check would have produced.
+            throw ExceptionCreator.create(AdministratorManagementException.EMAIL_ALREADY_REGISTERED);
+        }
 
         AdministratorData admin = administratorRepository.save(
                 AdministratorData.createAdmin(ua.getUserId().getUid(), actorAdministratorId));
@@ -128,6 +138,15 @@ public class AdministratorManagementService {
         log.info("admin_management.update_nickname administrator_id={}", administratorId);
     }
 
+    /**
+     * Revokes an administrator. Self-revoke and last-super-admin removal are forbidden.
+     *
+     * <p><b>Decision 11 race window:</b> two concurrent revoke calls against two distinct
+     * super-admins could each see {@code count == 2} and both succeed, leaving zero. At
+     * MVP scale (single super admin invariant) this is impossible — the count is always 1.
+     * If multi-super-admin is ever introduced, wrap the count query with
+     * {@code @Lock(LockModeType.PESSIMISTIC_WRITE)} or move the guard into a DB CHECK.
+     */
     @Transactional
     public void revoke(Long administratorId, Long actorAdministratorId) {
         if (Objects.equals(administratorId, actorAdministratorId)) {
