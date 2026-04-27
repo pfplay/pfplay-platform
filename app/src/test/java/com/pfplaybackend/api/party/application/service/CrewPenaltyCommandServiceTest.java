@@ -14,6 +14,7 @@ import com.pfplaybackend.api.party.domain.entity.data.history.CrewPenaltyHistory
 import com.pfplaybackend.api.party.domain.enums.GradeType;
 import com.pfplaybackend.api.party.domain.enums.PartyroomStatus;
 import com.pfplaybackend.api.party.domain.enums.PenaltyType;
+import com.pfplaybackend.api.party.domain.enums.PunisherType;
 import com.pfplaybackend.api.party.domain.enums.StageType;
 import com.pfplaybackend.api.party.domain.event.CrewPenalizedEvent;
 import com.pfplaybackend.api.party.domain.port.PartyroomAggregatePort;
@@ -26,6 +27,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -140,7 +142,9 @@ class CrewPenaltyCommandServiceTest {
         assertThat(penaltyId).isEqualTo(77L);
         verify(partyroomAccessCommandService).expel(partyroom, punishedCrew, true);
         verify(eventPublisher).publishEvent(any(CrewPenalizedEvent.class));
-        verify(crewPenaltyHistoryRepository).save(any(CrewPenaltyHistoryData.class));
+        ArgumentCaptor<CrewPenaltyHistoryData> captor = ArgumentCaptor.forClass(CrewPenaltyHistoryData.class);
+        verify(crewPenaltyHistoryRepository).save(captor.capture());
+        assertThat(captor.getValue().getPunisherType()).isEqualTo(PunisherType.CREW);
     }
 
     @Test

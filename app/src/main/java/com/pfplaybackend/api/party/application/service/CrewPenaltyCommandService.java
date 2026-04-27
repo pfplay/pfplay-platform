@@ -11,6 +11,7 @@ import com.pfplaybackend.api.party.domain.entity.data.PartyroomData;
 import com.pfplaybackend.api.party.domain.entity.data.history.CrewPenaltyHistoryData;
 import com.pfplaybackend.api.party.domain.enums.GradeType;
 import com.pfplaybackend.api.party.domain.enums.PenaltyType;
+import com.pfplaybackend.api.party.domain.enums.PunisherType;
 import com.pfplaybackend.api.party.domain.event.CrewPenalizedEvent;
 import com.pfplaybackend.api.party.domain.exception.GradeException;
 import com.pfplaybackend.api.party.domain.exception.PenaltyException;
@@ -70,6 +71,7 @@ public class CrewPenaltyCommandService {
                     .partyroomId(partyroomId)
                     .punishedCrewId(punishedCrewId)
                     .punisherCrewId(new CrewId(punisherCrew.getId()))
+                    .punisherType(PunisherType.CREW)            // [PR 9] V8 컬럼 명시화
                     .penaltyReason(command.detail())
                     .penaltyDate(LocalDateTime.now(clock))
                     .penaltyType(command.penaltyType())

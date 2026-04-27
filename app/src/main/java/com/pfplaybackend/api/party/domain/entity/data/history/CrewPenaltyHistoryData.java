@@ -2,6 +2,7 @@ package com.pfplaybackend.api.party.domain.entity.data.history;
 
 import com.pfplaybackend.api.common.entity.BaseEntity;
 import com.pfplaybackend.api.party.domain.enums.PenaltyType;
+import com.pfplaybackend.api.party.domain.enums.PunisherType;
 import com.pfplaybackend.api.party.domain.value.CrewId;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import jakarta.persistence.*;
@@ -42,6 +43,10 @@ public class CrewPenaltyHistoryData extends BaseEntity {
     @Enumerated(EnumType.STRING)
     private PenaltyType penaltyType;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "punisher_type", nullable = false)
+    private PunisherType punisherType;
+
     @Embedded
     @AttributeOverrides({
             @AttributeOverride(name = "id", column = @Column(name = "punished_crew_id")),
@@ -76,5 +81,18 @@ public class CrewPenaltyHistoryData extends BaseEntity {
 
     public void release(CrewId releaserCrewId) {
         release(releaserCrewId, LocalDateTime.now());
+    }
+
+    /**
+     * 어드민이 부과한 페널티의 해제.
+     * admin-released signal: released_by_crew_id IS NULL (Q8.9(i)에서 별도 released_by_type 컬럼 미도입).
+     * V1 스키마에서 released_by_crew_id는 nullable이라 추가 마이그 불필요.
+     * admin 정체는 partyroom_admin_action.administrator_id 경로로 식별
+     * (correlation: metadata.crew_penalty_history_id).
+     */
+    public void releaseByAdmin(LocalDateTime now) {
+        this.released = true;
+        this.releasedByCrewId = null;
+        this.releaseDate = now;
     }
 }
