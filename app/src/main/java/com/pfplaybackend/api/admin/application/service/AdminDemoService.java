@@ -397,7 +397,7 @@ public class AdminDemoService {
     public DemoStatusResult getDemoEnvironmentStatus() {
         long virtualMemberCount = adminMemberPort.countMembersByProviderType(ProviderType.LOCAL);
         long generalRoomCount = adminPartyroomPort.findAllPartyrooms().stream()
-                .filter(p -> !p.isTerminated() && p.getStageType() == StageType.GENERAL)
+                .filter(p -> p.isActive() && p.getStageType() == StageType.GENERAL)
                 .count();
 
         boolean initialized = virtualMemberCount > 0;
@@ -408,7 +408,7 @@ public class AdminDemoService {
     @Transactional(readOnly = true)
     public AdminPartyroomListResult getPartyrooms() {
         List<AdminPartyroomListResult.PartyroomItem> items = adminPartyroomPort.findAllPartyrooms().stream()
-                .filter(p -> !p.isTerminated())
+                .filter(p -> p.isActive())
                 .map(p -> {
                     int crewCount = (int) adminPartyroomPort.countActiveCrewByPartyroom(p.getPartyroomId());
                     int djCount = adminPartyroomPort.findDjsByPartyroomOrderByOrder(p.getPartyroomId()).size();

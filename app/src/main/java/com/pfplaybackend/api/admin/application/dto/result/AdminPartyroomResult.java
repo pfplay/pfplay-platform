@@ -24,7 +24,7 @@ public record AdminPartyroomResult(
                 partyroom.getLinkDomain().getValue(),
                 partyroom.getPlaybackTimeLimit().getMinutes(),
                 partyroom.getStageType().name(),
-                !partyroom.isTerminated(),
+                partyroom.isActive(),
                 partyroom.getCreatedAt()
         );
     }
