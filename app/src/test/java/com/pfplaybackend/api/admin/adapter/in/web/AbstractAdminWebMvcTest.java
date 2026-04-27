@@ -4,9 +4,11 @@ import com.pfplaybackend.api.admin.application.service.AdminDemoService;
 import com.pfplaybackend.api.admin.application.service.AdminPartyroomService;
 import com.pfplaybackend.api.admin.application.service.AdminUserService;
 import com.pfplaybackend.api.admin.application.service.ChatSimulationService;
+import com.pfplaybackend.api.administration.adapter.in.web.AdminPartyroomCommandController;
 import com.pfplaybackend.api.administration.adapter.in.web.AdministratorManagementController;
 import com.pfplaybackend.api.administration.adapter.in.web.AdminPasswordController;
 import com.pfplaybackend.api.administration.application.AdminContext;
+import com.pfplaybackend.api.administration.application.service.AdminPartyroomCommandService;
 import com.pfplaybackend.api.administration.application.service.AdministratorManagementService;
 import com.pfplaybackend.api.administration.application.service.AdminPasswordService;
 import com.pfplaybackend.api.common.config.security.authorization.AdminAuthorizationSpEL;
@@ -29,7 +31,8 @@ import org.springframework.test.web.servlet.MockMvc;
         AdminPartyroomController.class,
         AdminDemoController.class,
         AdministratorManagementController.class,
-        AdminPasswordController.class
+        AdminPasswordController.class,
+        AdminPartyroomCommandController.class
 })
 @Import({
         AbstractAdminWebMvcTest.SharedMethodSecurityConfig.class,
@@ -55,4 +58,5 @@ public abstract class AbstractAdminWebMvcTest {
     @MockBean protected AdministratorManagementService administratorManagementService;
     @MockBean protected AdminContext adminContext;
     @MockBean protected AdminPasswordService adminPasswordService;
+    @MockBean protected AdminPartyroomCommandService adminPartyroomCommandService;
 }
