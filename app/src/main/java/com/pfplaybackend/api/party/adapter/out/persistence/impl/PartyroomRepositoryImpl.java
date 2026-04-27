@@ -166,7 +166,10 @@ public class PartyroomRepositoryImpl implements PartyroomRepositoryCustom {
 
         return queryFactory.select(qPartyroomData)
                 .from(qPartyroomData)
-                .where(qPartyroomData.updatedAt.before(LocalDateTime.now(clock).minusDays(days)))
+                .where(
+                        qPartyroomData.updatedAt.before(LocalDateTime.now(clock).minusDays(days)),
+                        qPartyroomData.status.ne(PartyroomStatus.TERMINATED)
+                )
                 .fetch();
     }
 }
