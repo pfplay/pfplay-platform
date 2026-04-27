@@ -152,6 +152,8 @@ public enum DisplayFlag { NORMAL, FEATURED, HIDDEN }
 - 기존 동작 그대로 유지 — `status == TERMINATED`만 체크. SUSPENDED 룸은 통과시킴.
 - SUSPENDED 입장 차단은 `PartyroomEntrySpecification`(§8.2)에서 별도 처리 — 명세 layer가 입장 정책의 단일 진입점이고 `validateNotTerminated()`는 단순 termination 가드 역할로 분리.
 
+> **구현 노트:** spec은 `IllegalPartyroomStateException`을 별 클래스로 명명했지만, 실제 구현은 기존 `PartyroomException` enum 패턴(`DomainException` 구현)을 재사용하여 `ILLEGAL_STATE_TRANSITION` (코드 PTR-007, ErrorType.CONFLICT) 한 행 추가. 의미 동일, 코드베이스 컨벤션 정합성 우선.
+
 ## 5. Atomic Counter Pattern
 
 ### 5.1 원칙
@@ -433,7 +435,7 @@ PR 7 시점엔 SUSPENDED 진입 경로 없지만 픽스처로 SUSPENDED 룸 직�
 | `decrementCrewCount` | (a) 정상 -1, (b) `crew_count=0`에서 호출 → 여전히 0, (c) TERMINATED 거부 |
 | `touchLastActivity` | (a) ACTIVE 갱신, (b) SUSPENDED 거부, (c) TERMINATED 거부 |
 | `applyAggregationDelta` | 정상 +1/-1, 존재 X → 0 affected |
-| `findActiveHostRoom` | TERMINATED 제외, SUSPENDED 제외 |
+| `findActiveHostRoom` | TERMINATED 제외, SUSPENDED는 **포함** (호스트의 새 룸 생성을 차단하기 위한 §6.4(a) 결정 — 의미 정정) |
 | V6 마이그레이션 | (a) 빈 DB clean apply, (b) V5 직후(`is_terminated` 데이터 있음) → `status` 정확 이관, `crew_count` = 활성 crew COUNT(*) 일치 |
 | `activateCrew`/`deactivateCrew` | 조건부 toggle 동작 — 1/0 반환 정확성 |
 
@@ -456,6 +458,8 @@ PR 7 시점엔 SUSPENDED 진입 경로 없지만 픽스처로 SUSPENDED 룸 직�
 - **(stretch) 공유 DB + 독립 컨텍스트:** 같은 Testcontainers MySQL을 가리키는 두 개의 EntityManagerFactory(또는 두 SpringBootTest 컨텍스트)를 병렬로 부팅, 각자 enter 시도 → atomic UPDATE / 조건부 toggle이 DB 레벨에서 직렬화되는지 검증. 셋업 비용이 높고 flaky 가능성 존재 — §9.3 단일 컨텍스트 동시성 테스트가 핵심 invariant를 이미 커버하므로, 본 시뮬레이션은 stretch goal로 분류. 시도 후 안정성 확보 어려우면 §9.3로 충분하다고 보고 스킵.
 - **Negative test:** UNIQUE 제약 위반 시 `DataIntegrityViolationException` 발생 + 두 번째 호출자에게 적절한 에러 응답 반환 검증.
 - **Out of scope (정직):** 진짜 멀티 노드(Redis pub/sub 지연, 네트워크 파티션)는 테스트 레벨에서 재현 불가 — 운영 모니터링(`crew_count` vs `COUNT(*) crew WHERE is_active=1` 일별 alert)으로 대체. drift 배치 도입 시 자연스럽게 흡수.
+
+> **구현 결과:** 단일 컨텍스트 동시성 테스트(`PartyroomCounterConcurrencyIT`, `PlaybackAggregationConcurrencyIT`, `PartyroomAccessCommandServiceRaceIT`)가 핵심 invariant(crew_count atomic + race B-3 차단 + spurious ENTER 차단)를 이미 cover. 진정한 cross-JVM 시뮬레이션은 본 PR scope에서 skip — production multi-node race 커버리지는 운영 모니터링(crew_count vs COUNT(*) crew WHERE is_active=1)으로 대체.
 
 ### 9.5 회귀 테스트
 
