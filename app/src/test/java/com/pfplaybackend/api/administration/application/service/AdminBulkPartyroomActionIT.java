@@ -18,10 +18,12 @@ import com.pfplaybackend.api.party.domain.value.LinkDomain;
 import com.pfplaybackend.api.party.domain.value.PlaybackTimeLimit;
 import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
 import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
 
@@ -43,11 +45,24 @@ class AdminBulkPartyroomActionIT extends AbstractIntegrationTest {
     @Autowired private PartyroomAdminActionRepository auditRepository;
     @Autowired private AdministratorRepository administratorRepository;
     @Autowired private UserAccountRepository userAccountRepository;
+    @Autowired private TransactionTemplate transactionTemplate;
 
     private Long superAdminId;
     private Long activeRoomA;
     private Long terminatedRoom;
     private Long activeRoomC;
+
+    @AfterEach
+    void cleanup() {
+        // Bulk service uses per-item TX commits, so an outer @Transactional rollback
+        // would not work. Clean up explicitly to prevent cross-test pollution.
+        transactionTemplate.executeWithoutResult(status -> {
+            auditRepository.deleteAll();
+            partyroomRepository.deleteAll();
+            administratorRepository.deleteAll();
+            userAccountRepository.deleteAll();
+        });
+    }
 
     @BeforeEach
     void seed() {
