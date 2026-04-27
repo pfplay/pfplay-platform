@@ -26,6 +26,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -190,5 +191,27 @@ class AdminPartyroomCommandServiceTest {
         assertThatThrownBy(() -> service.updateMeta(PID, "x", null, null, ADMIN_ID))
                 .isInstanceOf(ForbiddenException.class);
         verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    @DisplayName("updateMeta - introduction이 null인 룸에 새 intro 설정 - NPE 없이 동작")
+    void updateMeta_null_introduction() {
+        PartyroomData p = PartyroomData.create(
+                "T", null, LinkDomain.of("link"),     // introduction null
+                PlaybackTimeLimit.ofMinutes(5),
+                StageType.GENERAL, new UserId(1L)
+        );
+        when(aggregatePort.findPartyroomById(PID.getId())).thenReturn(Optional.of(p));
+
+        service.updateMeta(PID, null, "new intro", null, ADMIN_ID);
+
+        assertThat(p.getIntroduction()).isEqualTo("new intro");
+
+        ArgumentCaptor<PartyroomMetaUpdatedEvent> captor =
+                ArgumentCaptor.forClass(PartyroomMetaUpdatedEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        Map<String, Object> introDiff = captor.getValue().getDiff().get("introduction");
+        assertThat(introDiff).containsEntry("new", "new intro");
+        assertThat(introDiff.get("old")).isNull();   // null preserved (not stringified)
     }
 }

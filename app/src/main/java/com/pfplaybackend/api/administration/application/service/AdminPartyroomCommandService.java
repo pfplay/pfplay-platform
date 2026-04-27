@@ -116,17 +116,17 @@ public class AdminPartyroomCommandService {
         Map<String, Map<String, Object>> diff = new HashMap<>();
 
         if (newTitle != null && !newTitle.equals(partyroom.getTitle())) {
-            diff.put("title", Map.of("old", partyroom.getTitle(), "new", newTitle));
+            diff.put("title", oldNew(partyroom.getTitle(), newTitle));
         }
         if (newIntroduction != null && !newIntroduction.equals(partyroom.getIntroduction())) {
-            diff.put("introduction", Map.of("old", partyroom.getIntroduction(), "new", newIntroduction));
+            diff.put("introduction", oldNew(partyroom.getIntroduction(), newIntroduction));
         }
         Integer oldMinutes = partyroom.getPlaybackTimeLimit() == null
                 ? null : partyroom.getPlaybackTimeLimit().getMinutes();
         if (newPlaybackTimeLimitMinutes != null && !newPlaybackTimeLimitMinutes.equals(oldMinutes)) {
             diff.put("playbackTimeLimit",
-                    Map.of("old", oldMinutes == null ? "null" : oldMinutes.toString(),
-                           "new", newPlaybackTimeLimitMinutes.toString()));
+                    oldNew(oldMinutes == null ? "null" : oldMinutes.toString(),
+                           newPlaybackTimeLimitMinutes.toString()));
         }
 
         if (diff.isEmpty()) {
@@ -155,5 +155,18 @@ public class AdminPartyroomCommandService {
     private PartyroomData loadPartyroom(PartyroomId partyroomId) {
         return aggregatePort.findPartyroomById(partyroomId.getId())
                 .orElseThrow(() -> ExceptionCreator.create(PartyroomException.NOT_FOUND_ROOM));
+    }
+
+    /**
+     * Null-safe diff entry builder. {@link Map#of} rejects null values, but
+     * nullable columns (e.g. PartyroomData.introduction) can legitimately be null
+     * before an admin sets them — preserve the null in the audit diff rather than
+     * stringifying or throwing NPE.
+     */
+    private static Map<String, Object> oldNew(Object oldVal, Object newVal) {
+        Map<String, Object> m = new HashMap<>();
+        m.put("old", oldVal);
+        m.put("new", newVal);
+        return m;
     }
 }
