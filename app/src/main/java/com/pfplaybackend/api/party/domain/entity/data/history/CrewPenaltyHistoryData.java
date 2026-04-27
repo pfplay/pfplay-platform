@@ -89,10 +89,15 @@ public class CrewPenaltyHistoryData extends BaseEntity {
      * V1 스키마에서 released_by_crew_id는 nullable이라 추가 마이그 불필요.
      * admin 정체는 partyroom_admin_action.administrator_id 경로로 식별
      * (correlation: metadata.crew_penalty_history_id).
+     *
+     * Caller invariant: this.punisherType must be ADMIN before invoking.
+     * The admin service path (AdminCrewPenaltyCommandService.release, PR 9) checks
+     * this guard. Crew path (CrewPenaltyCommandService.releaseCrewPenalty, PR 9 §4.3
+     * guard) refuses to release admin-applied rows entirely. No entity-level
+     * Preconditions guard added — symmetry with release(CrewId, LocalDateTime) which
+     * also trusts callers (existing convention).
      */
     public void releaseByAdmin(LocalDateTime now) {
-        this.released = true;
-        this.releasedByCrewId = null;
-        this.releaseDate = now;
+        release(null, now);
     }
 }
