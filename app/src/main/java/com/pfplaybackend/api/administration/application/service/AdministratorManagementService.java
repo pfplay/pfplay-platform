@@ -114,6 +114,18 @@ public class AdministratorManagementService {
                 .build();
     }
 
+    @Transactional
+    public void updateNickname(Long administratorId, String nickname) {
+        AdministratorData admin = administratorRepository.findById(administratorId)
+                .orElseThrow(() -> ExceptionCreator.create(
+                        AdministratorManagementException.NOT_FOUND));
+        MemberData member = memberRepository.findByUserAccountId(admin.getUserAccountId())
+                .orElseThrow(() -> ExceptionCreator.create(
+                        AdministratorManagementException.MEMBER_PROFILE_REQUIRED));
+        member.getProfileData().updateNickname(nickname);
+        log.info("admin_management.update_nickname administrator_id={}", administratorId);
+    }
+
     private AdministratorView toView(AdministratorData a, UserAccountData ua, MemberData member) {
         String nickname = null;
         Long memberId = null;

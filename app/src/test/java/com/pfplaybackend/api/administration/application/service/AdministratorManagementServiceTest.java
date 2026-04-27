@@ -256,6 +256,39 @@ class AdministratorManagementServiceTest {
         assertThat(captured.getGrantedByAdministratorId()).isEqualTo(42L);
     }
 
+    // -------- updateNickname --------
+
+    @Test
+    void updateNickname_whenMemberExists_writesProfileNickname() {
+        AdministratorData admin = mock(AdministratorData.class);
+        given(admin.getUserAccountId()).willReturn(100L);
+        given(administratorRepository.findById(7L)).willReturn(Optional.of(admin));
+        MemberData member = mockMemberWithProfile(50L);
+        given(memberRepository.findByUserAccountId(100L)).willReturn(Optional.of(member));
+
+        service.updateNickname(7L, "renamed");
+
+        verify(member.getProfileData()).updateNickname("renamed");
+    }
+
+    @Test
+    void updateNickname_whenAdminNotFound_throwsNotFound() {
+        given(administratorRepository.findById(7L)).willReturn(Optional.empty());
+        assertThatThrownBy(() -> service.updateNickname(7L, "renamed"))
+                .satisfies(ex -> assertThat(ex.getClass().getSimpleName()).contains("NotFound"));
+    }
+
+    @Test
+    void updateNickname_whenMemberMissing_throwsMemberProfileRequired() {
+        AdministratorData admin = mock(AdministratorData.class);
+        given(admin.getUserAccountId()).willReturn(100L);
+        given(administratorRepository.findById(7L)).willReturn(Optional.of(admin));
+        given(memberRepository.findByUserAccountId(100L)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.updateNickname(7L, "renamed"))
+                .satisfies(ex -> assertThat(ex.getClass().getSimpleName()).contains("Conflict"));
+    }
+
     // -------- helpers --------
 
     private AdministratorData adminFixture(Long id, Long uaId, AdminRole role, LocalDateTime revokedAt) {
@@ -284,7 +317,7 @@ class AdministratorManagementServiceTest {
     private MemberData mockMemberWithProfile(Long memberId) {
         MemberData member = mock(MemberData.class);
         ProfileData profile = mock(ProfileData.class);
-        given(member.getMemberId()).willReturn(memberId);
+        lenient().when(member.getMemberId()).thenReturn(memberId);
         given(member.getProfileData()).willReturn(profile);
         return member;
     }
