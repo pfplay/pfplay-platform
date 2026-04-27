@@ -16,19 +16,19 @@ import lombok.Getter;
  */
 @Getter
 public class AdminCrewPenalizedEvent extends DomainEvent {
-    private final Long administratorId;
     private final PartyroomId partyroomId;
+    private final Long administratorId;
     private final CrewId punishedCrewId;
     private final PenaltyType penaltyType;
     private final Long crewPenaltyHistoryId;   // PERMANENT_EXPULSION일 때만 non-null, ONE_TIME은 null
     private final String reason;
 
-    public AdminCrewPenalizedEvent(Long administratorId, PartyroomId partyroomId,
+    public AdminCrewPenalizedEvent(PartyroomId partyroomId, Long administratorId,
                                    CrewId punishedCrewId, PenaltyType penaltyType,
                                    Long crewPenaltyHistoryId, String reason) {
         super();
-        this.administratorId = administratorId;
         this.partyroomId = partyroomId;
+        this.administratorId = administratorId;
         this.punishedCrewId = punishedCrewId;
         this.penaltyType = penaltyType;
         this.crewPenaltyHistoryId = crewPenaltyHistoryId;

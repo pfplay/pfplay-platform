@@ -11,16 +11,16 @@ import lombok.Getter;
  */
 @Getter
 public class AdminCrewPenaltyReleasedEvent extends DomainEvent {
-    private final Long administratorId;
     private final PartyroomId partyroomId;
+    private final Long administratorId;
     private final CrewId releasedCrewId;
     private final Long crewPenaltyHistoryId;
 
-    public AdminCrewPenaltyReleasedEvent(Long administratorId, PartyroomId partyroomId,
+    public AdminCrewPenaltyReleasedEvent(PartyroomId partyroomId, Long administratorId,
                                          CrewId releasedCrewId, Long crewPenaltyHistoryId) {
         super();
-        this.administratorId = administratorId;
         this.partyroomId = partyroomId;
+        this.administratorId = administratorId;
         this.releasedCrewId = releasedCrewId;
         this.crewPenaltyHistoryId = crewPenaltyHistoryId;
     }

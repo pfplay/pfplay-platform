@@ -30,7 +30,7 @@ class PartyroomAdminActionListenerTest {
     @DisplayName("on(AdminCrewPenalizedEvent) PERMANENT: action_type=PENALIZE_CREW, target_type=CREW, metadata 매핑")
     void on_AdminCrewPenalizedEvent_inserts_audit_row() {
         AdminCrewPenalizedEvent event = new AdminCrewPenalizedEvent(
-                100L, new PartyroomId(1L), new CrewId(10L),
+                new PartyroomId(1L), 100L, new CrewId(10L),
                 PenaltyType.PERMANENT_EXPULSION, 999L, "abuse");
 
         listener.on(event);
@@ -53,7 +53,7 @@ class PartyroomAdminActionListenerTest {
     @DisplayName("on(AdminCrewPenalizedEvent) ONE_TIME: metadata에 crew_penalty_history_id 없음")
     void on_AdminCrewPenalizedEvent_one_time_omits_history_id() {
         AdminCrewPenalizedEvent event = new AdminCrewPenalizedEvent(
-                100L, new PartyroomId(1L), new CrewId(10L),
+                new PartyroomId(1L), 100L, new CrewId(10L),
                 PenaltyType.ONE_TIME_EXPULSION, null, "warning");
 
         listener.on(event);
@@ -69,7 +69,7 @@ class PartyroomAdminActionListenerTest {
     @DisplayName("on(AdminCrewPenaltyReleasedEvent): action_type=RELEASE_CREW_PENALTY, reason=null, metadata만 history_id")
     void on_AdminCrewPenaltyReleasedEvent_inserts_audit_row() {
         AdminCrewPenaltyReleasedEvent event = new AdminCrewPenaltyReleasedEvent(
-                100L, new PartyroomId(1L), new CrewId(10L), 999L);
+                new PartyroomId(1L), 100L, new CrewId(10L), 999L);
 
         listener.on(event);
 
