@@ -92,7 +92,8 @@ public class PartyroomAccessCommandService {
                 // PR 7: countryCode만 갱신, 이벤트 발행 금지 (spec §7.2 spurious ENTER 차단).
                 log.info("[tryEnter] Same room re-entry — countryCode 갱신만, no ENTER publish. userId={}, partyroomId={}",
                         userId, partyroomId.getId());
-                CrewData crew = aggregatePort.findCrew(partyroomId, userId).orElseThrow();
+                CrewData crew = existingCrew.orElseThrow(() ->
+                        ExceptionCreator.create(CrewException.INVALID_ACTIVE_ROOM));
                 crew.updateCountryCode(countryCode);
                 return aggregatePort.saveCrew(crew);
             }
@@ -210,18 +211,38 @@ public class PartyroomAccessCommandService {
     }
 
     /**
-     * Admin-initiated expulsion. 기존 JPA dirty-checking 유지 — caller가 이미 entity 보유,
-     * concurrency risk 미미, 추가 enforceBan 로직 묶음 변경 필요.
+     * Admin-initiated expulsion. Migrated to atomic toggle for symmetry with exit() —
+     * concurrent expel + voluntary exit on same crew would otherwise both publish EXIT
+     * → counter -2 once PartyroomCounterListener (PR 7 Task 11) is wired.
+     *
+     * enforceBan side effect always applies (even on race-loss), since the ban must
+     * persist regardless of who deactivated the crew first.
      */
     @Transactional
     public void expel(PartyroomData partyroom, CrewData crew, boolean isPermanent)  {
-        crew.deactivatePresence(LocalDateTime.now(clock));
-        if(isPermanent) crew.enforceBan();
-        aggregatePort.saveCrew(crew);
+        LocalDateTime now = LocalDateTime.now(clock);
+        int deactivated = aggregatePort.deactivateCrew(
+                partyroom.getPartyroomId(), crew.getUserId(), now);
+
+        if (deactivated == 0) {
+            // Race loser — already inactive (admin double-click or concurrent voluntary exit).
+            // Ban must still apply if permanent.
+            log.info("[expel] IDEMPOTENT - crew already inactive, no EXIT event. crewId={}", crew.getId());
+            if (isPermanent) {
+                crew.enforceBan();
+                aggregatePort.saveCrew(crew);
+            }
+            return;
+        }
+
+        if (isPermanent) {
+            crew.enforceBan();
+            aggregatePort.saveCrew(crew);
+        }
 
         handleDjQueueOnLeave(partyroom, new CrewId(crew.getId()));
-
-        eventPublisher.publishEvent(new CrewAccessedEvent(partyroom.getPartyroomId(), new CrewId(crew.getId()), crew.getUserId(), AccessType.EXIT));
+        eventPublisher.publishEvent(new CrewAccessedEvent(partyroom.getPartyroomId(), new CrewId(crew.getId()),
+                crew.getUserId(), AccessType.EXIT));
     }
 
     private void handleDjQueueOnLeave(PartyroomData partyroom, CrewId crewId) {

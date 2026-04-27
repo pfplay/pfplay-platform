@@ -168,6 +168,8 @@ class PartyroomAccessCommandServiceDjQueueChangeTest {
                 DjData.builder().id(100L).crewId(new CrewId(2L)).playlistId(new PlaylistId(10L)).orderNumber(2).build()
         ));
         when(aggregatePort.findPlaybackState(partyroomData.getPartyroomId())).thenReturn(playbackState);
+        // atomic toggle: returns 1 → active→inactive 전이 발생, 이벤트 발행
+        when(aggregatePort.deactivateCrew(eq(partyroomId), eq(targetUserId), any(LocalDateTime.class))).thenReturn(1);
 
         // when
         partyroomAccessCommandService.expel(partyroomData, targetCrew, false);
@@ -200,6 +202,8 @@ class PartyroomAccessCommandServiceDjQueueChangeTest {
 
         when(aggregatePort.findDj(partyroomId, new CrewId(2L))).thenReturn(Optional.empty());
         when(aggregatePort.findPlaybackState(partyroomData.getPartyroomId())).thenReturn(playbackState);
+        // atomic toggle: returns 1 → active→inactive 전이 발생, 이벤트 발행
+        when(aggregatePort.deactivateCrew(eq(partyroomId), eq(targetUserId), any(LocalDateTime.class))).thenReturn(1);
 
         // when
         partyroomAccessCommandService.expel(partyroomData, targetCrew, false);
