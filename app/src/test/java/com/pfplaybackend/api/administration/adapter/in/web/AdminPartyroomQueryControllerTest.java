@@ -11,6 +11,7 @@ import com.pfplaybackend.api.party.domain.enums.PartyroomStatus;
 import com.pfplaybackend.api.party.domain.enums.StageType;
 import com.pfplaybackend.api.party.domain.exception.PartyroomException;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.data.domain.Page;
@@ -127,6 +128,18 @@ class AdminPartyroomQueryControllerTest extends AbstractAdminWebMvcTest {
         ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
         verify(adminPartyroomQueryService).list(any(AdminPartyroomListFilter.class), pageableCaptor.capture());
         assertThat(pageableCaptor.getValue().getPageSize()).isEqualTo(200);
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("list — unknown sort field → 400")
+    void list_unknownSort_returns400() throws Exception {
+        given(adminPartyroomQueryService.list(any(AdminPartyroomListFilter.class), any(Pageable.class)))
+                .willThrow(new IllegalArgumentException("Unsupported sort field: secretField"));
+
+        mockMvc.perform(get("/api/v1/admin/partyrooms")
+                        .param("sort", "secretField,asc"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
