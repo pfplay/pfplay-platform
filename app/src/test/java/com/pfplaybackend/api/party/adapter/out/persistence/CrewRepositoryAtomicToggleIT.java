@@ -102,4 +102,46 @@ class CrewRepositoryAtomicToggleIT extends AbstractIntegrationTest {
 
         assertThat(affected).isZero();
     }
+
+    // ── bulkDeactivateByPartyroomId ───────────────
+
+    @Test
+    @DisplayName("bulkDeactivateByPartyroomId — N active crew → 모두 inactive 전환")
+    void bulk_deactivate_normal() {
+        long roomId = 5001L;
+        seedActiveCrew(roomId, 5001L);
+        seedActiveCrew(roomId, 5002L);
+        seedActiveCrew(roomId, 5003L);
+        seedInactiveCrew(roomId, 5004L);   // 이미 inactive — 영향 없어야 함
+
+        int affected = crewRepository.bulkDeactivateByPartyroomId(
+                new PartyroomId(roomId), LocalDateTime.now());
+
+        assertThat(affected).isEqualTo(3);   // active 3건만
+        assertThat(crewRepository.findByPartyroomIdAndIsActiveTrue(new PartyroomId(roomId))).isEmpty();
+    }
+
+    @Test
+    @DisplayName("bulkDeactivateByPartyroomId — 다른 룸의 crew는 영향 없음")
+    void bulk_deactivate_room_isolation() {
+        long roomA = 5010L;
+        long roomB = 5011L;
+        seedActiveCrew(roomA, 5010L);
+        seedActiveCrew(roomB, 5011L);
+
+        int affected = crewRepository.bulkDeactivateByPartyroomId(
+                new PartyroomId(roomA), LocalDateTime.now());
+
+        assertThat(affected).isEqualTo(1);
+        // roomB의 crew는 여전히 active
+        assertThat(crewRepository.findByPartyroomIdAndIsActiveTrue(new PartyroomId(roomB))).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("bulkDeactivateByPartyroomId — 빈 룸 → 0 affected")
+    void bulk_deactivate_empty() {
+        int affected = crewRepository.bulkDeactivateByPartyroomId(
+                new PartyroomId(99_999L), LocalDateTime.now());
+        assertThat(affected).isZero();
+    }
 }

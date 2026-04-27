@@ -43,4 +43,19 @@ public interface CrewRepository extends JpaRepository<CrewData, Long> {
     int deactivateCrew(@Param("partyroomId") PartyroomId partyroomId,
                        @Param("userId") UserId userId,
                        @Param("now") LocalDateTime now);
+
+    /**
+     * 특정 partyroom의 모든 active crew를 일괄 inactive 전환. atomic single statement.
+     * B-3 admin terminate 흐름에서 사용 — N개 crew를 1개 SQL로 처리.
+     *
+     *  - 반환: 영향 받은 row 수 (기존 active crew 수)
+     *  - exitedAt 일괄 설정
+     *  - 동시에 같은 룸에 enter 시도하는 crew는 별 race 영역
+     *    (UNIQUE 제약 + B-3은 즉시 status=TERMINATED라 PartyroomEntrySpecification에서 거부됨)
+     */
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE CrewData c SET c.isActive = false, c.exitedAt = :now " +
+           "WHERE c.partyroomId = :partyroomId AND c.isActive = true")
+    int bulkDeactivateByPartyroomId(@Param("partyroomId") PartyroomId partyroomId,
+                                    @Param("now") LocalDateTime now);
 }
