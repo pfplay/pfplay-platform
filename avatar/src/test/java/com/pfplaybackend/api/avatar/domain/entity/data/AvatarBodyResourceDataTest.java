@@ -1,6 +1,6 @@
-package com.pfplaybackend.api.user.domain.entity.data;
+package com.pfplaybackend.api.avatar.domain.entity.data;
 
-import com.pfplaybackend.api.user.domain.enums.ObtainmentType;
+import com.pfplaybackend.api.avatar.domain.enums.ObtainmentType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

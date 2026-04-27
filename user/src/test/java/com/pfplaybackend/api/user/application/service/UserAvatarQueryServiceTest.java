@@ -5,13 +5,13 @@ import com.pfplaybackend.api.common.aspect.context.AuthContext;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.enums.AuthorityTier;
 import com.pfplaybackend.api.user.adapter.out.persistence.ActivityRepository;
-import com.pfplaybackend.api.user.application.dto.shared.AvatarBodyDto;
+import com.pfplaybackend.api.avatar.application.dto.AvatarBodyDto;
 import com.pfplaybackend.api.user.domain.entity.data.ActivityData;
-import com.pfplaybackend.api.user.domain.entity.data.AvatarBodyResourceData;
+import com.pfplaybackend.api.avatar.domain.entity.data.AvatarBodyResourceData;
 import com.pfplaybackend.api.user.domain.enums.ActivityType;
-import com.pfplaybackend.api.user.domain.enums.ObtainmentType;
+import com.pfplaybackend.api.avatar.domain.enums.ObtainmentType;
 import com.pfplaybackend.api.user.domain.service.UserAvatarDomainService;
-import com.pfplaybackend.api.user.domain.value.AvatarBodyUri;
+import com.pfplaybackend.api.avatar.domain.value.AvatarBodyUri;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -46,10 +46,10 @@ class UserAvatarQueryServiceTest {
     @DisplayName("getDefaultAvatarBodyUri — 기본 바디 URI를 반환한다")
     void getDefaultAvatarBodyUriReturnsDefaultUri() {
         // given
-        AvatarBodyResourceData defaultBody = AvatarBodyResourceData.builder()
+        AvatarBodyDto defaultBody = AvatarBodyDto.builder()
                 .id(1L).name("default").resourceUri("default-body-uri")
                 .obtainableType(ObtainmentType.BASIC).obtainableScore(0)
-                .isCombinable(true).isDefaultSetting(true)
+                .combinable(true).defaultSetting(true)
                 .combinePositionX(50).combinePositionY(50)
                 .build();
         when(avatarResourceQueryService.getDefaultSettingResourceAvatarBody()).thenReturn(defaultBody);
