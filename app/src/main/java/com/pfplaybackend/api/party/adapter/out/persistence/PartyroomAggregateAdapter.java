@@ -12,6 +12,7 @@ import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -82,6 +83,16 @@ public class PartyroomAggregateAdapter implements PartyroomAggregatePort, Partyr
     @Override
     public long countActiveCrews(PartyroomId partyroomId) {
         return crewRepository.countByPartyroomIdAndIsActiveTrue(partyroomId);
+    }
+
+    @Override
+    public int activateCrew(PartyroomId partyroomId, UserId userId, LocalDateTime now) {
+        return crewRepository.activateCrew(partyroomId, userId, now);
+    }
+
+    @Override
+    public int deactivateCrew(PartyroomId partyroomId, UserId userId, LocalDateTime now) {
+        return crewRepository.deactivateCrew(partyroomId, userId, now);
     }
 
     // ===== DJ: DjData =====
