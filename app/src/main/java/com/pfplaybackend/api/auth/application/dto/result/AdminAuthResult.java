@@ -10,5 +10,6 @@ public record AdminAuthResult(
         AdminRole role,
         long adminAccessTokenTtlMs,
         long sharedSessionTokenTtlMs,
-        LocalDateTime issuedAt
+        LocalDateTime issuedAt,
+        boolean mustChangePassword
 ) {}

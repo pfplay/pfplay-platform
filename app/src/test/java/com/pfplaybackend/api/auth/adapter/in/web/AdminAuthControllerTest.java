@@ -56,7 +56,8 @@ class AdminAuthControllerTest {
     void login_success_admin_only() throws Exception {
         when(adminLoginService.login(any())).thenReturn(new AdminAuthResult(
                 "admin-jwt", null, AdminRole.SUPER_ADMIN,
-                900_000L, 0L, LocalDateTime.now()));
+                900_000L, 0L, LocalDateTime.now(),
+                false));
 
         mockMvc.perform(post("/api/v1/auth/admin/login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -74,7 +75,8 @@ class AdminAuthControllerTest {
     void login_success_with_member_writes_both_cookies() throws Exception {
         when(adminLoginService.login(any())).thenReturn(new AdminAuthResult(
                 "admin-jwt", "shared-jwt", AdminRole.ADMIN,
-                900_000L, 86_400_000L, LocalDateTime.now()));
+                900_000L, 86_400_000L, LocalDateTime.now(),
+                false));
 
         mockMvc.perform(post("/api/v1/auth/admin/login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -83,6 +85,36 @@ class AdminAuthControllerTest {
 
         verify(adminCookieWriter).write(any(HttpServletResponse.class), eq("admin-jwt"));
         verify(sharedSessionCookieWriter).write(any(HttpServletResponse.class), eq("shared-jwt"));
+    }
+
+    @Test
+    @DisplayName("login — 200 + mustChangePassword=true exposed in response when flag set")
+    void login_mustChangePasswordTrue_exposesFlagInResponse() throws Exception {
+        when(adminLoginService.login(any())).thenReturn(new AdminAuthResult(
+                "admin-jwt", "shared-jwt", AdminRole.ADMIN,
+                900_000L, 86_400_000L, LocalDateTime.now(),
+                true));
+
+        mockMvc.perform(post("/api/v1/auth/admin/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(VALID_BODY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.mustChangePassword").value(true));
+    }
+
+    @Test
+    @DisplayName("login — 200 + mustChangePassword=false exposed when flag clear")
+    void login_mustChangePasswordFalse_exposesFlagInResponse() throws Exception {
+        when(adminLoginService.login(any())).thenReturn(new AdminAuthResult(
+                "admin-jwt", "shared-jwt", AdminRole.ADMIN,
+                900_000L, 86_400_000L, LocalDateTime.now(),
+                false));
+
+        mockMvc.perform(post("/api/v1/auth/admin/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(VALID_BODY))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.mustChangePassword").value(false));
     }
 
     @Test

@@ -112,7 +112,8 @@ public class AdminLoginService {
                 adm.getRole(),
                 jwtProperties.getAdminAccessTokenExpirationMs(),
                 jwtProperties.getSharedSessionTokenExpirationMs(),
-                LocalDateTime.now(clock)
+                LocalDateTime.now(clock),
+                ua.isMustChangePassword()
         );
     }
 }

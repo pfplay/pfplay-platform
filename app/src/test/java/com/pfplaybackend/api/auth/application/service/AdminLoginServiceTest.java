@@ -16,6 +16,7 @@ import com.pfplaybackend.api.user.application.service.MemberSignService;
 import com.pfplaybackend.api.user.domain.entity.data.MemberData;
 import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -132,6 +133,52 @@ class AdminLoginServiceTest {
 
         assertThat(res.role()).isEqualTo(AdminRole.SUPER_ADMIN);
         assertThat(res.sharedSessionToken()).isEqualTo("shared-jwt");
+    }
+
+    @Test
+    @DisplayName("login — UserAccount.mustChangePassword=true가 AdminAuthResult로 전파된다")
+    void login_propagatesMustChangePasswordFlag() {
+        UserAccountData ua = stubLocalAccount(42L, "admin@x.com", "$2a$12$h");
+        lenient().when(ua.isMustChangePassword()).thenReturn(true);
+        AdministratorData adm = stubActiveAdmin(AdminRole.ADMIN);
+        MemberData mem = stubMember();
+        when(userAccountRepository.findByEmailAndProviderType("admin@x.com", ProviderType.LOCAL))
+                .thenReturn(Optional.of(ua));
+        when(passwordEncoder.matches("right", ua.getPasswordHash())).thenReturn(true);
+        when(administratorRepository.findByUserAccountId(42L)).thenReturn(Optional.of(adm));
+        when(memberSignService.getMemberOrCreate("admin@x.com", ProviderType.LOCAL))
+                .thenReturn(mem);
+        when(jwtService.mintAdminAccessToken(any())).thenReturn("admin-jwt");
+        when(jwtService.mintSharedSessionToken(any())).thenReturn("shared-jwt");
+        when(jwtProperties.getAdminAccessTokenExpirationMs()).thenReturn(900_000L);
+        when(jwtProperties.getSharedSessionTokenExpirationMs()).thenReturn(86_400_000L);
+
+        AdminAuthResult result = sut.login(new AdminLoginCommand("admin@x.com", "right", "1.1.1.1"));
+
+        assertThat(result.mustChangePassword()).isTrue();
+    }
+
+    @Test
+    @DisplayName("login — UserAccount.mustChangePassword=false가 AdminAuthResult로 전파된다")
+    void login_propagatesMustChangePasswordFalse() {
+        UserAccountData ua = stubLocalAccount(42L, "admin@x.com", "$2a$12$h");
+        lenient().when(ua.isMustChangePassword()).thenReturn(false);
+        AdministratorData adm = stubActiveAdmin(AdminRole.ADMIN);
+        MemberData mem = stubMember();
+        when(userAccountRepository.findByEmailAndProviderType("admin@x.com", ProviderType.LOCAL))
+                .thenReturn(Optional.of(ua));
+        when(passwordEncoder.matches("right", ua.getPasswordHash())).thenReturn(true);
+        when(administratorRepository.findByUserAccountId(42L)).thenReturn(Optional.of(adm));
+        when(memberSignService.getMemberOrCreate("admin@x.com", ProviderType.LOCAL))
+                .thenReturn(mem);
+        when(jwtService.mintAdminAccessToken(any())).thenReturn("admin-jwt");
+        when(jwtService.mintSharedSessionToken(any())).thenReturn("shared-jwt");
+        when(jwtProperties.getAdminAccessTokenExpirationMs()).thenReturn(900_000L);
+        when(jwtProperties.getSharedSessionTokenExpirationMs()).thenReturn(86_400_000L);
+
+        AdminAuthResult result = sut.login(new AdminLoginCommand("admin@x.com", "right", "1.1.1.1"));
+
+        assertThat(result.mustChangePassword()).isFalse();
     }
 
     private UserAccountData stubLocalAccount(long id, String email, String passwordHash) {

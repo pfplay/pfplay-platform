@@ -10,5 +10,6 @@ public record AdminLoginResponse(
         String tokenType,
         long expiresIn,
         LocalDateTime issuedAt,
-        AdminRole role
+        AdminRole role,
+        boolean mustChangePassword
 ) {}

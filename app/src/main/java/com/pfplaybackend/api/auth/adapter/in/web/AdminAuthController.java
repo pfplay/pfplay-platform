@@ -58,6 +58,7 @@ public class AdminAuthController {
                 .expiresIn(result.adminAccessTokenTtlMs() / 1000)
                 .issuedAt(result.issuedAt())
                 .role(result.role())
+                .mustChangePassword(result.mustChangePassword())
                 .build()));
     }
 
