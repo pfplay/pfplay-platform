@@ -24,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -124,6 +125,27 @@ public class AdministratorManagementService {
                         AdministratorManagementException.MEMBER_PROFILE_REQUIRED));
         member.getProfileData().updateNickname(nickname);
         log.info("admin_management.update_nickname administrator_id={}", administratorId);
+    }
+
+    @Transactional
+    public void revoke(Long administratorId, Long actorAdministratorId) {
+        if (Objects.equals(administratorId, actorAdministratorId)) {
+            throw ExceptionCreator.create(AdministratorManagementException.CANNOT_REVOKE_SELF);
+        }
+        AdministratorData target = administratorRepository.findById(administratorId)
+                .orElseThrow(() -> ExceptionCreator.create(
+                        AdministratorManagementException.NOT_FOUND));
+        if (target.getRole() == AdminRole.SUPER_ADMIN) {
+            long activeSuperAdmins = administratorRepository
+                    .countByRoleAndRevokedAtIsNull(AdminRole.SUPER_ADMIN);
+            if (activeSuperAdmins <= 1) {
+                throw ExceptionCreator.create(
+                        AdministratorManagementException.CANNOT_REVOKE_LAST_SUPER_ADMIN);
+            }
+        }
+        target.revoke();
+        log.warn("admin_management.revoke target_id={} actor_administrator_id={}",
+                administratorId, actorAdministratorId);
     }
 
     @Transactional

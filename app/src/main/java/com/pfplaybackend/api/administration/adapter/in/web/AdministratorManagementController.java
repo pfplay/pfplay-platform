@@ -68,6 +68,14 @@ public class AdministratorManagementController {
         return ResponseEntity.noContent().build();
     }
 
+    @Operation(summary = "어드민 권한 회수")
+    @PreAuthorize("@adminAuth.canManageAdmins()")
+    @PostMapping("/{id}/revoke")
+    public ResponseEntity<Void> revoke(@PathVariable Long id) {
+        service.revoke(id, adminContext.currentAdministratorId());
+        return ResponseEntity.noContent().build();
+    }
+
     @Operation(summary = "어드민에 멤버 프로필 연결")
     @PreAuthorize("@adminAuth.canManageAdmins()")
     @PostMapping("/{id}/member-profile")

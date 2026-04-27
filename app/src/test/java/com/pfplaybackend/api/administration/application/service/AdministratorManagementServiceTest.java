@@ -314,6 +314,46 @@ class AdministratorManagementServiceTest {
                 .satisfies(ex -> assertThat(ex.getClass().getSimpleName()).contains("NotFound"));
     }
 
+    // -------- revoke --------
+
+    @Test
+    void revoke_normalAdmin_callsRevoke() {
+        AdministratorData target = mock(AdministratorData.class);
+        given(target.getRole()).willReturn(AdminRole.ADMIN);
+        given(administratorRepository.findById(7L)).willReturn(Optional.of(target));
+
+        service.revoke(7L, /*actor=*/ 1L);
+
+        verify(target).revoke();
+    }
+
+    @Test
+    void revoke_selfRevoke_throwsCannotRevokeSelf() {
+        assertThatThrownBy(() -> service.revoke(1L, 1L))
+                .satisfies(ex -> assertThat(ex.getClass().getSimpleName()).contains("Conflict"));
+        verify(administratorRepository, never()).findById(any());
+    }
+
+    @Test
+    void revoke_targetNotFound_throwsNotFound() {
+        given(administratorRepository.findById(7L)).willReturn(Optional.empty());
+        assertThatThrownBy(() -> service.revoke(7L, /*actor=*/ 99L))
+                .satisfies(ex -> assertThat(ex.getClass().getSimpleName()).contains("NotFound"));
+    }
+
+    @Test
+    void revoke_lastActiveSuperAdmin_throwsConflict() {
+        AdministratorData target = mock(AdministratorData.class);
+        given(target.getRole()).willReturn(AdminRole.SUPER_ADMIN);
+        given(administratorRepository.findById(1L)).willReturn(Optional.of(target));
+        given(administratorRepository.countByRoleAndRevokedAtIsNull(AdminRole.SUPER_ADMIN))
+                .willReturn(1L);
+
+        assertThatThrownBy(() -> service.revoke(1L, /*actor=*/ 99L))
+                .satisfies(ex -> assertThat(ex.getClass().getSimpleName()).contains("Conflict"));
+        verify(target, never()).revoke();
+    }
+
     // -------- helpers --------
 
     private AdministratorData adminFixture(Long id, Long uaId, AdminRole role, LocalDateTime revokedAt) {

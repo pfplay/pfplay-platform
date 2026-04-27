@@ -211,4 +211,25 @@ class AdministratorManagementControllerTest extends AbstractAdminWebMvcTest {
                                 """))
                 .andExpect(status().isForbidden());
     }
+
+    // -------- revoke --------
+
+    @Test
+    @WithMockUser(roles = {"ADMIN", "SUPER_ADMIN"})
+    void revoke_superAdmin_returns204() throws Exception {
+        given(adminContext.currentAdministratorId()).willReturn(1L);
+
+        mockMvc.perform(post("/api/v1/admin/system/administrators/7/revoke")
+                        .with(csrf()))
+                .andExpect(status().isNoContent());
+        verify(administratorManagementService).revoke(7L, 1L);
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void revoke_nonSuperAdmin_returns403() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/system/administrators/7/revoke")
+                        .with(csrf()))
+                .andExpect(status().isForbidden());
+    }
 }
