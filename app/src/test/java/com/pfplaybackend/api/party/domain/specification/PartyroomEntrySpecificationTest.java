@@ -1,11 +1,13 @@
 package com.pfplaybackend.api.party.domain.specification;
 
+import com.pfplaybackend.api.common.exception.http.ConflictException;
 import com.pfplaybackend.api.common.exception.http.ForbiddenException;
 import com.pfplaybackend.api.party.domain.entity.data.CrewData;
 import com.pfplaybackend.api.party.domain.entity.data.PartyroomData;
 import com.pfplaybackend.api.party.domain.enums.PartyroomStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.util.Optional;
@@ -28,6 +30,10 @@ class PartyroomEntrySpecificationTest {
 
     private PartyroomData terminatedPartyroom() {
         return PartyroomData.builder().status(PartyroomStatus.TERMINATED).build();
+    }
+
+    private PartyroomData suspendedPartyroom() {
+        return PartyroomData.builder().status(PartyroomStatus.SUSPENDED).build();
     }
 
     @Test
@@ -75,5 +81,33 @@ class PartyroomEntrySpecificationTest {
         Optional<CrewData> unbanned = Optional.of(unbannedCrew);
         assertThatNoException().isThrownBy(() ->
                 spec.validate(partyroom, 10, unbanned));
+    }
+
+    @Nested
+    @DisplayName("status 가드")
+    class StatusGuard {
+
+        @Test
+        @DisplayName("ACTIVE 입장 허용")
+        void active() {
+            PartyroomData room = activePartyroom();
+            assertThatNoException().isThrownBy(() -> spec.validate(room, 0L, Optional.empty()));
+        }
+
+        @Test
+        @DisplayName("SUSPENDED 거부 — ConflictException (어드민이 정지한 룸)")
+        void suspended() {
+            PartyroomData room = suspendedPartyroom();
+            assertThatThrownBy(() -> spec.validate(room, 0L, Optional.empty()))
+                    .isInstanceOf(ConflictException.class);
+        }
+
+        @Test
+        @DisplayName("TERMINATED 거부 — ForbiddenException (기존 ALREADY_TERMINATED 코드)")
+        void terminated() {
+            PartyroomData room = terminatedPartyroom();
+            assertThatThrownBy(() -> spec.validate(room, 0L, Optional.empty()))
+                    .isInstanceOf(ForbiddenException.class);
+        }
     }
 }
