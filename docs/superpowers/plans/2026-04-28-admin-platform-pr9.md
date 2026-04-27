@@ -1025,14 +1025,16 @@ class AdminCrewPenaltyCommandServiceTest {
 
     private PartyroomData mockPartyroom(PartyroomStatus status) {
         PartyroomData p = org.mockito.Mockito.mock(PartyroomData.class);
-        given(p.isTerminated()).willReturn(status == PartyroomStatus.TERMINATED);
+        // lenient: apply_crew_other_partyroom 등 일부 시나리오에서 isTerminated()가 호출되지 않을 수 있음.
+        // mockPartyroom 헬퍼는 분기마다 다른 호출 path를 갖는 테스트들이 공유하므로 strict stub 위반 회피.
+        org.mockito.Mockito.lenient().when(p.isTerminated()).thenReturn(status == PartyroomStatus.TERMINATED);
         return p;
     }
 
     private CrewData mockCrew(long crewId, long partyroomId) {
         CrewData c = org.mockito.Mockito.mock(CrewData.class);
-        given(c.getId()).willReturn(crewId);
-        given(c.getPartyroomId()).willReturn(new PartyroomId(partyroomId));
+        org.mockito.Mockito.lenient().when(c.getId()).thenReturn(crewId);
+        org.mockito.Mockito.lenient().when(c.getPartyroomId()).thenReturn(new PartyroomId(partyroomId));
         return c;
     }
 
@@ -1333,9 +1335,9 @@ public class AdminCrewPenaltyCommandService {
 }
 ```
 
-`CrewException.NOT_FOUND_ROOM` 코드가 있는지 확인 (`CrewException.NOT_FOUND_ACTIVE_ROOM` 만 있다면 추가 필요). 없으면 다음 mini-step 진행.
+- [ ] **Step 3.5: `CrewException.NOT_FOUND_ROOM` 코드 추가 (필수)**
 
-- [ ] **Step 3.5 (조건부): `CrewException.NOT_FOUND_ROOM` 코드 추가 (없으면)**
+기존 `CrewException.java`에는 `NOT_FOUND_ACTIVE_ROOM`(CRW-001)과 `INVALID_ACTIVE_ROOM`(CRW-002)만 존재 — `NOT_FOUND_ROOM`은 코드베이스에 없으므로 본 PR에서 신규 추가한다.
 
 `CrewException.java`에 추가:
 
@@ -1793,6 +1795,19 @@ public interface CrewPenaltyHistoryRepository extends JpaRepository<CrewPenaltyH
 ```
 
 - [ ] **Step 2: `AdminPartyroomQueryService` 수정**
+
+PR 8에서 정의된 `AdminPartyroomDetailResponse.PenaltySummary` record 시그니처 (변경 안 함):
+
+```java
+public record PenaltySummary(
+        Long id,
+        Long crewId,
+        PenaltyType penaltyType,    // party domain enum
+        String punisherType,        // V8 컬럼 값(ENUM "CREW"|"ADMIN"의 .name())
+        String reason,
+        LocalDateTime date
+) {}
+```
 
 기존 (line 124~126):
 ```java
