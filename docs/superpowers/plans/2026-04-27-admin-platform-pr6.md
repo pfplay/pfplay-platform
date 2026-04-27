@@ -179,7 +179,7 @@ Expected: BUILD SUCCESSFUL. Any failure → reconcile before starting PR 6 — w
 
 - **`UserAccountRepository`** (`user/.../adapter/out/persistence/UserAccountRepository.java`): has `findByEmailAndProviderType` AND already has `findByEmail(String email)`. **Decision (closed by Task 3):** use the inherited `JpaRepository.findAllById(Iterable<UserId>)` for bulk loading by PK — `UserId` is the `@EmbeddedId`, so no derived method is needed. No changes to `UserAccountRepository` for PR 6.
 
-- **`MemberData`** (`user/.../domain/entity/data/MemberData.java:41`): factories include `createForUserAccount(userAccountId)`. `MemberRepository.findByUserAccountId(Long)`. We need `findAllByUserAccountIdIn(Collection<Long>)` for bulk list (verify; add if missing).
+- **`MemberData`** (`user/.../domain/entity/data/MemberData.java:41`): factories include `createForUserAccount(userAccountId)`. `MemberRepository.findByUserAccountId(Long)`. We need `findAllByUserAccountIdIn(Collection<Long>)` for bulk list (added in Task 3). **Important:** `MemberData.profileData` is a `@OneToOne` cascade-ALL association — `member.getProfileData()` returns the ProfileData entity directly (no separate repo fetch needed). The plan's service code calls `member.getProfileData().updateNickname(nickname)` from within an `@Transactional` boundary; LAZY init is fine because the call is inside the transaction. **Do NOT inject `UserProfileRepository`** — the plan's earlier pseudocode was wrong about needing it.
 
 - **`MemberSignService`** (`user/.../application/service/MemberSignService.java:51-61`): `@Transactional getMemberOrCreate(email, providerType)` — `findByEmailAndProviderType`-or-`createForSocial`-via-`orElseGet`. → Decision 9. PR 6 calls it AFTER persisting a fresh `UserAccountData` for LOCAL — `findByEmailAndProviderType(email, LOCAL)` then succeeds and the social-only fallback never fires.
 
@@ -1255,10 +1255,7 @@ public class AdministratorManagementService {
         if (includeMember) {
             MemberData member = memberSignService.getOrCreateMemberFor(ua);  // Task 5b — no recordLogin
             memberId = member.getMemberId();
-            // nickname: ProfileData.updateNickname(req.getNickname()) via the Task 8a mutator
-            ProfileData profile = profileRepository.findById(member.getProfileId())
-                    .orElseThrow(); // invariant: createForUserAccount cascades a profile
-            profile.updateNickname(req.getNickname());
+            member.getProfileData().updateNickname(req.getNickname());  // Task 5c mutator via @OneToOne cascade
         }
 
         log.info("admin_management.create administrator_id={} user_id={} actor={}",
@@ -1489,9 +1486,7 @@ public void updateNickname(Long administratorId, String nickname) {
             .orElseThrow(() -> ExceptionCreator.create(AdministratorManagementException.NOT_FOUND));
     MemberData member = memberRepository.findByUserAccountId(admin.getUserAccountId())
             .orElseThrow(() -> ExceptionCreator.create(AdministratorManagementException.MEMBER_PROFILE_REQUIRED));
-    ProfileData profile = profileRepository.findById(member.getProfileId())
-            .orElseThrow(); // invariant: member always has a profile (cascaded at create)
-    profile.updateNickname(nickname);  // Task 5c mutator
+    member.getProfileData().updateNickname(nickname);  // Task 5c mutator via @OneToOne cascade
     log.info("admin_management.update_nickname administrator_id={}", administratorId);
 }
 ```
@@ -1571,9 +1566,7 @@ public Long attachMemberProfile(Long administratorId, String nickname) {
     UserAccountData ua = userAccountRepository.findById(new UserId(admin.getUserAccountId()))
             .orElseThrow(); // invariant: admin → ua
     MemberData member = memberSignService.getOrCreateMemberFor(ua);  // Task 5b — no recordLogin
-    ProfileData profile = profileRepository.findById(member.getProfileId())
-            .orElseThrow();
-    profile.updateNickname(nickname);  // Task 5c mutator
+    member.getProfileData().updateNickname(nickname);  // Task 5c mutator via @OneToOne cascade
     return member.getMemberId();
 }
 ```
