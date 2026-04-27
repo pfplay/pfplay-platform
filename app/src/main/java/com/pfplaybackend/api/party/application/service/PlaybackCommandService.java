@@ -26,6 +26,7 @@ import com.pfplaybackend.api.party.domain.value.PlaybackId;
 import com.pfplaybackend.api.party.domain.value.PlaybackSnapshot;
 import com.pfplaybackend.api.playlist.application.dto.PlaybackTrackDto;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,6 +36,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class PlaybackCommandService implements PlaybackControlPort {
@@ -149,9 +151,18 @@ public class PlaybackCommandService implements PlaybackControlPort {
 
     @Transactional
     public PlaybackAggregationData updatePlaybackAggregation(PlaybackId playbackId, List<Integer> deltaRecord) {
-        PlaybackAggregationData aggregation = playbackAggregationRepository.findById(playbackId).orElseThrow();
-        aggregation.updateAggregation(deltaRecord.get(0), deltaRecord.get(1), deltaRecord.get(2));
-        return playbackAggregationRepository.save(aggregation);
+        int updated = playbackAggregationRepository.applyAggregationDelta(
+                playbackId,
+                deltaRecord.get(0),
+                deltaRecord.get(1),
+                deltaRecord.get(2)
+        );
+        if (updated == 0) {
+            log.warn("[updatePlaybackAggregation] row missing for playbackId={}", playbackId);
+        }
+        // applyAggregationDelta는 @Modifying(clearAutomatically=true)이므로 1차 캐시 비워짐.
+        // findById는 fresh SELECT로 atomic UPDATE 후 최신 카운터 값 반환 → 호출자가 이벤트 publish에 사용.
+        return playbackAggregationRepository.findById(playbackId).orElseThrow();
     }
 
     private void deactivateAndNotify(PartyroomData partyroom) {
