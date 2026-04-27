@@ -20,7 +20,9 @@ public final class JsonMetadata {
     private final Map<String, Object> data;
 
     private JsonMetadata(Map<String, Object> data) {
-        this.data = data == null ? Map.of() : Collections.unmodifiableMap(data);
+        this.data = (data == null || data.isEmpty())
+                ? Map.of()
+                : Collections.unmodifiableMap(new java.util.LinkedHashMap<>(data));
     }
 
     public static JsonMetadata empty() {

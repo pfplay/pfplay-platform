@@ -47,7 +47,7 @@ class PartyroomAdminActionRepositoryIT extends AbstractIntegrationTest {
                 superAdminId,
                 PartyroomAdminActionType.SET_FEATURED,
                 AdminActionTargetType.PARTYROOM,
-                42L, 42L,
+                7777L, 42L,   // distinct: targetId=7777, partyroomId=42
                 null,
                 JsonMetadata.of(Map.of("old_flag", "NORMAL", "new_flag", "FEATURED")),
                 LocalDateTime.now()
@@ -56,6 +56,8 @@ class PartyroomAdminActionRepositoryIT extends AbstractIntegrationTest {
         PartyroomAdminActionData reloaded = repository.findById(saved.getId()).orElseThrow();
         assertThat(reloaded.getActionType()).isEqualTo(PartyroomAdminActionType.SET_FEATURED);
         assertThat(reloaded.getTargetType()).isEqualTo(AdminActionTargetType.PARTYROOM);
+        assertThat(reloaded.getTargetId()).isEqualTo(7777L);
+        assertThat(reloaded.getPartyroomId()).isEqualTo(42L);
         assertThat(reloaded.getMetadata().data())
                 .containsEntry("old_flag", "NORMAL")
                 .containsEntry("new_flag", "FEATURED");
