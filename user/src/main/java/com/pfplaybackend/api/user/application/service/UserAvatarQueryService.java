@@ -1,20 +1,19 @@
 package com.pfplaybackend.api.user.application.service;
 
+import com.pfplaybackend.api.avatar.application.dto.AvatarBodyDto;
+import com.pfplaybackend.api.avatar.application.dto.AvatarFaceDto;
+import com.pfplaybackend.api.avatar.application.dto.AvatarIconDto;
+import com.pfplaybackend.api.avatar.domain.value.AvatarBodyUri;
+import com.pfplaybackend.api.avatar.domain.value.AvatarFaceUri;
+import com.pfplaybackend.api.avatar.domain.value.AvatarIconUri;
 import com.pfplaybackend.api.common.ThreadLocalContext;
 import com.pfplaybackend.api.common.aspect.context.AuthContext;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.enums.AuthorityTier;
 import com.pfplaybackend.api.user.adapter.out.persistence.ActivityRepository;
-import com.pfplaybackend.api.user.application.dto.shared.AvatarBodyDto;
-import com.pfplaybackend.api.user.application.dto.shared.AvatarFaceDto;
-import com.pfplaybackend.api.user.application.dto.shared.AvatarIconDto;
 import com.pfplaybackend.api.user.domain.entity.data.ActivityData;
-import com.pfplaybackend.api.user.domain.entity.data.AvatarBodyResourceData;
 import com.pfplaybackend.api.user.domain.enums.ActivityType;
 import com.pfplaybackend.api.user.domain.service.UserAvatarDomainService;
-import com.pfplaybackend.api.user.domain.value.AvatarBodyUri;
-import com.pfplaybackend.api.user.domain.value.AvatarFaceUri;
-import com.pfplaybackend.api.user.domain.value.AvatarIconUri;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -33,13 +32,13 @@ public class UserAvatarQueryService {
     private final UserAvatarDomainService userAvatarDomainService;
     private final AvatarResourceQueryService avatarResourceQueryService;
 
-    public AvatarBodyResourceData getDefaultAvatarBodyResourceData() {
+    public AvatarBodyDto getDefaultAvatarBody() {
         return avatarResourceQueryService.getDefaultSettingResourceAvatarBody();
     }
 
     @Transactional(readOnly = true)
     public AvatarBodyUri getDefaultAvatarBodyUri() {
-        AvatarBodyResourceData data = avatarResourceQueryService.getDefaultSettingResourceAvatarBody();
+        AvatarBodyDto data = avatarResourceQueryService.getDefaultSettingResourceAvatarBody();
         return new AvatarBodyUri(data.getResourceUri());
     }
 

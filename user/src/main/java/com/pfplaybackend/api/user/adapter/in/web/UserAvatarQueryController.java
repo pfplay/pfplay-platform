@@ -2,8 +2,8 @@ package com.pfplaybackend.api.user.adapter.in.web;
 
 import com.pfplaybackend.api.common.ApiCommonResponse;
 import com.pfplaybackend.api.user.adapter.in.web.api.UserAvatarApi;
-import com.pfplaybackend.api.user.application.dto.shared.AvatarBodyDto;
-import com.pfplaybackend.api.user.application.dto.shared.AvatarFaceDto;
+import com.pfplaybackend.api.avatar.application.dto.AvatarBodyDto;
+import com.pfplaybackend.api.avatar.application.dto.AvatarFaceDto;
 import com.pfplaybackend.api.user.application.service.UserAvatarQueryService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;

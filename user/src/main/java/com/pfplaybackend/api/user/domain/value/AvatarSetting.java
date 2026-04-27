@@ -1,5 +1,8 @@
 package com.pfplaybackend.api.user.domain.value;
 
+import com.pfplaybackend.api.avatar.domain.value.AvatarBodyUri;
+import com.pfplaybackend.api.avatar.domain.value.AvatarFaceUri;
+import com.pfplaybackend.api.avatar.domain.value.AvatarIconUri;
 import com.pfplaybackend.api.common.domain.enums.AvatarCompositionType;
 import com.pfplaybackend.api.user.domain.enums.FaceSourceType;
 import jakarta.persistence.Embeddable;
