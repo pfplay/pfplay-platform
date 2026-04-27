@@ -384,17 +384,21 @@ public void finalizeSuperAdmin() {
 ## 5.6 Admin Password Reset Flow (MVP)
 
 어드민이 자기 비밀번호 변경:
-- `POST /api/v1/auth/admin/password/change`
+- `POST /api/v1/admin/password/change` (PR 6 시점 변경 — 아래 NOTE 참조)
   - Request: `{ currentPassword, newPassword }`
-  - 검증: currentPassword bcrypt.verify + 복잡도 체크
-  - 성공 시 password_hash 업데이트 + 모든 기존 세션 invalidate (세션 테이블 없으니 "token issued_before" 필드로 처리 or 단순히 TTL에 맡김)
+  - 검증: currentPassword bcrypt.verify + 복잡도 체크 (`AdminPasswordPolicy`: 최소 10자 + upper/lower/digit/symbol 각 1개)
+  - 성공 시 password_hash 업데이트 + `must_change_password=false`로 클리어
+  - **응답: 204 No Content. 토큰 회전 없음** — 기존 AdminAccessToken은 자체 TTL 만료 시까지 유지 (PR 6 Decision 16: 재로그인 UX 회피)
+
+> **NOTE (PR 6 path divergence):** 본 spec은 원래 `/api/v1/auth/admin/password/change` 경로로 명시했으나, PR 4의 `CookieBearerTokenResolver`가 `/api/v1/admin/**` 프리픽스에서만 AdminAccessToken 쿠키를 픽업하므로 (그 외 경로는 SharedSessionToken 폴백) PR 6에서 `/api/v1/admin/password/change`로 이전했다. URL rule은 기존 `/api/v1/admin/**` → ROLE_ADMIN 캐치올로 커버. PR 6 Decision 4 참조.
 
 슈퍼어드민이 타 어드민 비번 **리셋**:
 - `POST /api/v1/admin/system/administrators/{id}/reset-password`
   - Response: 새 임시 비번 (첫 로그인 시 변경 강제)
   - 안전 채널로 전달 (슬랙 DM 등)
-  - 메타 플래그 `must_change_password_at_next_login` 설정
-  - 해당 어드민 로그인 시 변경 화면으로 강제 유도
+  - 메타 플래그 `must_change_password_at_next_login` 설정 (V13 마이그레이션, PR 6)
+  - 해당 어드민 로그인 시 변경 화면으로 강제 유도 — 로그인 응답 본문에 `mustChangePassword=true` 노출, 프론트엔드가 리다이렉트 (PR 6 Decision 3: JWT 클레임/서버측 잠금 미도입, MVP는 UX 가이드만)
+- 임시 비밀번호 길이는 **12자** (서버측 `TempPasswordGenerator` 생성, `[A-Z][a-z][0-9][!@#$%^&*]` 각 1자 보장, 시각 혼동 문자 `I O l o 0 1` 제외). 본 spec의 §6.F-1 예시 "Xk9@aB2z" (8자)는 PR 6 Decision 5에 따라 12자로 상향 — 8자 약 49비트 vs 12자 약 74비트.
 
 ## 5.7 Security Testing Requirements
 

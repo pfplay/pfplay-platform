@@ -363,9 +363,13 @@ Response:
 
 #### F-1. 어드민 목록
 
-**API**: `GET /api/v1/admin/system/administrators`
+**API**: `GET /api/v1/admin/system/administrators?role={SUPER_ADMIN|ADMIN}&includeRevoked={true|false}`
 
-권한: `hasRole('SUPER_ADMIN')`
+권한: `hasRole('SUPER_ADMIN')` (`@adminAuth.canManageAdmins()`)
+
+응답 필드: `administratorId, role, grantedAt, grantedByAdministratorId, revokedAt, userAccountId, email, lastLoginAt, mustChangePassword, memberId, nickname`. 정렬: `grantedAt DESC`.
+
+> **MVP 스케일 노트 (PR 6 Decision 7):** 어드민 행 수가 적어 페이지네이션 미적용, 필터링은 in-memory. 행 수가 ~200을 넘어가면 derived query 메서드(`findAllByRoleOrderByGrantedAtDesc` 등)로 SQL push-down 필요. `Pageable` 파라미터 추가도 같은 시점에 검토.
 
 #### F-1. 어드민 생성
 
@@ -381,11 +385,11 @@ Request:
 ```
 
 처리:
-1. 이메일 중복 검사
-2. UserAccount 생성 (providerType=LOCAL, 임시 password_hash=bcrypt(랜덤 8자))
+1. 이메일 중복 검사 (V4 `uk_user_account_email` UNIQUE; check-then-save TOCTOU는 `DataIntegrityViolation` catch로 보호)
+2. UserAccount 생성 (providerType=LOCAL, 임시 password_hash=bcrypt(**랜덤 12자**, PR 6 Decision 5))
 3. Administrator 생성 (role=ADMIN, grantedBy=현재 슈퍼어드민)
-4. `includeMemberProfile=true` 시 Member 생성 (default profile)
-5. 응답에 임시 비번 1회 노출 — 안전 채널 전달 필요
+4. `includeMemberProfile=true` (기본값) 시 Member 생성 — `MemberSignService.getOrCreateMemberFor(ua)` 경로로 `recordLogin` 부작용 회피, 닉네임은 `ProfileData.updateNickname` (`@OneToOne` cascade)
+5. 응답에 임시 비번 1회 노출 — 안전 채널 전달 필요. 신규 어드민은 `must_change_password=true`로 시드되어 첫 로그인 응답 본문이 `mustChangePassword=true`를 포함
 
 Response:
 ```json
@@ -393,7 +397,7 @@ Response:
   "administratorId": 5,
   "userAccountId": 10,
   "memberId": 8,
-  "tempPassword": "Xk9@aB2z",
+  "tempPassword": "Xk9@aB2zCdEf",
   "message": "임시 비번은 첫 로그인 후 반드시 변경하세요."
 }
 ```
@@ -401,8 +405,9 @@ Response:
 #### F-1. 어드민 수정/비활성화
 
 **API**: 
-- `PATCH /api/v1/admin/system/administrators/{id}` — 정보 수정 (role 변경 등은 제한)
-- `POST /api/v1/admin/system/administrators/{id}/revoke` — 권한 회수 (revokedAt 설정, 로그인 불가)
+- `PATCH /api/v1/admin/system/administrators/{id}` — 정보 수정. PR 6 시점은 nickname만 mutable (role/email은 불변, grant 정보는 audit). Member가 없는 어드민에는 409 `MEMBER_PROFILE_REQUIRED` (PR 6 Decision 6)
+- `POST /api/v1/admin/system/administrators/{id}/member-profile` — Member 미연결 어드민에 member-profile 부착 (PR 6 신설)
+- `POST /api/v1/admin/system/administrators/{id}/revoke` — 권한 회수 (revokedAt 설정, 로그인 불가). 셀프 회수 + 마지막 슈퍼어드민 회수 차단 (PR 6 Decision 11)
 - `POST /api/v1/admin/system/administrators/{id}/reset-password` — 비번 재발급 (§5.6)
 
 #### F-2. RBAC — MVP 2-role, 미래 확장
