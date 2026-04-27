@@ -16,7 +16,7 @@ CREATE TABLE partyroom_admin_action (
     partyroom_id       BIGINT       NULL,
     reason             TEXT         NULL,
     metadata           JSON         NULL,
-    occurred_at        DATETIME     NOT NULL,
+    occurred_at        DATETIME(6)  NOT NULL,
     PRIMARY KEY (action_id),
     CONSTRAINT fk_paa_administrator
         FOREIGN KEY (administrator_id)
