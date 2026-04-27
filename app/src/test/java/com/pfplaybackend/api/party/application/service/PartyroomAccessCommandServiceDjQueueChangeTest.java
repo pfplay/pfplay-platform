@@ -26,13 +26,16 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.transaction.PlatformTransactionManager;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -44,6 +47,7 @@ class PartyroomAccessCommandServiceDjQueueChangeTest {
     @Mock private PartyroomQueryService partyroomQueryService;
     @Mock private PlaybackControlPort playbackControlPort;
     @Mock private Clock clock;
+    @Mock private PlatformTransactionManager transactionManager;
 
     @InjectMocks
     private PartyroomAccessCommandService partyroomAccessCommandService;
@@ -94,6 +98,8 @@ class PartyroomAccessCommandServiceDjQueueChangeTest {
                 DjData.builder().id(100L).crewId(new CrewId(1L)).playlistId(new PlaylistId(10L)).orderNumber(2).build()
         ));
         when(aggregatePort.findPlaybackState(partyroomId)).thenReturn(playbackState);
+        // atomic toggle: returns 1 → active→inactive 전이 발생, 이벤트 발행
+        when(aggregatePort.deactivateCrew(eq(partyroomId), eq(userId), any(LocalDateTime.class))).thenReturn(1);
 
         // when
         partyroomAccessCommandService.exit(partyroomId);
@@ -126,6 +132,8 @@ class PartyroomAccessCommandServiceDjQueueChangeTest {
         when(aggregatePort.findCrew(partyroomId, userId)).thenReturn(Optional.of(crew));
         when(aggregatePort.findDj(partyroomId, new CrewId(1L))).thenReturn(Optional.empty());
         when(aggregatePort.findPlaybackState(partyroomId)).thenReturn(playbackState);
+        // atomic toggle: returns 1 → active→inactive 전이 발생, 이벤트 발행
+        when(aggregatePort.deactivateCrew(eq(partyroomId), eq(userId), any(LocalDateTime.class))).thenReturn(1);
 
         // when
         partyroomAccessCommandService.exit(partyroomId);
