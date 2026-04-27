@@ -9,6 +9,7 @@ import com.pfplaybackend.api.administration.adapter.in.web.AdminPartyroomQueryCo
 import com.pfplaybackend.api.administration.adapter.in.web.AdministratorManagementController;
 import com.pfplaybackend.api.administration.adapter.in.web.AdminPasswordController;
 import com.pfplaybackend.api.administration.application.AdminContext;
+import com.pfplaybackend.api.administration.application.service.AdminBulkPartyroomActionService;
 import com.pfplaybackend.api.administration.application.service.AdminPartyroomCommandService;
 import com.pfplaybackend.api.administration.application.service.AdminPartyroomQueryService;
 import com.pfplaybackend.api.administration.application.service.AdministratorManagementService;
@@ -63,4 +64,5 @@ public abstract class AbstractAdminWebMvcTest {
     @MockBean protected AdminPasswordService adminPasswordService;
     @MockBean protected AdminPartyroomCommandService adminPartyroomCommandService;
     @MockBean protected AdminPartyroomQueryService adminPartyroomQueryService;
+    @MockBean protected AdminBulkPartyroomActionService adminBulkPartyroomActionService;
 }

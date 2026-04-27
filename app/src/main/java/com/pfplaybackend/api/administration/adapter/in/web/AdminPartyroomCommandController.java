@@ -1,10 +1,13 @@
 package com.pfplaybackend.api.administration.adapter.in.web;
 
+import com.pfplaybackend.api.administration.adapter.in.web.payload.request.BulkPartyroomActionRequest;
 import com.pfplaybackend.api.administration.adapter.in.web.payload.request.SuspendPartyroomRequest;
 import com.pfplaybackend.api.administration.adapter.in.web.payload.request.TerminatePartyroomRequest;
 import com.pfplaybackend.api.administration.adapter.in.web.payload.request.UpdateDisplayFlagRequest;
 import com.pfplaybackend.api.administration.adapter.in.web.payload.request.UpdatePartyroomMetaRequest;
+import com.pfplaybackend.api.administration.adapter.in.web.payload.response.BulkPartyroomActionResponse;
 import com.pfplaybackend.api.administration.application.AdminContext;
+import com.pfplaybackend.api.administration.application.service.AdminBulkPartyroomActionService;
 import com.pfplaybackend.api.administration.application.service.AdminPartyroomCommandService;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import io.swagger.v3.oas.annotations.Operation;
@@ -34,6 +37,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class AdminPartyroomCommandController {
 
     private final AdminPartyroomCommandService commandService;
+    private final AdminBulkPartyroomActionService bulkActionService;
     private final AdminContext adminContext;
 
     @Operation(summary = "B-3 룸 강제 종료")
@@ -83,5 +87,13 @@ public class AdminPartyroomCommandController {
         commandService.setDisplayFlag(new PartyroomId(partyroomId), req.flag(),
                 adminContext.currentAdministratorId());
         return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "B-8 일괄 액션")
+    @PreAuthorize("@adminAuth.isAdmin()")
+    @PostMapping("/bulk-action")
+    public ResponseEntity<BulkPartyroomActionResponse> bulkAction(
+            @Valid @RequestBody BulkPartyroomActionRequest req) {
+        return ResponseEntity.ok(bulkActionService.execute(req, adminContext.currentAdministratorId()));
     }
 }
