@@ -4,12 +4,14 @@ import com.pfplaybackend.api.admin.application.service.AdminDemoService;
 import com.pfplaybackend.api.admin.application.service.AdminPartyroomService;
 import com.pfplaybackend.api.admin.application.service.AdminUserService;
 import com.pfplaybackend.api.admin.application.service.ChatSimulationService;
+import com.pfplaybackend.api.administration.adapter.in.web.AdminCrewPenaltyCommandController;
 import com.pfplaybackend.api.administration.adapter.in.web.AdminPartyroomCommandController;
 import com.pfplaybackend.api.administration.adapter.in.web.AdminPartyroomQueryController;
 import com.pfplaybackend.api.administration.adapter.in.web.AdministratorManagementController;
 import com.pfplaybackend.api.administration.adapter.in.web.AdminPasswordController;
 import com.pfplaybackend.api.administration.application.AdminContext;
 import com.pfplaybackend.api.administration.application.service.AdminBulkPartyroomActionService;
+import com.pfplaybackend.api.administration.application.service.AdminCrewPenaltyCommandService;
 import com.pfplaybackend.api.administration.application.service.AdminPartyroomCommandService;
 import com.pfplaybackend.api.administration.application.service.AdminPartyroomQueryService;
 import com.pfplaybackend.api.administration.application.service.AdministratorManagementService;
@@ -36,7 +38,8 @@ import org.springframework.test.web.servlet.MockMvc;
         AdministratorManagementController.class,
         AdminPasswordController.class,
         AdminPartyroomCommandController.class,
-        AdminPartyroomQueryController.class
+        AdminPartyroomQueryController.class,
+        AdminCrewPenaltyCommandController.class
 })
 @Import({
         AbstractAdminWebMvcTest.SharedMethodSecurityConfig.class,
@@ -65,4 +68,5 @@ public abstract class AbstractAdminWebMvcTest {
     @MockBean protected AdminPartyroomCommandService adminPartyroomCommandService;
     @MockBean protected AdminPartyroomQueryService adminPartyroomQueryService;
     @MockBean protected AdminBulkPartyroomActionService adminBulkPartyroomActionService;
+    @MockBean protected AdminCrewPenaltyCommandService adminCrewPenaltyCommandService;
 }
