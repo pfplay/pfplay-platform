@@ -5,6 +5,7 @@ import com.pfplaybackend.api.common.exception.ExceptionCreator;
 import com.pfplaybackend.api.party.domain.enums.DisplayFlag;
 import com.pfplaybackend.api.party.domain.exception.PartyroomException;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.test.context.support.WithAnonymousUser;
 import org.springframework.security.test.context.support.WithMockUser;
@@ -300,6 +301,19 @@ class AdminPartyroomCommandControllerTest extends AbstractAdminWebMvcTest {
                         .contentType(APPLICATION_JSON)
                         .content("""
                                 {"flag":null}
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("setDisplayFlag — invalid enum value (Jackson InvalidFormatException) → 400")
+    void setDisplayFlag_invalidEnumValue_returns400() throws Exception {
+        mockMvc.perform(patch("/api/v1/admin/partyrooms/{id}/display-flag", 1L)
+                        .with(csrf())
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                                {"flag":"INVALID_VALUE"}
                                 """))
                 .andExpect(status().isBadRequest());
     }
