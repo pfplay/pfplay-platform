@@ -555,6 +555,22 @@ public void on(PartyroomClosedEvent event) {
 - **Risk #6 — B-1 default status `<> TERMINATED`** (ACTIVE+SUSPENDED 모두 노출)
 - **Risk #7 — CounterListener는 `PartyroomTerminatedEvent` + `PartyroomClosedEvent` 둘 다 listen** (counter consistency)
 
+## 15. Implementation reality (post-build catch-up)
+
+PR 8 구현 완료 시점에 spec과의 차이/세부 결정사항을 모았다 (reviewer 피드백 + 모듈 경계 현실 반영):
+
+- **B-2 `playback.currentTrackName`**: Playlist 모듈 통합으로 deferred. PR 8 MVP는 항상 `null` 반환. (Cross-module dependency 정리는 향후 PR.)
+- **B-2 `DjSummary.playlistName`**: 동일 사유로 PR 8 MVP는 `null`.
+- **B-2 `recentPenalties`**: PR 8 MVP는 `[]` 반환. V8 `punisher_type` 컬럼이 도입되는 PR 9에서 채워진다.
+- **B-2 `recentReports`**: PR 8 MVP는 `[]` 반환. Report 시스템이 도입되는 PR 13에서 채워진다.
+- **B-8 Bulk action MVP scope**: `TERMINATE / SUSPEND / SET_HIDDEN` 3종만 지원. `RESTORE / SET_FEATURED / SET_NORMAL / UPDATE_META`는 후속 PR에서 추가.
+- **`Nickname` QueryDSL 경로**: `Nickname`은 `@Convert(converter = NicknameConverter)` 기반 VO이며 `@Embeddable`이 아니다. 따라서 cross-BC list 쿼리는 `Tuple` projection + `cast({0} as string)` SQL template를 사용 (plan의 `m.profileData.bio.nickname.value` placeholder는 실제로 컴파일되지 않아 deviation).
+- **V7 `occurred_at` 정밀도**: `DATETIME(6)` (microsecond) — V1의 tied-precision pattern과 일관성 유지를 위해 G1 이후 수정. spec 표 작성 시점의 `DATETIME` (whole-second)에서 변경.
+- **ArchUnit cross-BC 가드**: 3 rule (administration→party, administration→user, party→administration unidirectional). 다음 영역은 의도적 scoped exclusion으로 inline 문서화:
+  - Phase F port adapter 경로
+  - PR 4/6 admin-login flow (administration → user 인증 의존)
+- **글로벌 핸들러 보강 (PR 8 follow-up)**: `HttpMessageNotReadableException` → 400, `AdminPartyroomQueryController`의 sort-whitelist `IllegalArgumentException` → 400 (controller-local translation, 글로벌 IAE 핸들러는 의도적으로 추가 안 함).
+
 ---
 
 **다음 단계:** 본 spec이 reviewer + 사용자 승인되면 `superpowers:writing-plans`로 구현 plan 생성 (`docs/superpowers/plans/2026-04-27-admin-platform-pr8.md`).
