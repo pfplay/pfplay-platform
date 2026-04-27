@@ -2,6 +2,8 @@ package com.pfplaybackend.api.party.adapter.in.listener;
 
 import com.pfplaybackend.api.party.adapter.out.persistence.PartyroomRepository;
 import com.pfplaybackend.api.party.domain.event.CrewAccessedEvent;
+import com.pfplaybackend.api.party.domain.event.PartyroomClosedEvent;
+import com.pfplaybackend.api.party.domain.event.PartyroomTerminatedEvent;
 import com.pfplaybackend.api.party.domain.event.PlaybackDeactivatedEvent;
 import com.pfplaybackend.api.party.domain.event.PlaybackStartedEvent;
 import lombok.RequiredArgsConstructor;
@@ -57,6 +59,32 @@ public class PartyroomCounterListener {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void on(PlaybackDeactivatedEvent event) {
         touch(event.getPartyroomId().getId());
+    }
+
+    /**
+     * 어드민 경로 종료 — admin이 PartyroomTerminatedEvent publish.
+     * crew_count = 0으로 reset (bulk crew deactivate는 publisher service에서 별도 처리).
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void on(PartyroomTerminatedEvent event) {
+        Long partyroomId = event.getPartyroomId().getId();
+        int affected = partyroomRepository.resetCrewCount(partyroomId);
+        log.info("[PartyroomCounterListener] crew_count reset for terminated partyroomId={}, affected={}",
+                 partyroomId, affected);
+    }
+
+    /**
+     * Host 자발 종료 — PartyroomClosedEvent (PR 7 이전부터 존재).
+     * 동일하게 reset — counter 일관성 보장 (Risk #7 결정).
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void on(PartyroomClosedEvent event) {
+        Long partyroomId = event.getPartyroomId().getId();
+        int affected = partyroomRepository.resetCrewCount(partyroomId);
+        log.info("[PartyroomCounterListener] crew_count reset for closed partyroomId={}, affected={}",
+                 partyroomId, affected);
     }
 
     private void touch(Long partyroomId) {

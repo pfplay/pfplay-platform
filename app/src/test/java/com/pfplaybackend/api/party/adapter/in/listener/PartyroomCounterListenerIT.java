@@ -7,6 +7,8 @@ import com.pfplaybackend.api.party.domain.entity.data.PartyroomData;
 import com.pfplaybackend.api.party.domain.enums.AccessType;
 import com.pfplaybackend.api.party.domain.enums.StageType;
 import com.pfplaybackend.api.party.domain.event.CrewAccessedEvent;
+import com.pfplaybackend.api.party.domain.event.PartyroomClosedEvent;
+import com.pfplaybackend.api.party.domain.event.PartyroomTerminatedEvent;
 import com.pfplaybackend.api.party.domain.event.PlaybackDeactivatedEvent;
 import com.pfplaybackend.api.party.domain.event.PlaybackStartedEvent;
 import com.pfplaybackend.api.party.domain.value.CrewId;
@@ -106,6 +108,47 @@ class PartyroomCounterListenerIT extends AbstractIntegrationTest {
 
         PartyroomData reloaded = partyroomRepository.findById(roomId).orElseThrow();
         assertThat(reloaded.getLastActivityAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("PartyroomTerminatedEvent → crew_count = 0 reset")
+    void terminated_resets_count() {
+        long roomId = createActiveRoom(3010L, "term-event");
+        // 사전에 +5
+        for (int i = 0; i < 5; i++) {
+            final long uid = 8000L + (long) i;
+            transactionTemplate.executeWithoutResult(status ->
+                    eventPublisher.publishEvent(new CrewAccessedEvent(
+                            new PartyroomId(roomId), new CrewId(uid),
+                            new UserId(uid), AccessType.ENTER))
+            );
+        }
+
+        transactionTemplate.executeWithoutResult(status ->
+                eventPublisher.publishEvent(new PartyroomTerminatedEvent(
+                        new PartyroomId(roomId), 999L, "test reason"))
+        );
+
+        PartyroomData reloaded = partyroomRepository.findById(roomId).orElseThrow();
+        assertThat(reloaded.getCrewCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("PartyroomClosedEvent → crew_count = 0 reset (host 자발 종료 일관성)")
+    void closed_resets_count() {
+        long roomId = createActiveRoom(3011L, "closed-event");
+        transactionTemplate.executeWithoutResult(status ->
+                eventPublisher.publishEvent(new CrewAccessedEvent(
+                        new PartyroomId(roomId), new CrewId(9000L), new UserId(9000L), AccessType.ENTER))
+        );
+
+        transactionTemplate.executeWithoutResult(status ->
+                eventPublisher.publishEvent(new PartyroomClosedEvent(
+                        new PartyroomId(roomId), new UserId(3011L), "closed-event"))
+        );
+
+        PartyroomData reloaded = partyroomRepository.findById(roomId).orElseThrow();
+        assertThat(reloaded.getCrewCount()).isZero();
     }
 
     @Test

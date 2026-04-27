@@ -150,6 +150,37 @@ class PartyroomRepositoryAtomicUpdateIT extends AbstractIntegrationTest {
         assertThat(affected).isZero();
     }
 
+    // ── resetCrewCount ─────────────────────────────────────────────
+
+    @Test
+    @DisplayName("resetCrewCount — 임의 값 → 0")
+    void reset_normal() {
+        PartyroomData p = createAndSaveActive(1010L);
+        partyroomRepository.incrementCrewCount(p.getId(), LocalDateTime.now());
+        partyroomRepository.incrementCrewCount(p.getId(), LocalDateTime.now());
+        partyroomRepository.incrementCrewCount(p.getId(), LocalDateTime.now());
+
+        int affected = partyroomRepository.resetCrewCount(p.getId());
+
+        assertThat(affected).isEqualTo(1);
+        PartyroomData reloaded = partyroomRepository.findById(p.getId()).orElseThrow();
+        assertThat(reloaded.getCrewCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("resetCrewCount — TERMINATED 룸도 reset 가능 (status 가드 없음)")
+    void reset_terminated() {
+        PartyroomData p = createAndSaveActive(1011L);
+        partyroomRepository.incrementCrewCount(p.getId(), LocalDateTime.now());
+        p.terminate();
+        partyroomRepository.saveAndFlush(p);
+
+        int affected = partyroomRepository.resetCrewCount(p.getId());
+
+        assertThat(affected).isEqualTo(1);
+        assertThat(partyroomRepository.findById(p.getId()).orElseThrow().getCrewCount()).isZero();
+    }
+
     // ── findNonTerminatedHostRoom (status 시맨틱 변경 회귀) ────────────────
 
     @Test

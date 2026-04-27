@@ -55,4 +55,15 @@ public interface PartyroomRepository extends JpaRepository<PartyroomData, Long>,
            "WHERE p.id = :id " +
            "AND p.status = com.pfplaybackend.api.party.domain.enums.PartyroomStatus.ACTIVE")
     int touchLastActivity(@Param("id") Long id, @Param("now") LocalDateTime now);
+
+    /**
+     * crew_count 절대값 0으로 reset. terminate / 자발 close 후 호출.
+     * incrementCrewCount/decrementCrewCount의 incremental 모델과 다른 absolute reset.
+     *
+     * status 가드 없음 — TERMINATED 룸의 reset이 본 use case.
+     * 이미 0인 row를 reset해도 멱등 (UPDATE 자체는 실행, affected row 1).
+     */
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE PartyroomData p SET p.crewCount = 0 WHERE p.id = :id")
+    int resetCrewCount(@Param("id") Long id);
 }
