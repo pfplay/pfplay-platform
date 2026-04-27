@@ -191,6 +191,34 @@ public class PartyroomData extends BaseEntity {
         registerEvent(new PartyroomClosedEvent(this.partyroomId, this.hostId, this.title));
     }
 
+    // ── Display Flag (admin-only via Administration BC; ArchUnit 가드는 별 task) ──
+
+    /**
+     * displayFlag 변경. TERMINATED 룸은 거부 (ILLEGAL_STATE_TRANSITION).
+     * SUSPENDED 룸은 허용 — admin이 정지 중에도 분류 라벨 변경 가능.
+     * 같은 값 재설정은 idempotent (no exception, no event recommended at caller).
+     */
+    public void setDisplayFlagFeatured() {
+        guardDisplayFlagChangeable();
+        this.displayFlag = DisplayFlag.FEATURED;
+    }
+
+    public void setDisplayFlagHidden() {
+        guardDisplayFlagChangeable();
+        this.displayFlag = DisplayFlag.HIDDEN;
+    }
+
+    public void setDisplayFlagNormal() {
+        guardDisplayFlagChangeable();
+        this.displayFlag = DisplayFlag.NORMAL;
+    }
+
+    private void guardDisplayFlagChangeable() {
+        if (this.status == PartyroomStatus.TERMINATED) {
+            throw ExceptionCreator.create(PartyroomException.ILLEGAL_STATE_TRANSITION);
+        }
+    }
+
     // ── Validation ──
 
     public void validateHost(UserId userId) {

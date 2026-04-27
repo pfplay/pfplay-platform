@@ -155,6 +155,54 @@ class PartyroomDataTest {
     }
 
     @Nested
+    @DisplayName("setDisplayFlagFeatured/Hidden/Normal()")
+    class SetDisplayFlag {
+        @Test @DisplayName("ACTIVE 룸 — FEATURED 설정")
+        void featured_active() {
+            PartyroomData p = newPartyroom();
+            p.setDisplayFlagFeatured();
+            assertThat(p.getDisplayFlag()).isEqualTo(DisplayFlag.FEATURED);
+        }
+
+        @Test @DisplayName("SUSPENDED 룸 — FEATURED 설정 가능 (운영 정책)")
+        void featured_suspended() {
+            PartyroomData p = newPartyroom();
+            p.suspend();
+            p.setDisplayFlagFeatured();
+            assertThat(p.getDisplayFlag()).isEqualTo(DisplayFlag.FEATURED);
+        }
+
+        @Test @DisplayName("TERMINATED 룸 — ConflictException")
+        void featured_terminated() {
+            PartyroomData p = newPartyroom();
+            p.terminate();
+            assertThatThrownBy(p::setDisplayFlagFeatured).isInstanceOf(ConflictException.class);
+        }
+
+        @Test @DisplayName("HIDDEN 설정")
+        void hidden() {
+            PartyroomData p = newPartyroom();
+            p.setDisplayFlagHidden();
+            assertThat(p.getDisplayFlag()).isEqualTo(DisplayFlag.HIDDEN);
+        }
+
+        @Test @DisplayName("NORMAL 설정")
+        void normal() {
+            PartyroomData p = newPartyroom();
+            p.setDisplayFlagFeatured();
+            p.setDisplayFlagNormal();
+            assertThat(p.getDisplayFlag()).isEqualTo(DisplayFlag.NORMAL);
+        }
+
+        @Test @DisplayName("이미 같은 flag — 변경 없이 통과 (idempotent)")
+        void idempotent() {
+            PartyroomData p = newPartyroom();
+            assertThatNoException().isThrownBy(p::setDisplayFlagNormal);
+            assertThat(p.getDisplayFlag()).isEqualTo(DisplayFlag.NORMAL);
+        }
+    }
+
+    @Nested
     @DisplayName("validateHost()")
     class ValidateHost {
         @Test @DisplayName("호스트가 아닌 사용자 → ForbiddenException")
