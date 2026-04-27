@@ -15,10 +15,10 @@ import java.util.List;
  * {@code AdminPartyroomQueryService.detail(...)} from 5–6 sub-queries (no single
  * cross-BC JOIN — see plan §5 for rationale).
  *
- * <p>PR 8 MVP scope:
+ * <p>PR 9 scope:
  * <ul>
- *   <li>{@code recentPenalties} is always empty — PR 9 introduces the
- *       {@code punisher_type} column required to populate {@link PenaltySummary}.</li>
+ *   <li>{@code recentPenalties} is populated from V8 {@code punisher_type} column
+ *       (top 5 by penalty_date desc; CREW + ADMIN both surfaced).</li>
  *   <li>{@code recentReports} is always empty — PR 13 implements the report system.</li>
  *   <li>{@link PlaybackSummary#currentTrackName} and
  *       {@link DjSummary#playlistName} are null — Playlist module's query port is

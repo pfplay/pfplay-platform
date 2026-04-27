@@ -8,13 +8,17 @@ import com.pfplaybackend.api.administration.application.dto.AdminPartyroomListFi
 import com.pfplaybackend.api.administration.application.dto.AdminPartyroomListRow;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.exception.http.NotFoundException;
+import com.pfplaybackend.api.party.adapter.out.persistence.CrewPenaltyHistoryRepository;
 import com.pfplaybackend.api.party.domain.entity.data.CrewData;
 import com.pfplaybackend.api.party.domain.entity.data.DjData;
 import com.pfplaybackend.api.party.domain.entity.data.PartyroomData;
 import com.pfplaybackend.api.party.domain.entity.data.PartyroomPlaybackData;
+import com.pfplaybackend.api.party.domain.entity.data.history.CrewPenaltyHistoryData;
 import com.pfplaybackend.api.party.domain.enums.DisplayFlag;
 import com.pfplaybackend.api.party.domain.enums.GradeType;
 import com.pfplaybackend.api.party.domain.enums.PartyroomStatus;
+import com.pfplaybackend.api.party.domain.enums.PenaltyType;
+import com.pfplaybackend.api.party.domain.enums.PunisherType;
 import com.pfplaybackend.api.party.domain.enums.StageType;
 import com.pfplaybackend.api.party.domain.port.PartyroomAggregatePort;
 import com.pfplaybackend.api.party.domain.value.CrewId;
@@ -60,6 +64,7 @@ class AdminPartyroomQueryServiceTest {
     @Mock private UserAccountRepository userAccountRepository;
     @Mock private MemberRepository memberRepository;
     @Mock private PartyroomAdminActionRepository adminActionRepository;
+    @Mock private CrewPenaltyHistoryRepository crewPenaltyHistoryRepository;
 
     @InjectMocks
     private AdminPartyroomQueryService service;
@@ -168,6 +173,8 @@ class AdminPartyroomQueryServiceTest {
         when(adminActionRepository.findTop10ByPartyroomIdOrderByOccurredAtDesc(PID.getId()))
                 .thenReturn(List.of());
         when(aggregatePort.findPlaybackState(PID)).thenReturn(playback);
+        when(crewPenaltyHistoryRepository.findTop5ByPartyroomIdOrderByPenaltyDateDesc(PID))
+                .thenReturn(List.of());
 
         AdminPartyroomDetailResponse detail = service.detail(PID);
 
@@ -199,10 +206,70 @@ class AdminPartyroomQueryServiceTest {
         assertThat(detail.playback().currentTrackName()).isNull(); // PR 8 MVP
         assertThat(detail.playback().currentDjCrewId()).isNull();
 
-        // PR 8 MVP — empty
+        // PR 9 — recentPenalties populated from V8; this happy path stubs no rows.
         assertThat(detail.recentPenalties()).isEmpty();
+        // PR 13 — reports still empty.
         assertThat(detail.recentReports()).isEmpty();
         assertThat(detail.recentAdminActions()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("detail - recentPenalties projection from V8 column (CREW + ADMIN both surfaced)")
+    void detail_recentPenalties_projection() {
+        UserAccountData hostAccount = UserAccountData.createForLocal(HOST_UID, "host@example.com", "hash");
+        MemberData hostMember = memberWithNickname(7L, "hostNick");
+
+        // V8: 2 history rows, one CREW (with punisher_crew_id), one ADMIN (punisher_crew_id=null).
+        CrewPenaltyHistoryData crewApplied = CrewPenaltyHistoryData.builder()
+                .id(501L)
+                .partyroomId(PID)
+                .punishedCrewId(new CrewId(5001L))
+                .punisherCrewId(new CrewId(5002L))
+                .punisherType(PunisherType.CREW)
+                .penaltyType(PenaltyType.PERMANENT_EXPULSION)
+                .penaltyReason("crew-rationale")
+                .penaltyDate(LocalDateTime.of(2026, 4, 27, 9, 30))
+                .released(false)
+                .build();
+        CrewPenaltyHistoryData adminApplied = CrewPenaltyHistoryData.builder()
+                .id(502L)
+                .partyroomId(PID)
+                .punishedCrewId(new CrewId(5003L))
+                .punisherCrewId(null)
+                .punisherType(PunisherType.ADMIN)
+                .penaltyType(PenaltyType.PERMANENT_EXPULSION)
+                .penaltyReason("admin-rationale")
+                .penaltyDate(LocalDateTime.of(2026, 4, 27, 10, 0))
+                .released(false)
+                .build();
+
+        when(aggregatePort.findPartyroomById(PID.getId())).thenReturn(Optional.of(partyroom));
+        when(userAccountRepository.findById(HOST_UID)).thenReturn(Optional.of(hostAccount));
+        when(memberRepository.findByUserAccountId(HOST_UID.getUid())).thenReturn(Optional.of(hostMember));
+        when(aggregatePort.findActiveCrews(PID)).thenReturn(List.of());
+        when(aggregatePort.findDjsOrdered(PID)).thenReturn(List.of());
+        when(adminActionRepository.findTop10ByPartyroomIdOrderByOccurredAtDesc(PID.getId()))
+                .thenReturn(List.of());
+        when(aggregatePort.findPlaybackState(PID)).thenReturn(PartyroomPlaybackData.createFor(PID));
+        when(crewPenaltyHistoryRepository.findTop5ByPartyroomIdOrderByPenaltyDateDesc(PID))
+                .thenReturn(List.of(adminApplied, crewApplied));   // repository returns desc-ordered
+
+        AdminPartyroomDetailResponse detail = service.detail(PID);
+
+        assertThat(detail.recentPenalties()).hasSize(2);
+        AdminPartyroomDetailResponse.PenaltySummary first = detail.recentPenalties().get(0);
+        assertThat(first.id()).isEqualTo(502L);
+        assertThat(first.crewId()).isEqualTo(5003L);
+        assertThat(first.penaltyType()).isEqualTo(PenaltyType.PERMANENT_EXPULSION);
+        assertThat(first.punisherType()).isEqualTo("ADMIN");
+        assertThat(first.reason()).isEqualTo("admin-rationale");
+        assertThat(first.date()).isEqualTo(LocalDateTime.of(2026, 4, 27, 10, 0));
+
+        AdminPartyroomDetailResponse.PenaltySummary second = detail.recentPenalties().get(1);
+        assertThat(second.id()).isEqualTo(501L);
+        assertThat(second.crewId()).isEqualTo(5001L);
+        assertThat(second.punisherType()).isEqualTo("CREW");
+        assertThat(second.reason()).isEqualTo("crew-rationale");
     }
 
     @Test

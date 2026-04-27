@@ -15,6 +15,7 @@ import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.exception.ExceptionCreator;
 import com.pfplaybackend.api.party.domain.entity.data.CrewData;
 import com.pfplaybackend.api.party.domain.entity.data.DjData;
+import com.pfplaybackend.api.party.adapter.out.persistence.CrewPenaltyHistoryRepository;
 import com.pfplaybackend.api.party.domain.entity.data.PartyroomData;
 import com.pfplaybackend.api.party.domain.entity.data.PartyroomPlaybackData;
 import com.pfplaybackend.api.party.domain.exception.PartyroomException;
@@ -49,9 +50,10 @@ import java.util.stream.Collectors;
  * composes 5–6 small sub-queries (instead of one mega-JOIN) to keep cross-BC
  * coupling explicit and minimal — see plan §5.
  *
- * <p>PR 8 MVP scope: {@code recentPenalties} (PR 9), {@code recentReports}
- * (PR 13), {@code currentTrackName}, and {@code playlistName} (Playlist module)
- * are all returned as null/empty per spec §2.2.
+ * <p>PR 8 MVP scope: {@code recentReports} (PR 13), {@code currentTrackName},
+ * and {@code playlistName} (Playlist module) are returned as null/empty per spec §2.2.
+ * PR 9: {@code recentPenalties} now populated from {@code CREW_PENALTY_HISTORY}
+ * V8 column (top 5, penalty_date desc; CREW + ADMIN both surfaced).
  */
 @Slf4j
 @Service
@@ -64,6 +66,7 @@ public class AdminPartyroomQueryService {
     private final UserAccountRepository userAccountRepository;
     private final MemberRepository memberRepository;
     private final PartyroomAdminActionRepository adminActionRepository;
+    private final CrewPenaltyHistoryRepository crewPenaltyHistoryRepository;
 
     public Page<AdminPartyroomListItemResponse> list(AdminPartyroomListFilter filter, Pageable pageable) {
         return adminPartyroomQueryRepository.findAdminList(filter, pageable)
@@ -121,8 +124,20 @@ public class AdminPartyroomQueryService {
                 ))
                 .toList();
 
-        // 6. Recent penalties / reports — PR 8 MVP returns empty (PR 9 / PR 13 will populate).
-        var recentPenalties = Collections.<AdminPartyroomDetailResponse.PenaltySummary>emptyList();
+        // 6a. Recent penalties — PR 9 V8 컬럼에서 채움 (released 포함, penalty_date desc top 5).
+        List<AdminPartyroomDetailResponse.PenaltySummary> recentPenalties =
+                crewPenaltyHistoryRepository.findTop5ByPartyroomIdOrderByPenaltyDateDesc(partyroomId)
+                        .stream()
+                        .map(h -> new AdminPartyroomDetailResponse.PenaltySummary(
+                                h.getId(),
+                                h.getPunishedCrewId() == null ? null : h.getPunishedCrewId().getId(),
+                                h.getPenaltyType(),
+                                h.getPunisherType().name(),
+                                h.getPenaltyReason(),
+                                h.getPenaltyDate()))
+                        .toList();
+
+        // 6b. Recent reports — PR 13에서 채움.
         var recentReports = Collections.<AdminPartyroomDetailResponse.ReportSummary>emptyList();
 
         // 7. Recent admin actions (top 10, time-desc).
