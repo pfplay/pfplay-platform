@@ -1,6 +1,8 @@
 package com.pfplaybackend.api.administration.adapter.in.web;
 
+import com.pfplaybackend.api.administration.adapter.in.web.payload.request.AttachMemberProfileRequest;
 import com.pfplaybackend.api.administration.adapter.in.web.payload.request.CreateAdministratorRequest;
+import com.pfplaybackend.api.administration.adapter.in.web.payload.request.UpdateAdministratorRequest;
 import com.pfplaybackend.api.administration.adapter.in.web.payload.response.AdministratorListResponse;
 import com.pfplaybackend.api.administration.adapter.in.web.payload.response.CreateAdministratorResponse;
 import com.pfplaybackend.api.administration.application.AdminContext;
@@ -15,11 +17,15 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.Map;
 
 @Slf4j
 @Tag(name = "Admin Administrator Management API",
@@ -50,5 +56,26 @@ public class AdministratorManagementController {
         Long actorId = adminContext.currentAdministratorId();
         return ResponseEntity.ok(ApiCommonResponse.success(
                 service.create(req, actorId)));
+    }
+
+    @Operation(summary = "어드민 정보 수정 (닉네임)")
+    @PreAuthorize("@adminAuth.canManageAdmins()")
+    @PatchMapping("/{id}")
+    public ResponseEntity<Void> patch(
+            @PathVariable Long id,
+            @Valid @RequestBody UpdateAdministratorRequest req) {
+        service.updateNickname(id, req.getNickname());
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "어드민에 멤버 프로필 연결")
+    @PreAuthorize("@adminAuth.canManageAdmins()")
+    @PostMapping("/{id}/member-profile")
+    public ResponseEntity<ApiCommonResponse<Map<String, Long>>> attachMemberProfile(
+            @PathVariable Long id,
+            @Valid @RequestBody AttachMemberProfileRequest req) {
+        Long memberId = service.attachMemberProfile(id, req.getNickname());
+        return ResponseEntity.ok(ApiCommonResponse.success(
+                Map.of("memberId", memberId)));
     }
 }

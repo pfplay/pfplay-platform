@@ -289,6 +289,31 @@ class AdministratorManagementServiceTest {
                 .satisfies(ex -> assertThat(ex.getClass().getSimpleName()).contains("Conflict"));
     }
 
+    // -------- attachMemberProfile --------
+
+    @Test
+    void attachMemberProfile_returnsMemberId_andSetsNickname() {
+        AdministratorData admin = mock(AdministratorData.class);
+        given(admin.getUserAccountId()).willReturn(100L);
+        given(administratorRepository.findById(7L)).willReturn(Optional.of(admin));
+        UserAccountData ua = uaFixture(100L, "admin@x");
+        given(userAccountRepository.findById(new UserId(100L))).willReturn(Optional.of(ua));
+        MemberData member = mockMemberWithProfile(50L);
+        given(memberSignService.getOrCreateMemberFor(ua)).willReturn(member);
+
+        Long memberId = service.attachMemberProfile(7L, "newbie");
+
+        assertThat(memberId).isEqualTo(50L);
+        verify(member.getProfileData()).updateNickname("newbie");
+    }
+
+    @Test
+    void attachMemberProfile_whenAdminNotFound_throwsNotFound() {
+        given(administratorRepository.findById(7L)).willReturn(Optional.empty());
+        assertThatThrownBy(() -> service.attachMemberProfile(7L, "n"))
+                .satisfies(ex -> assertThat(ex.getClass().getSimpleName()).contains("NotFound"));
+    }
+
     // -------- helpers --------
 
     private AdministratorData adminFixture(Long id, Long uaId, AdminRole role, LocalDateTime revokedAt) {

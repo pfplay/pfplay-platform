@@ -126,6 +126,21 @@ public class AdministratorManagementService {
         log.info("admin_management.update_nickname administrator_id={}", administratorId);
     }
 
+    @Transactional
+    public Long attachMemberProfile(Long administratorId, String nickname) {
+        AdministratorData admin = administratorRepository.findById(administratorId)
+                .orElseThrow(() -> ExceptionCreator.create(
+                        AdministratorManagementException.NOT_FOUND));
+        UserAccountData ua = userAccountRepository.findById(new UserId(admin.getUserAccountId()))
+                .orElseThrow(() -> new IllegalStateException(
+                        "admin → ua invariant violated: user_id=" + admin.getUserAccountId()));
+        MemberData member = memberSignService.getOrCreateMemberFor(ua);
+        member.getProfileData().updateNickname(nickname);
+        log.info("admin_management.attach_member_profile administrator_id={} member_id={}",
+                administratorId, member.getMemberId());
+        return member.getMemberId();
+    }
+
     private AdministratorView toView(AdministratorData a, UserAccountData ua, MemberData member) {
         String nickname = null;
         Long memberId = null;

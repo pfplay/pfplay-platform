@@ -16,7 +16,9 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -141,5 +143,72 @@ class AdministratorManagementControllerTest extends AbstractAdminWebMvcTest {
                                 {"email":"a@x.test","nickname":""}
                                 """))
                 .andExpect(status().isBadRequest());
+    }
+
+    // -------- patch --------
+
+    @Test
+    @WithMockUser(roles = {"ADMIN", "SUPER_ADMIN"})
+    void patch_superAdmin_returns204() throws Exception {
+        mockMvc.perform(patch("/api/v1/admin/system/administrators/7")
+                        .with(csrf())
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                                {"nickname":"renamed"}
+                                """))
+                .andExpect(status().isNoContent());
+        verify(administratorManagementService).updateNickname(7L, "renamed");
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void patch_nonSuperAdmin_returns403() throws Exception {
+        mockMvc.perform(patch("/api/v1/admin/system/administrators/7")
+                        .with(csrf())
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                                {"nickname":"renamed"}
+                                """))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(roles = {"ADMIN", "SUPER_ADMIN"})
+    void patch_blankNickname_returns400() throws Exception {
+        mockMvc.perform(patch("/api/v1/admin/system/administrators/7")
+                        .with(csrf())
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                                {"nickname":""}
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    // -------- attachMemberProfile --------
+
+    @Test
+    @WithMockUser(roles = {"ADMIN", "SUPER_ADMIN"})
+    void attachMemberProfile_returns200WithMemberId() throws Exception {
+        given(administratorManagementService.attachMemberProfile(7L, "newbie")).willReturn(99L);
+        mockMvc.perform(post("/api/v1/admin/system/administrators/7/member-profile")
+                        .with(csrf())
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                                {"nickname":"newbie"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.memberId").value(99));
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void attachMemberProfile_nonSuperAdmin_returns403() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/system/administrators/7/member-profile")
+                        .with(csrf())
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                                {"nickname":"n"}
+                                """))
+                .andExpect(status().isForbidden());
     }
 }
