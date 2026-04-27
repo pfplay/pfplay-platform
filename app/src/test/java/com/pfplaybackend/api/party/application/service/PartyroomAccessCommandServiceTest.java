@@ -9,6 +9,7 @@ import com.pfplaybackend.api.party.domain.entity.data.CrewData;
 import com.pfplaybackend.api.party.domain.entity.data.PartyroomData;
 import com.pfplaybackend.api.party.domain.entity.data.PartyroomPlaybackData;
 import com.pfplaybackend.api.party.domain.enums.GradeType;
+import com.pfplaybackend.api.party.domain.enums.PartyroomStatus;
 import com.pfplaybackend.api.party.domain.event.CrewAccessedEvent;
 import com.pfplaybackend.api.party.domain.port.PartyroomAggregatePort;
 import com.pfplaybackend.api.party.domain.service.PartyroomAggregateService;
@@ -80,7 +81,7 @@ class PartyroomAccessCommandServiceTest {
         PartyroomData partyroomData = PartyroomData.builder()
                 .id(1L)
                 .partyroomId(partyroomId)
-                .isTerminated(false)
+                .status(PartyroomStatus.ACTIVE)
                 .build();
 
         when(partyroomQueryService.getPartyroomById(partyroomId)).thenReturn(partyroomData);
@@ -117,7 +118,7 @@ class PartyroomAccessCommandServiceTest {
         PartyroomData newPartyroomData = PartyroomData.builder()
                 .id(2L)
                 .partyroomId(newRoomId)
-                .isTerminated(false)
+                .status(PartyroomStatus.ACTIVE)
                 .build();
 
         when(partyroomQueryService.getPartyroomById(newRoomId)).thenReturn(newPartyroomData);
@@ -139,7 +140,7 @@ class PartyroomAccessCommandServiceTest {
         PartyroomData oldPartyroomData = PartyroomData.builder()
                 .id(1L)
                 .partyroomId(oldRoomId)
-                .isTerminated(false)
+                .status(PartyroomStatus.ACTIVE)
                 .build();
 
         PartyroomPlaybackData oldPlaybackState = PartyroomPlaybackData.createFor(new PartyroomId(1L));

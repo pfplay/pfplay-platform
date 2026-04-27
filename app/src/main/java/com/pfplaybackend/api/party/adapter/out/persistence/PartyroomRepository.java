@@ -11,6 +11,6 @@ import java.util.Optional;
 
 public interface PartyroomRepository extends JpaRepository<PartyroomData, Long>, com.pfplaybackend.api.party.adapter.out.persistence.custom.PartyroomRepositoryCustom {
     Optional<PartyroomData> findByLinkDomain(LinkDomain linkDomain);
-    @Query("SELECT p FROM PartyroomData p WHERE p.hostId = :userId AND p.isTerminated = false")
+    @Query("SELECT p FROM PartyroomData p WHERE p.hostId = :userId AND p.status <> com.pfplaybackend.api.party.domain.enums.PartyroomStatus.TERMINATED")
     Optional<PartyroomData> findActiveHostRoom(@Param("userId") UserId userId);
 }

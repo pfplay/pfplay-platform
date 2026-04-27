@@ -12,6 +12,7 @@ import com.pfplaybackend.api.party.domain.entity.data.CrewData;
 import com.pfplaybackend.api.party.domain.entity.data.PartyroomData;
 import com.pfplaybackend.api.party.domain.entity.data.history.CrewPenaltyHistoryData;
 import com.pfplaybackend.api.party.domain.enums.GradeType;
+import com.pfplaybackend.api.party.domain.enums.PartyroomStatus;
 import com.pfplaybackend.api.party.domain.enums.PenaltyType;
 import com.pfplaybackend.api.party.domain.enums.StageType;
 import com.pfplaybackend.api.party.domain.event.CrewPenalizedEvent;
@@ -76,7 +77,7 @@ class CrewPenaltyCommandServiceTest {
                 .id(1L).hostId(userId).stageType(StageType.GENERAL)
                 .title("Room").introduction("Intro")
                 .linkDomain(LinkDomain.of("link")).playbackTimeLimit(PlaybackTimeLimit.ofMinutes(5))
-                .noticeContent("").isTerminated(false).build();
+                .noticeContent("").status(PartyroomStatus.ACTIVE).build();
     }
 
     // ========== addPenalty ==========

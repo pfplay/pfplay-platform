@@ -7,6 +7,7 @@ import com.pfplaybackend.api.party.application.dto.partyroom.ActivePartyroomDto;
 import com.pfplaybackend.api.party.application.dto.partyroom.PartyroomWithCrewDto;
 import com.pfplaybackend.api.party.application.dto.playback.PlaybackDto;
 import com.pfplaybackend.api.party.domain.entity.data.*;
+import com.pfplaybackend.api.party.domain.enums.PartyroomStatus;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import com.querydsl.core.Tuple;
 import com.querydsl.core.types.ConstructorExpression;
@@ -107,7 +108,7 @@ public class PartyroomRepositoryImpl implements PartyroomRepositoryCustom {
                 )
                 .leftJoin(qPlaybackData)
                 .on(qPlaybackData.id.eq(qPlayback.currentPlaybackId.id))
-                .where(qPartyroomData.isTerminated.eq(false))
+                .where(qPartyroomData.status.ne(PartyroomStatus.TERMINATED))
                 .orderBy(qPartyroomData.id.asc(), qCrewData.gradeType.asc())
                 .fetch();
 

@@ -3,6 +3,7 @@ package com.pfplaybackend.api.party.domain.specification;
 import com.pfplaybackend.api.common.exception.http.ForbiddenException;
 import com.pfplaybackend.api.party.domain.entity.data.CrewData;
 import com.pfplaybackend.api.party.domain.entity.data.PartyroomData;
+import com.pfplaybackend.api.party.domain.enums.PartyroomStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -22,11 +23,11 @@ class PartyroomEntrySpecificationTest {
     }
 
     private PartyroomData activePartyroom() {
-        return PartyroomData.builder().isTerminated(false).build();
+        return PartyroomData.builder().status(PartyroomStatus.ACTIVE).build();
     }
 
     private PartyroomData terminatedPartyroom() {
-        return PartyroomData.builder().isTerminated(true).build();
+        return PartyroomData.builder().status(PartyroomStatus.TERMINATED).build();
     }
 
     @Test
