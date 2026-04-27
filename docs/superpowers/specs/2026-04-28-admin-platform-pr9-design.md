@@ -674,9 +674,17 @@ PR 8 follow-up `76d7b2c1` 패턴(IT에서 `@Transactional` + cleanup) 동일 적
 
 ## 11. Open Items / Implementation Reality (post-build catch-up)
 
-PR 9 구현 완료 시점에 spec과의 차이/세부 결정사항을 모은다 (PR 8 §15 패턴):
+PR 9 구현 완료 시점에 spec과의 차이/세부 결정사항을 기록한다 (PR 8 §15 패턴):
 
-(빈 placeholder — 구현 중 발견 시 채움)
+- **§4.1 errors 표의 409 vs 실제 403**: `PartyroomException.ALREADY_TERMINATED`가 `ErrorType.FORBIDDEN`(403)으로 매핑되어 있어 spec 표의 409 표기와 어긋남. 본 PR은 기존 매핑 유지(코드 일관성). WebMvc 테스트는 403으로 검증.
+- **`CrewException.NOT_FOUND_ROOM` 신규 코드 (CRW-003)**: 다른 룸 crew를 path로 시도 시 거부용. 기존 `NOT_FOUND_ACTIVE_ROOM`(active 룸 미참여)과 의미 차별화. `AdminCrewPenaltyCommandService.apply`가 `findPartyroomById` 통과 후 `findCrewById` + partyroomId 일치 검증에서 사용.
+- **partyroomId 비교 표현**: `AdminCrewPenaltyCommandService.apply`의 `crew.getPartyroomId().getId() vs path partyroomId` 비교는 `Long.equals()` 형식으로 작성 — primitive `long` vs `Long` 자동 unbox 의존 회피 (G1 follow-up `c3211990`에서 채택).
+- **`releaseByAdmin` delegation**: G1에서 `releaseByAdmin(now)`은 `release(null, now)` 위임으로 단순화 — code-quality reviewer 권장 (G1 follow-up `16ff6277`).
+- **이벤트 field 순서**: `AdminCrewPenalizedEvent`/`AdminCrewPenaltyReleasedEvent`의 생성자 인자 순서를 PR 8 `PartyroomTerminatedEvent` 컨벤션(`partyroomId, administratorId, ...`)에 맞춤 (G2 follow-up `089753c4`).
+- **`AbstractAdminWebMvcTest` 확장**: PR 8의 공통 fixture 클래스를 PR 9 controller 등록 + `@MockBean AdminCrewPenaltyCommandService`로 확장 — 기존 fixture 메커니즘 재사용 (Task 11 commit `6fd86cad`).
+- **Race IT 검증 방식 (sequential)**: §6.1 race 검증 IT(`AdminCrewPenaltyConcurrencyIT`)는 두 service의 dual auth context 전파(SecurityContext for admin / `ThreadLocalContext` for crew)를 thread-local 안전하게 관리하는 fixture 부재로 sequential 호출로 outcome equivalence 검증. `expel`은 atomic toggle + idempotent `enforceBan`으로 호출 순서 무관 — race-equivalent.
+- **IT fixture에서 `PartyroomPlaybackData` 동반 INSERT**: `expel` 흐름이 `handleDjQueueOnLeave → findPlaybackState`를 호출하므로 IT는 `partyroom_playback` row를 명시적으로 SEED해야 함 (`PartyroomCommandService.create`는 자동 생성하지만 IT는 `PartyroomData.create` 직접 호출 — PR 8 IT pattern과 동일).
+- **flaky IT (`PartyroomRepositoryAtomicUpdateIT.unused_excludes_terminated`)**: 본 PR과 무관한 기존 이슈로 `:app:integrationTest` 동시 실행 시 일부 cross-test 데이터 contamination 발생 가능. isolated 실행은 통과. PR 9 변경은 `partyroom`/`PartyroomRepository`/`findAllUnusedPartyroomDataByDay`와 무관. 본 PR의 clean 빌드는 통과 확인.
 
 ---
 
