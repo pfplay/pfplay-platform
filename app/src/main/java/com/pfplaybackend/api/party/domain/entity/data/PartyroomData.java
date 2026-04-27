@@ -21,6 +21,12 @@ import java.time.LocalDateTime;
 
 @AggregateRoot
 @Getter
+// @DynamicUpdate is load-bearing for PR 7's atomic counter pattern.
+// Without it, JPA dirty-checking saves (e.g., terminate() from cleanup job)
+// would write back ALL columns including a stale crew_count, silently
+// overwriting concurrent atomic UPDATEs from PartyroomCounterListener.
+// crewCount/lastActivityAt/displayFlag have no setters — they are mutated
+// exclusively via PartyroomRepository.{increment,decrement,touch}* methods.
 @DynamicInsert
 @DynamicUpdate
 @Table(

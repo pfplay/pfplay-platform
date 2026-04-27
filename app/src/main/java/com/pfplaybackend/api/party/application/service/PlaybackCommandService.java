@@ -162,7 +162,17 @@ public class PlaybackCommandService implements PlaybackControlPort {
         }
         // applyAggregationDelta는 @Modifying(clearAutomatically=true)이므로 1차 캐시 비워짐.
         // findById는 fresh SELECT로 atomic UPDATE 후 최신 카운터 값 반환 → 호출자가 이벤트 publish에 사용.
-        return playbackAggregationRepository.findById(playbackId).orElseThrow();
+        PlaybackAggregationData reloaded = playbackAggregationRepository.findById(playbackId).orElseThrow();
+
+        // Negative-count drift signal: like/dislike are toggle-based deltas computed by
+        // PlaybackReactionDomainService against history. Negative counters indicate
+        // history vs counter drift — log WARN so it's actionable.
+        if (reloaded.getLikeCount() < 0 || reloaded.getDislikeCount() < 0 || reloaded.getGrabCount() < 0) {
+            log.warn("[updatePlaybackAggregation] negative counter detected — possible history/counter drift: " +
+                     "playbackId={}, likeCount={}, dislikeCount={}, grabCount={}",
+                     playbackId, reloaded.getLikeCount(), reloaded.getDislikeCount(), reloaded.getGrabCount());
+        }
+        return reloaded;
     }
 
     private void deactivateAndNotify(PartyroomData partyroom) {

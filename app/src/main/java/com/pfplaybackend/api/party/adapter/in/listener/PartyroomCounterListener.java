@@ -62,6 +62,9 @@ public class PartyroomCounterListener {
     private void touch(Long partyroomId) {
         int affected = partyroomRepository.touchLastActivity(partyroomId, LocalDateTime.now(clock));
         if (affected == 0) {
+            // DEBUG (not WARN) intentionally: SUSPENDED rooms can still receive playback events
+            // (admin-suspended room with running playback). Skipping the touch is by design,
+            // not an anomaly. Counter listeners log WARN for genuine misses (TERMINATED rooms).
             log.debug("[PartyroomCounterListener] touchLastActivity skipped (room not ACTIVE) partyroomId={}",
                       partyroomId);
         }
