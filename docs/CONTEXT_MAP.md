@@ -1,10 +1,10 @@
 # PFPlay Context Map
 
 > **Source of truth**: `docs/superpowers/specs/2026-04-19-admin-platform-design.md §3.1 (BC taxonomy), §3.2 (통합 규칙), §3.4 (Context Map)`.
-> 본 문서는 현재 레포 실제 상태를 반영한 **경량 참조용**이다. Avatar BC 신설 (V12 적용 + PR 10 이후) 및 Administration / Operations BC 확장 내용이 반영되어 있다.
+> 본 문서는 현재 레포 실제 상태를 반영한 **경량 참조용**이다. Avatar BC 신설 (V14 적용 + PR 10 이후) 및 Administration / Operations BC 확장 내용이 반영되어 있다.
 > 세부 aggregate/스키마/이벤트 시그니처는 상기 사양 문서를 우선 참조한다.
 
-## Bounded Contexts (V12 반영, PR 10 머지 후 최종 상태 기준)
+## Bounded Contexts (V14 반영, PR 10 머지 후 최종 상태 기준)
 
 | # | Context | Type | 현 Gradle 모듈 / 패키지 | 주요 Aggregate |
 |---|---|---|---|---|
@@ -26,7 +26,7 @@
 - **Avatar → 순수 생산자 BC**: 다른 BC를 import하지 않는다. 역방향(User Profile/Administration/app → Avatar)은 허용. Gradle 자체가 이 방향성을 강제.
 - **Administration → Party 내부 엔티티 import 금지** — 값 객체만 허용 (ArchUnit 검증)
 
-## 주요 Cross-Context 포트 (V12 이후)
+## 주요 Cross-Context 포트 (V14 이후)
 
 | 포트 | Direction | 용도 |
 |---|---|---|
@@ -46,7 +46,7 @@
 
 **주의**: `AdminMember/AdminPartyroom/AdminPlaylistPort` 등 기존 admin 포트는 PR 2 이후 `api.administration.*` 패키지로 재편 예정.
 
-## Module Dependency Direction (V12 이후)
+## Module Dependency Direction (V14 이후)
 
 ```
 app  --> user --> avatar --> common
@@ -111,6 +111,6 @@ realtime --> common
 
 **관련 문서**:
 - 설계 원본: `docs/superpowers/specs/2026-04-19-admin-platform-design.md`
-- 스키마 / V12: `docs/superpowers/specs/2026-04-19-admin-platform-schema.md §4.11`
+- 스키마 / V14: `docs/superpowers/specs/2026-04-19-admin-platform-schema.md §4.11`
 - 구현 계획: `docs/superpowers/plans/2026-04-20-admin-platform-pr0-pr10-pr11.md`
 - ADR: `docs/adr/` (001-005, 기존 결정들 여전히 유효)

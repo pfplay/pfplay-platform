@@ -1,7 +1,8 @@
 # PFPlay Admin Platform — Schema Design (§4)
 
 > Companion to `2026-04-19-admin-platform-design.md`. 본 문서는 §4 Schema Design만을 다룬다.
-> V4~V12 Flyway 마이그레이션의 DDL, 전환 전략, 리팩토링 범위를 확정한다.
+> V4~V14 Flyway 마이그레이션의 DDL, 전환 전략, 리팩토링 범위를 확정한다.
+> 본 문서가 다루지 않는 슬롯: V12 미사용, V13은 PR 6 `must_change_password` (참조: `admin-platform-security.md`).
 
 ## 4.0 Migration Overview
 
@@ -15,7 +16,7 @@
 | V9 | Operations | `system_config` 테이블 + `maintenance.*` seed | CREATE + INSERT | 낮음 |
 | V10 | Administration | `user_activity_log` 테이블 (월별 파티셔닝) | CREATE | 낮음 |
 | V11 | Administration | `partyroom_report` 테이블 | CREATE | 낮음 |
-| **V12** 🆕 | **Avatar** | `avatar_body_resource` / `avatar_face_resource`에 `icon_uri`, `lifecycle_status`, 감사 컬럼 추가. `face.obtainable_type` 컬럼 신설. `avatar_icon_resource` 테이블 DROP + 데이터 이전. | ALTER + UPDATE + DROP | 중간 — Avatar 엔티티/레포 이관 동반 |
+| **V14** 🆕 | **Avatar** | `avatar_body_resource` / `avatar_face_resource`에 `icon_uri`, `lifecycle_status`, 감사 컬럼 추가. `face.obtainable_type` 컬럼 신설. `avatar_icon_resource` 테이블 DROP + 데이터 이전. | ALTER + UPDATE + DROP | 중간 — Avatar 엔티티/레포 이관 동반 |
 
 ## 4.1 V4 — IAM Refactor
 
@@ -616,12 +617,14 @@ V10 (user_activity_log — user_account 참조, Administration)
   ↓
 V11 (partyroom_report — administrator FK 있음)
   ↓
-V12 (Avatar BC 재구성 — 기존 V3 시드 위에 진행, 다른 V와 독립)
+V14 (Avatar BC 재구성 — 기존 V3 시드 위에 진행, 다른 V와 독립)
 ```
 
-V6/V8/V9는 상호 독립적이므로 PR 병렬 가능. V12(Avatar)는 다른 마이그레이션과 완전 독립이지만 Administration의 `admin_action` 테이블(V7)에 의존하는 이벤트 리스너가 있어 배치상 V7 이후 PR에 배치.
+V6/V8/V9는 상호 독립적이므로 PR 병렬 가능. V14(Avatar)는 다른 마이그레이션과 완전 독립이지만 Administration의 `admin_action` 테이블(V7)에 의존하는 이벤트 리스너가 있어 배치상 V7 이후 PR에 배치.
 
-## 4.11 V12 — Avatar BC Restructure 🆕
+## 4.11 V14 — Avatar BC Restructure 🆕
+
+> 원안에서는 V12 슬롯에 배치 예정이었으나, V13(must_change_password)이 PR 6에서 먼저 적용되어 PR 10 시점에 V14로 번호가 밀렸다. DDL 본문에는 영향 없음.
 
 ### 4.11.1 목표
 
@@ -637,11 +640,11 @@ V6/V8/V9는 상호 독립적이므로 PR 병렬 가능. V12(Avatar)는 다른 �
 - `obtainable_type` 컬럼은 이미 VARCHAR(`@Enumerated(STRING)`) 저장 — ordinal 이슈 없음
 - `avatar_icon_resource.pair_type`은 tinyint(ordinal). 이 테이블 DROP으로 해당 footgun도 함께 해소
 
-### 4.11.3 DDL (V12__avatar_bc_restructure.sql)
+### 4.11.3 DDL (V14__avatar_bc_restructure.sql)
 
 ```sql
 -- =====================================================
--- V12: Avatar BC Restructure
+-- V14: Avatar BC Restructure
 --
 -- Avatar BC 신설에 따른 리소스 테이블 재구성.
 -- 핵심 변경:
@@ -719,7 +722,7 @@ DROP TABLE avatar_icon_resource;
 | 불변식 | Enforce | 비고 |
 |---|---|---|
 | body/face `name` 전역 UNIQUE | V3에서 이미 추가 (`uk_avatar_body_name`, `uk_avatar_face_name`) | 유지 |
-| lifecycle 값 범위 | `CHECK` 제약 | V12 추가 |
+| lifecycle 값 범위 | `CHECK` 제약 | V14 추가 |
 | lifecycle 전이 단방향 (`DRAFT → PUBLISHED → RETIRED`) | **애플리케이션 레이어** (aggregate method) | DB trigger는 유지보수 부담 이유로 배제 |
 | `is_default_setting=true` → `obtainable_type=BASIC AND lifecycle=PUBLISHED` | 애플리케이션 레이어 | |
 | `obtainable_type=BASIC` → `obtainable_score=0` | 애플리케이션 레이어 | |
@@ -727,14 +730,14 @@ DROP TABLE avatar_icon_resource;
 
 ### 4.11.5 주의 사항
 
-- MySQL은 DDL이 **암시적 커밋**을 유발하므로 Step 1/2/3/4 사이 트랜잭션 경계가 나뉜다. Step 2 실패 시 Step 1은 커밋된 상태로 남는다. **pre-launch 단계에서는 허용**. 실패 시 V13 보정 마이그레이션으로 대응.
-- `lifecycle_status DEFAULT 'PUBLISHED'`는 **V12 이전 존재하던 15+1행을 PUBLISHED로 올려야** 하기 때문. 신규 INSERT(어드민 CRUD) 시에는 DB default에 의존하지 않고 `AvatarBodyResource.draft(...)` 팩토리가 `lifecycle_status='DRAFT'`를 명시적으로 세팅해 INSERT한다. JPA 엔티티 기본값 설정으로 강제 (§3.3.5 "엔티티 기본값 주의" 참고).
-- 기존 `AvatarIconResourceData` JPA 엔티티 + `AvatarIconResourceRepository` + `PairType` enum + `AvatarResourceQueryService.findByNameAndPairType(...)` 호출부 삭제는 V12 적용과 **반드시 동일 PR**에 묶인다 (PR 10). 분리 시 JPA 부트 실패.
-- V3 시드 주석 "`pair_type: BODY=0, FACE=1 (ORDINAL mapping of PairType enum)`"은 V12 실행 후 무효한 사실이 되지만, V3 SQL은 이미 flyway_schema_history에 기록된 불변 파일이라 수정하지 않는다 (Flyway 원칙).
+- MySQL은 DDL이 **암시적 커밋**을 유발하므로 Step 1/2/3/4 사이 트랜잭션 경계가 나뉜다. Step 2 실패 시 Step 1은 커밋된 상태로 남는다. **pre-launch 단계에서는 허용**. 실패 시 후속 보정 마이그레이션(V15+)으로 대응.
+- `lifecycle_status DEFAULT 'PUBLISHED'`는 **V14 이전 존재하던 15+1행을 PUBLISHED로 올려야** 하기 때문. 신규 INSERT(어드민 CRUD) 시에는 DB default에 의존하지 않고 `AvatarBodyResource.draft(...)` 팩토리가 `lifecycle_status='DRAFT'`를 명시적으로 세팅해 INSERT한다. JPA 엔티티 기본값 설정으로 강제 (§3.3.5 "엔티티 기본값 주의" 참고).
+- 기존 `AvatarIconResourceData` JPA 엔티티 + `AvatarIconResourceRepository` + `PairType` enum + `AvatarResourceQueryService.findByNameAndPairType(...)` 호출부 삭제는 V14 적용과 **반드시 동일 PR**에 묶인다 (PR 10). 분리 시 JPA 부트 실패.
+- V3 시드 주석 "`pair_type: BODY=0, FACE=1 (ORDINAL mapping of PairType enum)`"은 V14 실행 후 무효한 사실이 되지만, V3 SQL은 이미 flyway_schema_history에 기록된 불변 파일이라 수정하지 않는다 (Flyway 원칙).
 - `lifecycle_status` 전이 단방향 보장을 **DB trigger로 추가 강제**할지는 REVISIT-LATER 항목. 현재는 aggregate method만 보호. 과금 확장 시점에 재검토.
-- `lifecycle_status DEFAULT 'PUBLISHED'`는 V12 이후 역할이 끝남 (신규 INSERT는 aggregate가 `DRAFT` 명시). **REVISIT-LATER**: V12가 안정 후 후속 V13에서 `ALTER TABLE ... ALTER COLUMN lifecycle_status DROP DEFAULT`로 제거하면 aggregate 우회 INSERT 실수를 조기 차단 가능. 낮은 우선순위.
+- `lifecycle_status DEFAULT 'PUBLISHED'`는 V14 이후 역할이 끝남 (신규 INSERT는 aggregate가 `DRAFT` 명시). **REVISIT-LATER**: V14가 안정 후 후속 마이그레이션(V15+)에서 `ALTER TABLE ... ALTER COLUMN lifecycle_status DROP DEFAULT`로 제거하면 aggregate 우회 INSERT 실수를 조기 차단 가능. 낮은 우선순위.
 
-### 4.11.6 V12 이후 스키마 모습 (요약)
+### 4.11.6 V14 이후 스키마 모습 (요약)
 
 ```sql
 avatar_body_resource:
