@@ -150,30 +150,30 @@ class PartyroomRepositoryAtomicUpdateIT extends AbstractIntegrationTest {
         assertThat(affected).isZero();
     }
 
-    // ── findActiveHostRoom (status 시맨틱 변경 회귀) ────────────────
+    // ── findNonTerminatedHostRoom (status 시맨틱 변경 회귀) ────────────────
 
     @Test
-    @DisplayName("findActiveHostRoom — TERMINATED 룸은 결과에서 제외")
-    void findActiveHostRoom_excludes_terminated() {
+    @DisplayName("findNonTerminatedHostRoom — TERMINATED 룸은 결과에서 제외")
+    void findNonTerminatedHostRoom_excludes_terminated() {
         UserId hostId = new UserId(2001L);
         PartyroomData p = createAndSaveActive(2001L);
         p.terminate();
         partyroomRepository.saveAndFlush(p);
 
-        Optional<PartyroomData> result = partyroomRepository.findActiveHostRoom(hostId);
+        Optional<PartyroomData> result = partyroomRepository.findNonTerminatedHostRoom(hostId);
 
         assertThat(result).isEmpty();
     }
 
     @Test
-    @DisplayName("findActiveHostRoom — SUSPENDED 룸은 포함 (호스트의 새 룸 생성 차단 의도, spec §6.4(a))")
-    void findActiveHostRoom_includes_suspended() {
+    @DisplayName("findNonTerminatedHostRoom — SUSPENDED 룸은 포함 (호스트의 새 룸 생성 차단 의도, spec §6.4(a))")
+    void findNonTerminatedHostRoom_includes_suspended() {
         UserId hostId = new UserId(2002L);
         PartyroomData p = createAndSaveActive(2002L);
         p.suspend();
         partyroomRepository.saveAndFlush(p);
 
-        Optional<PartyroomData> result = partyroomRepository.findActiveHostRoom(hostId);
+        Optional<PartyroomData> result = partyroomRepository.findNonTerminatedHostRoom(hostId);
 
         assertThat(result).isPresent();
         assertThat(result.get().getStatus()).isEqualTo(PartyroomStatus.SUSPENDED);

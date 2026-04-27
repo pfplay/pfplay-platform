@@ -16,7 +16,7 @@ public interface PartyroomAggregatePort {
     Optional<PartyroomData> findPartyroomById(Long id);
     PartyroomData savePartyroom(PartyroomData partyroom);
     Optional<PartyroomData> findByLinkDomain(LinkDomain linkDomain);
-    Optional<PartyroomData> findActiveHostRoom(UserId userId);
+    Optional<PartyroomData> findNonTerminatedHostRoom(UserId userId);
     List<PartyroomData> findAllUnusedPartyroomDataByDay(int days);
 
     // ===== Crew: CrewData =====

@@ -50,7 +50,7 @@ public class PartyroomCommandService {
     public PartyroomData createGeneralPartyRoom(CreatePartyroomCommand command) {
         AuthContext authContext = ThreadLocalContext.getAuthContext();
         new PartyroomCreationPolicy().enforce(authContext.getAuthorityTier());
-        Optional<PartyroomData> optionalActive = aggregatePort.findActiveHostRoom(authContext.getUserId());
+        Optional<PartyroomData> optionalActive = aggregatePort.findNonTerminatedHostRoom(authContext.getUserId());
         if(optionalActive.isPresent()) throw ExceptionCreator.create(PartyroomException.ALREADY_HOST);
 
         String linkDomain = command.linkDomain();

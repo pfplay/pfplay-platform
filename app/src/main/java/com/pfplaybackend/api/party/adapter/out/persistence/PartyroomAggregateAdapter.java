@@ -44,8 +44,8 @@ public class PartyroomAggregateAdapter implements PartyroomAggregatePort, Partyr
     }
 
     @Override
-    public Optional<PartyroomData> findActiveHostRoom(UserId userId) {
-        return partyroomRepository.findActiveHostRoom(userId);
+    public Optional<PartyroomData> findNonTerminatedHostRoom(UserId userId) {
+        return partyroomRepository.findNonTerminatedHostRoom(userId);
     }
 
     @Override

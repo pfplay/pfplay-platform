@@ -17,12 +17,12 @@ public interface PartyroomRepository extends JpaRepository<PartyroomData, Long>,
     Optional<PartyroomData> findByLinkDomain(LinkDomain linkDomain);
 
     /**
-     * Host가 보유한 비-종료 룸 1개 조회. SUSPENDED 룸도 포함 (호스트가 SUSPENDED 룸 보유 중일 때
-     * 신규 룸 생성을 막는 용도 — spec §6.4 결정 (a)).
+     * Host가 보유한 비-종료 룸(ACTIVE 또는 SUSPENDED) 1개 조회.
+     * SUSPENDED 룸 보유 중인 호스트도 신규 룸 생성 차단 — spec §6.4(a) 결정.
      */
     @Query("SELECT p FROM PartyroomData p WHERE p.hostId = :userId " +
            "AND p.status <> com.pfplaybackend.api.party.domain.enums.PartyroomStatus.TERMINATED")
-    Optional<PartyroomData> findActiveHostRoom(@Param("userId") UserId userId);
+    Optional<PartyroomData> findNonTerminatedHostRoom(@Param("userId") UserId userId);
 
     /**
      * crew_count +1 + lastActivityAt 갱신. TERMINATED 룸은 거부 (반환 0).

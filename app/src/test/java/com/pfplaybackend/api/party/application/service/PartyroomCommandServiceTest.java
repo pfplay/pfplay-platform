@@ -70,7 +70,7 @@ class PartyroomCommandServiceTest {
     void createGeneralPartyRoomSuccess() {
         // given
         CreatePartyroomCommand command = new CreatePartyroomCommand("My Room", "Intro", "mylink", 10);
-        when(aggregatePort.findActiveHostRoom(userId)).thenReturn(Optional.empty());
+        when(aggregatePort.findNonTerminatedHostRoom(userId)).thenReturn(Optional.empty());
         when(aggregatePort.savePartyroom(any(PartyroomData.class))).thenAnswer(invocation -> {
             PartyroomData p = invocation.getArgument(0);
             return PartyroomData.builder()
@@ -97,7 +97,7 @@ class PartyroomCommandServiceTest {
         // given
         CreatePartyroomCommand command = new CreatePartyroomCommand("My Room", "Intro", "mylink", 10);
         PartyroomData existing = PartyroomData.builder().id(99L).hostId(userId).build();
-        when(aggregatePort.findActiveHostRoom(userId)).thenReturn(Optional.of(existing));
+        when(aggregatePort.findNonTerminatedHostRoom(userId)).thenReturn(Optional.of(existing));
 
         // when & then
         assertThatThrownBy(() -> partyroomCommandService.createGeneralPartyRoom(command))
@@ -109,7 +109,7 @@ class PartyroomCommandServiceTest {
     void createGeneralPartyRoomAutoGeneratesLinkDomain() {
         // given
         CreatePartyroomCommand command = new CreatePartyroomCommand("My Room", "Intro", "", 10);
-        when(aggregatePort.findActiveHostRoom(userId)).thenReturn(Optional.empty());
+        when(aggregatePort.findNonTerminatedHostRoom(userId)).thenReturn(Optional.empty());
 
         ArgumentCaptor<PartyroomData> captor = ArgumentCaptor.forClass(PartyroomData.class);
         when(aggregatePort.savePartyroom(any(PartyroomData.class))).thenAnswer(invocation -> {
