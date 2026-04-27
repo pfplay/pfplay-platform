@@ -63,7 +63,7 @@ public class AdminCrewPenaltyCommandService {
 
         CrewData crew = aggregatePort.findCrewById(cmd.crewId())
                 .orElseThrow(() -> ExceptionCreator.create(CrewException.NOT_FOUND_ROOM));
-        if (crew.getPartyroomId().getId() != partyroomId) {
+        if (!partyroomId.equals(crew.getPartyroomId().getId())) {
             throw ExceptionCreator.create(CrewException.NOT_FOUND_ROOM);
         }
 
