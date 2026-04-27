@@ -4,6 +4,7 @@ import com.pfplaybackend.api.administration.adapter.in.web.payload.request.Creat
 import com.pfplaybackend.api.administration.adapter.in.web.payload.response.AdministratorListResponse;
 import com.pfplaybackend.api.administration.adapter.in.web.payload.response.AdministratorView;
 import com.pfplaybackend.api.administration.adapter.in.web.payload.response.CreateAdministratorResponse;
+import com.pfplaybackend.api.administration.adapter.in.web.payload.response.ResetPasswordResponse;
 import com.pfplaybackend.api.administration.adapter.out.persistence.AdministratorRepository;
 import com.pfplaybackend.api.administration.application.util.TempPasswordGenerator;
 import com.pfplaybackend.api.administration.domain.entity.data.AdministratorData;
@@ -352,6 +353,31 @@ class AdministratorManagementServiceTest {
         assertThatThrownBy(() -> service.revoke(1L, /*actor=*/ 99L))
                 .satisfies(ex -> assertThat(ex.getClass().getSimpleName()).contains("Conflict"));
         verify(target, never()).revoke();
+    }
+
+    // -------- resetPassword --------
+
+    @Test
+    void resetPassword_setsTempPasswordHash_setsMustChangeFlag_returnsTempPlaintext() {
+        AdministratorData target = mock(AdministratorData.class);
+        given(target.getUserAccountId()).willReturn(100L);
+        given(administratorRepository.findById(7L)).willReturn(Optional.of(target));
+        UserAccountData ua = mock(UserAccountData.class);
+        given(userAccountRepository.findById(new UserId(100L))).willReturn(Optional.of(ua));
+        given(tempPasswordGenerator.generate()).willReturn("Yp4@xQ7zVwLm");
+        given(passwordEncoder.encode("Yp4@xQ7zVwLm")).willReturn("BCRYPT");
+
+        ResetPasswordResponse resp = service.resetPassword(7L, /*actor=*/ 1L);
+
+        assertThat(resp.tempPassword()).isEqualTo("Yp4@xQ7zVwLm");
+        verify(ua).requirePasswordChange("BCRYPT");
+    }
+
+    @Test
+    void resetPassword_targetNotFound_throwsNotFound() {
+        given(administratorRepository.findById(7L)).willReturn(Optional.empty());
+        assertThatThrownBy(() -> service.resetPassword(7L, 1L))
+                .satisfies(ex -> assertThat(ex.getClass().getSimpleName()).contains("NotFound"));
     }
 
     // -------- helpers --------

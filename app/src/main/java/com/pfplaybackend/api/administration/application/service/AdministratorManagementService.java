@@ -4,6 +4,7 @@ import com.pfplaybackend.api.administration.adapter.in.web.payload.request.Creat
 import com.pfplaybackend.api.administration.adapter.in.web.payload.response.AdministratorListResponse;
 import com.pfplaybackend.api.administration.adapter.in.web.payload.response.AdministratorView;
 import com.pfplaybackend.api.administration.adapter.in.web.payload.response.CreateAdministratorResponse;
+import com.pfplaybackend.api.administration.adapter.in.web.payload.response.ResetPasswordResponse;
 import com.pfplaybackend.api.administration.adapter.out.persistence.AdministratorRepository;
 import com.pfplaybackend.api.administration.application.util.TempPasswordGenerator;
 import com.pfplaybackend.api.administration.domain.entity.data.AdministratorData;
@@ -146,6 +147,27 @@ public class AdministratorManagementService {
         target.revoke();
         log.warn("admin_management.revoke target_id={} actor_administrator_id={}",
                 administratorId, actorAdministratorId);
+    }
+
+    @Transactional
+    public ResetPasswordResponse resetPassword(Long administratorId, Long actorAdministratorId) {
+        AdministratorData target = administratorRepository.findById(administratorId)
+                .orElseThrow(() -> ExceptionCreator.create(
+                        AdministratorManagementException.NOT_FOUND));
+        UserAccountData ua = userAccountRepository.findById(new UserId(target.getUserAccountId()))
+                .orElseThrow(() -> new IllegalStateException(
+                        "admin → ua invariant violated: user_id=" + target.getUserAccountId()));
+
+        String tempPwd = tempPasswordGenerator.generate();
+        ua.requirePasswordChange(passwordEncoder.encode(tempPwd));
+
+        log.warn("admin_management.reset_password target_id={} actor_administrator_id={}",
+                administratorId, actorAdministratorId);
+
+        return ResetPasswordResponse.builder()
+                .tempPassword(tempPwd)
+                .message("임시 비번을 안전한 채널로 전달하세요. 첫 로그인 시 변경됩니다.")
+                .build();
     }
 
     @Transactional

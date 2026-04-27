@@ -5,6 +5,7 @@ import com.pfplaybackend.api.administration.adapter.in.web.payload.request.Creat
 import com.pfplaybackend.api.administration.adapter.in.web.payload.request.UpdateAdministratorRequest;
 import com.pfplaybackend.api.administration.adapter.in.web.payload.response.AdministratorListResponse;
 import com.pfplaybackend.api.administration.adapter.in.web.payload.response.CreateAdministratorResponse;
+import com.pfplaybackend.api.administration.adapter.in.web.payload.response.ResetPasswordResponse;
 import com.pfplaybackend.api.administration.application.AdminContext;
 import com.pfplaybackend.api.administration.application.service.AdministratorManagementService;
 import com.pfplaybackend.api.administration.domain.value.AdminRole;
@@ -74,6 +75,15 @@ public class AdministratorManagementController {
     public ResponseEntity<Void> revoke(@PathVariable Long id) {
         service.revoke(id, adminContext.currentAdministratorId());
         return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "어드민 비밀번호 리셋")
+    @PreAuthorize("@adminAuth.canManageAdmins()")
+    @PostMapping("/{id}/reset-password")
+    public ResponseEntity<ApiCommonResponse<ResetPasswordResponse>> resetPassword(
+            @PathVariable Long id) {
+        return ResponseEntity.ok(ApiCommonResponse.success(
+                service.resetPassword(id, adminContext.currentAdministratorId())));
     }
 
     @Operation(summary = "어드민에 멤버 프로필 연결")

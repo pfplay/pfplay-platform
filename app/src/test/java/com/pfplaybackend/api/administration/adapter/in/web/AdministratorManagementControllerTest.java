@@ -4,6 +4,7 @@ import com.pfplaybackend.api.admin.adapter.in.web.AbstractAdminWebMvcTest;
 import com.pfplaybackend.api.administration.adapter.in.web.payload.response.AdministratorListResponse;
 import com.pfplaybackend.api.administration.adapter.in.web.payload.response.AdministratorView;
 import com.pfplaybackend.api.administration.adapter.in.web.payload.response.CreateAdministratorResponse;
+import com.pfplaybackend.api.administration.adapter.in.web.payload.response.ResetPasswordResponse;
 import com.pfplaybackend.api.administration.domain.value.AdminRole;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.test.context.support.WithAnonymousUser;
@@ -230,6 +231,39 @@ class AdministratorManagementControllerTest extends AbstractAdminWebMvcTest {
     void revoke_nonSuperAdmin_returns403() throws Exception {
         mockMvc.perform(post("/api/v1/admin/system/administrators/7/revoke")
                         .with(csrf()))
+                .andExpect(status().isForbidden());
+    }
+
+    // -------- resetPassword --------
+
+    @Test
+    @WithMockUser(roles = {"ADMIN", "SUPER_ADMIN"})
+    void resetPassword_superAdmin_returns200WithTempPassword() throws Exception {
+        given(adminContext.currentAdministratorId()).willReturn(1L);
+        given(administratorManagementService.resetPassword(7L, 1L))
+                .willReturn(ResetPasswordResponse.builder()
+                        .tempPassword("Yp4@xQ7zVwLm")
+                        .message("임시 비번을 안전한 채널로 전달하세요. 첫 로그인 시 변경됩니다.")
+                        .build());
+
+        mockMvc.perform(post("/api/v1/admin/system/administrators/7/reset-password")
+                        .with(csrf()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.tempPassword").value("Yp4@xQ7zVwLm"));
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void resetPassword_nonSuperAdmin_returns403() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/system/administrators/7/reset-password")
+                        .with(csrf()))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(roles = {"ADMIN", "SUPER_ADMIN"})
+    void resetPassword_missingCsrf_returns403() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/system/administrators/7/reset-password"))
                 .andExpect(status().isForbidden());
     }
 }
