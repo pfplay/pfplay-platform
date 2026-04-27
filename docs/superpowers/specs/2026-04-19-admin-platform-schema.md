@@ -11,7 +11,7 @@
 | V5 | Administration | `administrator` 테이블 + 슈퍼어드민 placeholder seed | CREATE + INSERT | 중간 — Admin 초기화 로직 연계 |
 | V6 | Party | `partyroom` 상태 enum + `crew_count` / `last_activity_at` / `display_flag` | ALTER + 엔티티 전체 리팩토링 | 대규모 — `isTerminated()` 호출 전반 |
 | V7 | Administration | `partyroom_admin_action` 테이블 | CREATE | 낮음 — 신규 모듈 |
-| V8 | Party | `crew_penalty_history` / `crew_block_history`에 `punisher_type` 컬럼 추가 | ALTER | 낮음 |
+| V8 | Party | `crew_penalty_history`에 `punisher_type` 컬럼 추가 | ALTER | 낮음 |
 | V9 | Operations | `system_config` 테이블 + `maintenance.*` seed | CREATE + INSERT | 낮음 |
 | V10 | Administration | `user_activity_log` 테이블 (월별 파티셔닝) | CREATE | 낮음 |
 | V11 | Administration | `partyroom_report` 테이블 | CREATE | 낮음 |
@@ -379,16 +379,15 @@ CREATE TABLE partyroom_admin_action (
 
 ```sql
 -- =====================================================
--- V8: Party context — penalty/block history에 punisher 유형 추가
+-- V8: Party context — crew_penalty_history에 punisher 유형 추가
 --
 -- 어드민이 부과한 페널티를 구분. 어드민 정체(id)는 partyroom_admin_action에 별도 기록.
+-- crew_block_history는 user-to-user 차단 의미라 admin 무관 → 본 PR 범위에서 제외
+-- (PR 9 design Q5 결정, 2026-04-28).
 -- =====================================================
 
 ALTER TABLE crew_penalty_history
     ADD COLUMN punisher_type ENUM('CREW','ADMIN') NOT NULL DEFAULT 'CREW' AFTER punisher_crew_id;
-
-ALTER TABLE crew_block_history
-    ADD COLUMN punisher_type ENUM('CREW','ADMIN') NOT NULL DEFAULT 'CREW' AFTER blocker_crew_id;
 ```
 
 ### 4.5.2 Admin 페널티 경로 — correlation
