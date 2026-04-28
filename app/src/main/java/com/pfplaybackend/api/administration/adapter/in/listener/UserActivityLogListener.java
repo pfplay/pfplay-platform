@@ -4,8 +4,11 @@ import com.pfplaybackend.api.administration.adapter.out.persistence.UserActivity
 import com.pfplaybackend.api.administration.domain.entity.UserActivityLogData;
 import com.pfplaybackend.api.administration.domain.enums.UserActivityEventType;
 import com.pfplaybackend.api.administration.domain.value.JsonMetadata;
+import com.pfplaybackend.api.auth.domain.event.UserAccountSignedInEvent;
 import com.pfplaybackend.api.common.config.AsyncConfig;
+import com.pfplaybackend.api.party.domain.enums.AccessType;
 import com.pfplaybackend.api.party.domain.event.AdminCrewPenalizedEvent;
+import com.pfplaybackend.api.party.domain.event.CrewAccessedEvent;
 import com.pfplaybackend.api.party.domain.event.CrewPenalizedEvent;
 import com.pfplaybackend.api.party.domain.event.PartyroomCreatedEvent;
 import com.pfplaybackend.api.user.domain.event.MemberRegisteredEvent;
@@ -86,6 +89,29 @@ public class UserActivityLogListener {
         meta.put("stage_type", e.getStageType().name());
         log(e.getHostUserAccountId(), UserActivityEventType.PARTYROOM_CREATED,
             e.getPartyroomId().getId(), JsonMetadata.of(meta), e.getOccurredAt());
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Async(AsyncConfig.UAL_EXECUTOR_BEAN)
+    public void on(UserAccountSignedInEvent e) {
+        Map<String, Object> meta = new HashMap<>();
+        meta.put("provider", e.getProvider().name());
+        meta.put("actor_type", e.getActorType().name());
+        log(e.getUserAccountId(), UserActivityEventType.SIGNED_IN, null,
+            JsonMetadata.of(meta), e.getOccurredAt());
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Async(AsyncConfig.UAL_EXECUTOR_BEAN)
+    public void on(CrewAccessedEvent e) {
+        UserActivityEventType type = (e.getAccessType() == AccessType.ENTER)
+                ? UserActivityEventType.PARTYROOM_ENTERED
+                : UserActivityEventType.PARTYROOM_EXITED;
+        // metadata 단순화 — CrewAccessedEvent에 stage_type/duration_sec 부재
+        // (spec §4.7.2의 metadata 키는 예시; future evolution으로 보강 가능).
+        // JsonMetadata.empty() — converter가 빈 map을 SQL NULL로 직렬화.
+        log(e.getUserId().getUid(), type, e.getPartyroomId().getId(),
+            JsonMetadata.empty(), e.getOccurredAt());
     }
 
     /**

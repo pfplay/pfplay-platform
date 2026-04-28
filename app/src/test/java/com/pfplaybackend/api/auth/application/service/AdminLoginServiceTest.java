@@ -6,6 +6,7 @@ import com.pfplaybackend.api.administration.domain.value.AdminRole;
 import com.pfplaybackend.api.auth.application.dto.command.AdminLoginCommand;
 import com.pfplaybackend.api.auth.application.dto.result.AdminAuthResult;
 import com.pfplaybackend.api.auth.application.ratelimit.AdminLoginRateLimiter;
+import com.pfplaybackend.api.auth.domain.event.UserAccountSignedInEvent;
 import com.pfplaybackend.api.common.config.security.enums.ProviderType;
 import com.pfplaybackend.api.common.config.security.jwt.JwtService;
 import com.pfplaybackend.api.common.config.security.jwt.properties.JwtProperties;
@@ -19,8 +20,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.Clock;
@@ -41,6 +44,7 @@ class AdminLoginServiceTest {
     @Mock JwtService jwtService;
     @Mock AdminLoginRateLimiter rateLimiter;
     @Mock JwtProperties jwtProperties;
+    @Mock ApplicationEventPublisher eventPublisher;
 
     Clock clock = Clock.systemUTC();
 
@@ -50,7 +54,8 @@ class AdminLoginServiceTest {
     void setup() {
         sut = new AdminLoginService(
                 userAccountRepository, administratorRepository, memberSignService,
-                passwordEncoder, jwtService, rateLimiter, jwtProperties, clock);
+                passwordEncoder, jwtService, rateLimiter, jwtProperties, clock,
+                eventPublisher);
     }
 
     @Test
@@ -179,6 +184,103 @@ class AdminLoginServiceTest {
         AdminAuthResult result = sut.login(new AdminLoginCommand("admin@x.com", "right", "1.1.1.1"));
 
         assertThat(result.mustChangePassword()).isFalse();
+    }
+
+    @Test
+    @DisplayName("login 성공 → UserAccountSignedInEvent publish (actor_type=ADMINISTRATOR, provider=LOCAL)")
+    void login_success_publishesSignedInEvent() {
+        UserAccountData ua = stubLocalAccount(42L, "admin@x.com", "$2a$12$h");
+        AdministratorData adm = stubActiveAdmin(AdminRole.ADMIN);
+        MemberData mem = stubMember();
+        when(userAccountRepository.findByEmailAndProviderType("admin@x.com", ProviderType.LOCAL))
+                .thenReturn(Optional.of(ua));
+        when(passwordEncoder.matches("right", ua.getPasswordHash())).thenReturn(true);
+        when(administratorRepository.findByUserAccountId(42L)).thenReturn(Optional.of(adm));
+        when(memberSignService.getMemberOrCreate("admin@x.com", ProviderType.LOCAL))
+                .thenReturn(mem);
+        when(jwtService.mintAdminAccessToken(any())).thenReturn("admin-jwt");
+        when(jwtService.mintSharedSessionToken(any())).thenReturn("shared-jwt");
+        when(jwtProperties.getAdminAccessTokenExpirationMs()).thenReturn(900_000L);
+        when(jwtProperties.getSharedSessionTokenExpirationMs()).thenReturn(86_400_000L);
+
+        sut.login(new AdminLoginCommand("admin@x.com", "right", "1.1.1.1"));
+
+        ArgumentCaptor<UserAccountSignedInEvent> cap = ArgumentCaptor.forClass(UserAccountSignedInEvent.class);
+        verify(eventPublisher).publishEvent(cap.capture());
+        UserAccountSignedInEvent published = cap.getValue();
+        assertThat(published.getUserAccountId()).isEqualTo(42L);
+        assertThat(published.getProvider()).isEqualTo(ProviderType.LOCAL);
+        assertThat(published.getActorType())
+                .isEqualTo(UserAccountSignedInEvent.ActorType.ADMINISTRATOR);
+    }
+
+    @Test
+    @DisplayName("login 실패 (rate-limited) → publishEvent 호출 0회")
+    void login_rate_limited_doesNotPublish() {
+        doThrow(new AdminLoginRateLimiter.RateLimitedException())
+                .when(rateLimiter).checkOrThrow("1.1.1.1", "rl@x.com");
+
+        assertThatThrownBy(() -> sut.login(new AdminLoginCommand("rl@x.com", "any", "1.1.1.1")))
+                .isInstanceOf(RuntimeException.class);
+
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    @DisplayName("login 실패 (unknown_email) → publishEvent 호출 0회")
+    void login_unknown_email_doesNotPublish() {
+        when(userAccountRepository.findByEmailAndProviderType("ghost@x.com", ProviderType.LOCAL))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> sut.login(new AdminLoginCommand("ghost@x.com", "any", "1.1.1.1")))
+                .isInstanceOf(UnauthorizedException.class);
+
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    @DisplayName("login 실패 (wrong_password) → publishEvent 호출 0회")
+    void login_wrong_password_doesNotPublish() {
+        UserAccountData ua = stubLocalAccount(42L, "admin@x.com", "$2a$12$h");
+        when(userAccountRepository.findByEmailAndProviderType("admin@x.com", ProviderType.LOCAL))
+                .thenReturn(Optional.of(ua));
+        when(passwordEncoder.matches("wrong", ua.getPasswordHash())).thenReturn(false);
+
+        assertThatThrownBy(() -> sut.login(new AdminLoginCommand("admin@x.com", "wrong", "1.1.1.1")))
+                .isInstanceOf(UnauthorizedException.class);
+
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    @DisplayName("login 실패 (no_administrator) → publishEvent 호출 0회")
+    void login_no_administrator_doesNotPublish() {
+        UserAccountData ua = stubLocalAccount(42L, "admin@x.com", "$2a$12$h");
+        when(userAccountRepository.findByEmailAndProviderType("admin@x.com", ProviderType.LOCAL))
+                .thenReturn(Optional.of(ua));
+        when(passwordEncoder.matches("right", ua.getPasswordHash())).thenReturn(true);
+        when(administratorRepository.findByUserAccountId(42L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> sut.login(new AdminLoginCommand("admin@x.com", "right", "1.1.1.1")))
+                .isInstanceOf(UnauthorizedException.class);
+
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    @DisplayName("login 실패 (revoked) → publishEvent 호출 0회")
+    void login_revoked_doesNotPublish() {
+        UserAccountData ua = stubLocalAccount(42L, "admin@x.com", "$2a$12$h");
+        AdministratorData adm = stubRevokedAdmin();
+        when(userAccountRepository.findByEmailAndProviderType("admin@x.com", ProviderType.LOCAL))
+                .thenReturn(Optional.of(ua));
+        when(passwordEncoder.matches("right", ua.getPasswordHash())).thenReturn(true);
+        when(administratorRepository.findByUserAccountId(42L)).thenReturn(Optional.of(adm));
+
+        assertThatThrownBy(() -> sut.login(new AdminLoginCommand("admin@x.com", "right", "1.1.1.1")))
+                .isInstanceOf(UnauthorizedException.class);
+
+        verify(eventPublisher, never()).publishEvent(any());
     }
 
     private UserAccountData stubLocalAccount(long id, String email, String passwordHash) {

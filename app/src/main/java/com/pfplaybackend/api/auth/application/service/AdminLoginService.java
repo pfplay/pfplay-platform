@@ -6,6 +6,7 @@ import com.pfplaybackend.api.administration.domain.value.AdminRole;
 import com.pfplaybackend.api.auth.application.dto.command.AdminLoginCommand;
 import com.pfplaybackend.api.auth.application.dto.result.AdminAuthResult;
 import com.pfplaybackend.api.auth.application.ratelimit.AdminLoginRateLimiter;
+import com.pfplaybackend.api.auth.domain.event.UserAccountSignedInEvent;
 import com.pfplaybackend.api.auth.domain.exception.AdminAuthException;
 import com.pfplaybackend.api.common.config.security.enums.AccessLevel;
 import com.pfplaybackend.api.common.config.security.enums.ProviderType;
@@ -19,8 +20,10 @@ import com.pfplaybackend.api.user.domain.entity.data.MemberData;
 import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -41,7 +44,12 @@ public class AdminLoginService {
     private final AdminLoginRateLimiter rateLimiter;
     private final JwtProperties jwtProperties;
     private final Clock clock;
+    private final ApplicationEventPublisher eventPublisher;
 
+    // PR 12a — UserActivityLogListener consumes UserAccountSignedInEvent via @TransactionalEventListener(AFTER_COMMIT),
+    // requiring an active TX boundary in this method. readOnly=true is NOT applicable: getMemberOrCreate
+    // can lazy-create MemberData + UserAccount.recordLogin (write paths) — readOnly would break those INSERTs/UPDATEs.
+    @Transactional
     public AdminAuthResult login(AdminLoginCommand cmd) {
         try {
             rateLimiter.checkOrThrow(cmd.clientIp(), cmd.email());
@@ -80,6 +88,12 @@ public class AdminLoginService {
         // Admins must function as platform members too (partyroom access).
         // Lazy-create the linked Member if missing.
         MemberData member = memberSignService.getMemberOrCreate(cmd.email(), ProviderType.LOCAL);
+
+        // PR 12a — UserActivityLogListener consumes this for SIGNED_IN row (actor_type=ADMINISTRATOR).
+        // Publish AFTER all validation passes (resolved ua + adm + non-revoked + member ensured).
+        eventPublisher.publishEvent(new UserAccountSignedInEvent(
+                ua.getUserId().getUid(), ProviderType.LOCAL,
+                UserAccountSignedInEvent.ActorType.ADMINISTRATOR));
 
         List<AccessLevel> adminLevels = new ArrayList<>();
         adminLevels.add(AccessLevel.ROLE_ADMIN);

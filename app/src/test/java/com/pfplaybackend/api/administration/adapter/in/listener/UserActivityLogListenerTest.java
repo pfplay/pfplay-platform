@@ -3,11 +3,14 @@ package com.pfplaybackend.api.administration.adapter.in.listener;
 import com.pfplaybackend.api.administration.adapter.out.persistence.UserActivityLogRepository;
 import com.pfplaybackend.api.administration.domain.entity.UserActivityLogData;
 import com.pfplaybackend.api.administration.domain.enums.UserActivityEventType;
+import com.pfplaybackend.api.auth.domain.event.UserAccountSignedInEvent;
 import com.pfplaybackend.api.common.config.security.enums.ProviderType;
 import com.pfplaybackend.api.common.domain.value.UserId;
+import com.pfplaybackend.api.party.domain.enums.AccessType;
 import com.pfplaybackend.api.party.domain.enums.PenaltyType;
 import com.pfplaybackend.api.party.domain.enums.StageType;
 import com.pfplaybackend.api.party.domain.event.AdminCrewPenalizedEvent;
+import com.pfplaybackend.api.party.domain.event.CrewAccessedEvent;
 import com.pfplaybackend.api.party.domain.event.CrewPenalizedEvent;
 import com.pfplaybackend.api.party.domain.event.PartyroomCreatedEvent;
 import com.pfplaybackend.api.party.domain.value.CrewId;
@@ -132,6 +135,76 @@ class UserActivityLogListenerTest {
         assertThat(saved.getEventType()).isEqualTo(UserActivityEventType.PARTYROOM_CREATED.name());
         assertThat(saved.getPartyroomId()).isEqualTo(1L);
         assertThat(saved.getMetadata().data()).containsEntry("stage_type", "GENERAL");
+    }
+
+    @Test
+    @DisplayName("UserAccountSignedInEvent (USER) → SIGNED_IN row INSERT")
+    void on_UserAccountSignedInEvent_user_inserts_SIGNED_IN_row() {
+        UserAccountSignedInEvent event = new UserAccountSignedInEvent(
+                100L, ProviderType.GOOGLE, UserAccountSignedInEvent.ActorType.USER);
+
+        listener.on(event);
+
+        ArgumentCaptor<UserActivityLogData> cap = ArgumentCaptor.forClass(UserActivityLogData.class);
+        verify(repository).save(cap.capture());
+        UserActivityLogData saved = cap.getValue();
+
+        assertThat(saved.getUserAccountId()).isEqualTo(100L);
+        assertThat(saved.getEventType()).isEqualTo(UserActivityEventType.SIGNED_IN.name());
+        assertThat(saved.getPartyroomId()).isNull();
+        assertThat(saved.getMetadata().data())
+                .containsEntry("provider", "GOOGLE")
+                .containsEntry("actor_type", "USER");
+    }
+
+    @Test
+    @DisplayName("UserAccountSignedInEvent (ADMINISTRATOR) → SIGNED_IN row INSERT")
+    void on_UserAccountSignedInEvent_admin_inserts_SIGNED_IN_row() {
+        UserAccountSignedInEvent event = new UserAccountSignedInEvent(
+                100L, ProviderType.LOCAL, UserAccountSignedInEvent.ActorType.ADMINISTRATOR);
+
+        listener.on(event);
+
+        ArgumentCaptor<UserActivityLogData> cap = ArgumentCaptor.forClass(UserActivityLogData.class);
+        verify(repository).save(cap.capture());
+        UserActivityLogData saved = cap.getValue();
+
+        assertThat(saved.getMetadata().data()).containsEntry("actor_type", "ADMINISTRATOR");
+    }
+
+    @Test
+    @DisplayName("CrewAccessedEvent ENTER → PARTYROOM_ENTERED row INSERT")
+    void on_CrewAccessedEvent_enter_inserts_PARTYROOM_ENTERED_row() {
+        UserId userId = UserId.create(100L);
+        CrewAccessedEvent event = new CrewAccessedEvent(
+                new PartyroomId(1L), new CrewId(50L), userId, AccessType.ENTER);
+
+        listener.on(event);
+
+        ArgumentCaptor<UserActivityLogData> cap = ArgumentCaptor.forClass(UserActivityLogData.class);
+        verify(repository).save(cap.capture());
+        UserActivityLogData saved = cap.getValue();
+
+        assertThat(saved.getUserAccountId()).isEqualTo(100L);
+        assertThat(saved.getEventType()).isEqualTo(UserActivityEventType.PARTYROOM_ENTERED.name());
+        assertThat(saved.getPartyroomId()).isEqualTo(1L);
+        // metadata 단순화 — CrewAccessedEvent에 stage_type/duration_sec 부재.
+        // listener는 JsonMetadata.empty() 사용 (converter가 빈 map → SQL NULL 직렬화).
+        assertThat(saved.getMetadata().isEmpty()).isTrue();
+    }
+
+    @Test
+    @DisplayName("CrewAccessedEvent EXIT → PARTYROOM_EXITED row INSERT")
+    void on_CrewAccessedEvent_exit_inserts_PARTYROOM_EXITED_row() {
+        UserId userId = UserId.create(100L);
+        CrewAccessedEvent event = new CrewAccessedEvent(
+                new PartyroomId(1L), new CrewId(50L), userId, AccessType.EXIT);
+
+        listener.on(event);
+
+        ArgumentCaptor<UserActivityLogData> cap = ArgumentCaptor.forClass(UserActivityLogData.class);
+        verify(repository).save(cap.capture());
+        assertThat(cap.getValue().getEventType()).isEqualTo(UserActivityEventType.PARTYROOM_EXITED.name());
     }
 
     @Test

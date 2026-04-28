@@ -6,6 +6,7 @@ import com.pfplaybackend.api.auth.application.dto.oauth.OAuthUserProfileDto;
 import com.pfplaybackend.api.auth.application.dto.result.AuthResult;
 import com.pfplaybackend.api.auth.application.port.out.StateStorePort;
 import com.pfplaybackend.api.auth.domain.enums.OAuthProvider;
+import com.pfplaybackend.api.auth.domain.event.UserAccountSignedInEvent;
 import com.pfplaybackend.api.common.config.security.enums.ProviderType;
 import com.pfplaybackend.api.common.config.security.jwt.JwtService;
 import com.pfplaybackend.api.common.config.security.jwt.properties.JwtProperties;
@@ -20,9 +21,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -34,6 +37,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -46,6 +51,7 @@ class AuthServiceTest {
     @Mock JwtProperties jwtProperties;
     @Mock StateStorePort stateStorePort;
     @Mock Clock clock;
+    @Mock ApplicationEventPublisher eventPublisher;
 
     @InjectMocks AuthService authService;
 
@@ -78,6 +84,8 @@ class AuthServiceTest {
 
         UserAccountData userAccount = mock(UserAccountData.class);
         when(userAccount.getEmail()).thenReturn("test@gmail.com");
+        when(userAccount.getUserId()).thenReturn(new UserId(1L));
+        when(userAccount.getProviderType()).thenReturn(ProviderType.GOOGLE);
         when(userAccountRepository.findByUserId(any(UserId.class)))
                 .thenReturn(Optional.of(userAccount));
 
@@ -146,5 +154,88 @@ class AuthServiceTest {
         // when & then
         assertThat(authService.validateToken("valid-token")).isTrue();
         assertThat(authService.validateToken("invalid-token")).isFalse();
+    }
+
+    @Test
+    @DisplayName("OAuth 성공 → UserAccountSignedInEvent publish (actor_type=USER, provider=GOOGLE)")
+    void processOAuthLoginSuccess_publishesSignedInEvent() {
+        // given
+        OAuthLoginCommand command = new OAuthLoginCommand("google", "auth-code", "verifier");
+
+        OAuthTokenDto tokenResponse = new OAuthTokenDto("access-token", "Bearer", 3600, null, "email");
+        when(oAuthClientService.exchangeCodeForToken(OAuthProvider.GOOGLE, "auth-code", "verifier"))
+                .thenReturn(tokenResponse);
+
+        OAuthUserProfileDto userProfile = new OAuthUserProfileDto("google-id", "test@gmail.com", "Test User", null);
+        when(oAuthClientService.getUserProfile(OAuthProvider.GOOGLE, "access-token"))
+                .thenReturn(userProfile);
+
+        MemberData member = mock(MemberData.class);
+        when(member.getUserAccountId()).thenReturn(7L);
+        when(member.getAuthorityTier()).thenReturn(AuthorityTier.FM);
+        when(memberSignService.getMemberOrCreate("test@gmail.com", ProviderType.GOOGLE))
+                .thenReturn(member);
+
+        UserAccountData userAccount = mock(UserAccountData.class);
+        when(userAccount.getEmail()).thenReturn("test@gmail.com");
+        when(userAccount.getUserId()).thenReturn(new UserId(7L));
+        when(userAccount.getProviderType()).thenReturn(ProviderType.GOOGLE);
+        when(userAccountRepository.findByUserId(any(UserId.class)))
+                .thenReturn(Optional.of(userAccount));
+
+        when(jwtService.mintSharedSessionToken(any())).thenReturn("jwt-token");
+        when(jwtProperties.getSharedSessionTokenExpirationMs()).thenReturn(3600L);
+
+        // when
+        authService.processOAuthLogin(command);
+
+        // then
+        ArgumentCaptor<UserAccountSignedInEvent> cap = ArgumentCaptor.forClass(UserAccountSignedInEvent.class);
+        verify(eventPublisher).publishEvent(cap.capture());
+        UserAccountSignedInEvent published = cap.getValue();
+        assertThat(published.getUserAccountId()).isEqualTo(7L);
+        assertThat(published.getProvider()).isEqualTo(ProviderType.GOOGLE);
+        assertThat(published.getActorType())
+                .isEqualTo(UserAccountSignedInEvent.ActorType.USER);
+    }
+
+    @Test
+    @DisplayName("OAuth 실패 (token exchange) → publishEvent 호출 0회")
+    void processOAuthLoginFailure_doesNotPublish() {
+        OAuthLoginCommand command = new OAuthLoginCommand("google", "bad-code", "verifier");
+        when(oAuthClientService.exchangeCodeForToken(OAuthProvider.GOOGLE, "bad-code", "verifier"))
+                .thenThrow(new RuntimeException("Token exchange failed"));
+
+        assertThatThrownBy(() -> authService.processOAuthLogin(command))
+                .isInstanceOf(AuthenticationException.class);
+
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    @DisplayName("OAuth 실패 (UserAccount 누락) → publishEvent 호출 0회")
+    void processOAuthLoginMissingUserAccount_doesNotPublish() {
+        OAuthLoginCommand command = new OAuthLoginCommand("google", "auth-code", "verifier");
+
+        OAuthTokenDto tokenResponse = new OAuthTokenDto("access-token", "Bearer", 3600, null, "email");
+        when(oAuthClientService.exchangeCodeForToken(OAuthProvider.GOOGLE, "auth-code", "verifier"))
+                .thenReturn(tokenResponse);
+
+        OAuthUserProfileDto userProfile = new OAuthUserProfileDto("google-id", "test@gmail.com", "Test User", null);
+        when(oAuthClientService.getUserProfile(OAuthProvider.GOOGLE, "access-token"))
+                .thenReturn(userProfile);
+
+        MemberData member = mock(MemberData.class);
+        when(member.getUserAccountId()).thenReturn(99L);
+        when(memberSignService.getMemberOrCreate("test@gmail.com", ProviderType.GOOGLE))
+                .thenReturn(member);
+
+        when(userAccountRepository.findByUserId(any(UserId.class)))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> authService.processOAuthLogin(command))
+                .isInstanceOf(AuthenticationException.class);
+
+        verify(eventPublisher, never()).publishEvent(any());
     }
 }
