@@ -6,6 +6,7 @@ import com.pfplaybackend.api.administration.domain.enums.UserActivityEventType;
 import com.pfplaybackend.api.administration.domain.value.JsonMetadata;
 import com.pfplaybackend.api.common.config.AsyncConfig;
 import com.pfplaybackend.api.party.domain.event.AdminCrewPenalizedEvent;
+import com.pfplaybackend.api.party.domain.event.CrewPenalizedEvent;
 import com.pfplaybackend.api.user.domain.event.MemberRegisteredEvent;
 import com.pfplaybackend.api.user.domain.event.UserProfileChangedEvent;
 import lombok.RequiredArgsConstructor;
@@ -63,6 +64,16 @@ public class UserActivityLogListener {
         meta.put("penalty_type", e.getPenaltyType().name());
         meta.put("by", "ADMIN");
         meta.put("by_administrator_id", e.getAdministratorId());
+        log(e.getPunishedUserAccountId(), UserActivityEventType.PENALIZED_IN_PARTYROOM,
+            e.getPartyroomId().getId(), JsonMetadata.of(meta), e.getOccurredAt());
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Async(AsyncConfig.UAL_EXECUTOR_BEAN)
+    public void on(CrewPenalizedEvent e) {
+        Map<String, Object> meta = new HashMap<>();
+        meta.put("penalty_type", e.getPenaltyType().name());
+        meta.put("by", "CREW");
         log(e.getPunishedUserAccountId(), UserActivityEventType.PENALIZED_IN_PARTYROOM,
             e.getPartyroomId().getId(), JsonMetadata.of(meta), e.getOccurredAt());
     }

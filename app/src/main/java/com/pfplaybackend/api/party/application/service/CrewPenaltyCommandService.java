@@ -64,7 +64,9 @@ public class CrewPenaltyCommandService {
         }
 
         eventPublisher.publishEvent(new CrewPenalizedEvent(
-                partyroomId, new CrewId(punisherCrew.getId()), punishedCrewId, command.detail(), command.penaltyType()));
+                partyroomId, new CrewId(punisherCrew.getId()), punishedCrewId,
+                punishedCrew.getUserId().getUid(),                                  // PR 12a — punishedUserAccountId
+                command.detail(), command.penaltyType()));
 
         if(PenaltyType.PERMANENT_EXPULSION.equals(penaltyType)) {
             CrewPenaltyHistoryData crewPenaltyHistoryData = CrewPenaltyHistoryData.builder()
