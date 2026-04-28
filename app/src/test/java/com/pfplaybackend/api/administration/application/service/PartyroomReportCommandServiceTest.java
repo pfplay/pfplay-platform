@@ -11,7 +11,7 @@ import com.pfplaybackend.api.common.enums.AuthorityTier;
 import com.pfplaybackend.api.common.exception.http.BadRequestException;
 import com.pfplaybackend.api.common.exception.http.ForbiddenException;
 import com.pfplaybackend.api.common.exception.http.NotFoundException;
-import com.pfplaybackend.api.party.adapter.out.persistence.PartyroomRepository;
+import com.pfplaybackend.api.party.domain.port.PartyroomAggregatePort;
 import com.pfplaybackend.api.party.domain.entity.data.PartyroomData;
 import com.pfplaybackend.api.party.domain.enums.StageType;
 import com.pfplaybackend.api.party.domain.value.LinkDomain;
@@ -51,7 +51,7 @@ class PartyroomReportCommandServiceTest {
     private static final Long REPORTER_USER_ACCOUNT_ID = 300L;
 
     @Mock PartyroomReportRepository reportRepository;
-    @Mock PartyroomRepository partyroomRepository;
+    @Mock PartyroomAggregatePort partyroomAggregatePort;
 
     @InjectMocks PartyroomReportCommandService service;
 
@@ -82,7 +82,7 @@ class PartyroomReportCommandServiceTest {
     @Test
     @DisplayName("happy: SPAM 신고 → 201 + reportId 반환 + repository.save 호출")
     void create_happy_savesAndReturnsId() {
-        given(partyroomRepository.findById(PARTYROOM_ID))
+        given(partyroomAggregatePort.findPartyroomById(PARTYROOM_ID))
                 .willReturn(Optional.of(hostedActivePartyroom()));
         given(reportRepository.existsByReporterUserAccountIdAndPartyroomIdAndCategoryAndCreatedAtAfter(
                 anyLong(), anyLong(),
@@ -111,7 +111,7 @@ class PartyroomReportCommandServiceTest {
     @Test
     @DisplayName("happy: description=null 허용 — 신고 사유 미기재 케이스")
     void create_happy_descriptionNull() {
-        given(partyroomRepository.findById(PARTYROOM_ID))
+        given(partyroomAggregatePort.findPartyroomById(PARTYROOM_ID))
                 .willReturn(Optional.of(hostedActivePartyroom()));
         given(reportRepository.existsByReporterUserAccountIdAndPartyroomIdAndCategoryAndCreatedAtAfter(
                 anyLong(), anyLong(), any(ReportCategory.class), any(LocalDateTime.class)))
@@ -131,7 +131,7 @@ class PartyroomReportCommandServiceTest {
     @Test
     @DisplayName("partyroom 부재 → NotFoundException(PTR-001) — repository.save 미호출")
     void create_partyroomMissing_throwsNotFound() {
-        given(partyroomRepository.findById(PARTYROOM_ID)).willReturn(Optional.empty());
+        given(partyroomAggregatePort.findPartyroomById(PARTYROOM_ID)).willReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.create(
                 PARTYROOM_ID,
@@ -149,7 +149,7 @@ class PartyroomReportCommandServiceTest {
     void create_partyroomNotReportable_throwsBadRequest() {
         PartyroomData suspended = hostedActivePartyroom();
         suspended.suspend();
-        given(partyroomRepository.findById(PARTYROOM_ID)).willReturn(Optional.of(suspended));
+        given(partyroomAggregatePort.findPartyroomById(PARTYROOM_ID)).willReturn(Optional.of(suspended));
 
         assertThatThrownBy(() -> service.create(
                 PARTYROOM_ID,
@@ -165,7 +165,7 @@ class PartyroomReportCommandServiceTest {
     @Test
     @DisplayName("partyroom TERMINATED → BadRequestException(RPT-005) PARTYROOM_NOT_REPORTABLE")
     void create_partyroomTerminated_throwsBadRequest() {
-        given(partyroomRepository.findById(PARTYROOM_ID))
+        given(partyroomAggregatePort.findPartyroomById(PARTYROOM_ID))
                 .willReturn(Optional.of(hostedTerminatedPartyroom()));
 
         assertThatThrownBy(() -> service.create(
@@ -182,7 +182,7 @@ class PartyroomReportCommandServiceTest {
     @Test
     @DisplayName("self-report (host == reporter) → BadRequestException(RPT-006)")
     void create_selfReport_throwsBadRequest() {
-        given(partyroomRepository.findById(PARTYROOM_ID))
+        given(partyroomAggregatePort.findPartyroomById(PARTYROOM_ID))
                 .willReturn(Optional.of(hostedActivePartyroom()));
 
         assertThatThrownBy(() -> service.create(
@@ -199,7 +199,7 @@ class PartyroomReportCommandServiceTest {
     @Test
     @DisplayName("24h 내 동일 카테고리 재신고 → BadRequestException(RPT-007) DUPLICATE_REPORT")
     void create_duplicate_throwsBadRequest() {
-        given(partyroomRepository.findById(PARTYROOM_ID))
+        given(partyroomAggregatePort.findPartyroomById(PARTYROOM_ID))
                 .willReturn(Optional.of(hostedActivePartyroom()));
         given(reportRepository.existsByReporterUserAccountIdAndPartyroomIdAndCategoryAndCreatedAtAfter(
                 anyLong(), anyLong(), any(ReportCategory.class), any(LocalDateTime.class)))
@@ -233,7 +233,7 @@ class PartyroomReportCommandServiceTest {
     @Test
     @DisplayName("created entity status = PENDING (factory ensures default)")
     void create_setsPendingStatus() {
-        given(partyroomRepository.findById(PARTYROOM_ID))
+        given(partyroomAggregatePort.findPartyroomById(PARTYROOM_ID))
                 .willReturn(Optional.of(hostedActivePartyroom()));
         given(reportRepository.existsByReporterUserAccountIdAndPartyroomIdAndCategoryAndCreatedAtAfter(
                 anyLong(), anyLong(), any(ReportCategory.class), any(LocalDateTime.class)))

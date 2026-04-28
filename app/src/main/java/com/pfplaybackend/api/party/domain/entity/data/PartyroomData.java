@@ -165,12 +165,11 @@ public class PartyroomData extends BaseEntity {
 
     /**
      * 신고 가능 여부 (PR 13 G2 / Spec §3.1 D6).
+     * Allow-list: ACTIVE 만 신고 가능. 새 enum 값 추가 시 명시적으로 opt-in해야 신고 접수 가능 — fail-safe.
      * SUSPENDED/TERMINATED 룸은 이미 운영자가 인지/조치된 상태이므로 추가 신고 접수 불요.
-     * 현행 enum(ACTIVE/SUSPENDED/TERMINATED) 하에서 ACTIVE만 신고 가능 — 결과는 동일.
      */
     public boolean isReportable() {
-        return this.status != PartyroomStatus.TERMINATED
-                && this.status != PartyroomStatus.SUSPENDED;
+        return this.status == PartyroomStatus.ACTIVE;
     }
 
     // ── State Transitions ──
