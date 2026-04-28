@@ -3,6 +3,8 @@ package com.pfplaybackend.api.administration.adapter.out.persistence;
 import com.pfplaybackend.api.administration.domain.entity.UserActivityLogData;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.List;
+
 /**
  * user_activity_log JPA repository.
  *
@@ -17,5 +19,11 @@ import org.springframework.data.jpa.repository.JpaRepository;
  * Spec: docs/superpowers/specs/2026-04-28-admin-platform-pr12b1-design.md §5.1, §11 #9
  */
 public interface UserActivityLogRepository extends JpaRepository<UserActivityLogData, Long> {
-    // PR 12b1 Task 10에서 findTop30ByUserAccountIdOrderByOccurredAtDescLogIdDesc 추가
+
+    /**
+     * Member detail의 recentActivityLog 응답용 — 특정 user의 최근 30건.
+     * idx_ual_user_time DESC + LIMIT 30 cover. partition pruning은 안 됨(WHERE on user_account_id).
+     * tie-breaker: log_id DESC — 같은 occurred_at row의 결정적 순서 보장 (spec §11 #9).
+     */
+    List<UserActivityLogData> findTop30ByUserAccountIdOrderByOccurredAtDescLogIdDesc(Long userAccountId);
 }
