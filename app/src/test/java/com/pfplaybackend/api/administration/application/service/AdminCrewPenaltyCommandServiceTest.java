@@ -3,6 +3,7 @@ package com.pfplaybackend.api.administration.application.service;
 import com.pfplaybackend.api.administration.application.AdminContext;
 import com.pfplaybackend.api.administration.application.dto.command.AdminApplyPenaltyCommand;
 import com.pfplaybackend.api.administration.domain.enums.AdminPenaltyType;
+import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.exception.http.ForbiddenException;
 import com.pfplaybackend.api.common.exception.http.NotFoundException;
 import com.pfplaybackend.api.party.adapter.out.persistence.CrewPenaltyHistoryRepository;
@@ -60,6 +61,7 @@ class AdminCrewPenaltyCommandServiceTest {
     private static final Long CREW_ID = 42L;
     private static final Long ADMIN_ID = 100L;
     private static final Long HISTORY_ID = 999L;
+    private static final Long TARGET_USER_ID = 7777L;
 
     @BeforeEach
     void setUp() {
@@ -82,6 +84,7 @@ class AdminCrewPenaltyCommandServiceTest {
         CrewData c = Mockito.mock(CrewData.class);
         Mockito.lenient().when(c.getId()).thenReturn(crewId);
         Mockito.lenient().when(c.getPartyroomId()).thenReturn(new PartyroomId(partyroomId));
+        Mockito.lenient().when(c.getUserId()).thenReturn(UserId.create(TARGET_USER_ID));
         return c;
     }
 
@@ -131,6 +134,7 @@ class AdminCrewPenaltyCommandServiceTest {
         assertThat(event.getCrewPenaltyHistoryId()).isEqualTo(HISTORY_ID);
         assertThat(event.getPenaltyType()).isEqualTo(PenaltyType.PERMANENT_EXPULSION);
         assertThat(event.getPunishedCrewId().getId()).isEqualTo(CREW_ID);
+        assertThat(event.getPunishedUserAccountId()).isEqualTo(TARGET_USER_ID);
         assertThat(event.getPartyroomId()).isEqualTo(new PartyroomId(PARTYROOM_ID));
         assertThat(event.getReason()).isEqualTo("abuse");
     }
@@ -160,6 +164,7 @@ class AdminCrewPenaltyCommandServiceTest {
         assertThat(event.getCrewPenaltyHistoryId()).isNull();
         assertThat(event.getPenaltyType()).isEqualTo(PenaltyType.ONE_TIME_EXPULSION);
         assertThat(event.getAdministratorId()).isEqualTo(ADMIN_ID);
+        assertThat(event.getPunishedUserAccountId()).isEqualTo(TARGET_USER_ID);
     }
 
     @Test

@@ -5,6 +5,10 @@ import com.pfplaybackend.api.administration.domain.entity.UserActivityLogData;
 import com.pfplaybackend.api.administration.domain.enums.UserActivityEventType;
 import com.pfplaybackend.api.common.config.security.enums.ProviderType;
 import com.pfplaybackend.api.common.domain.value.UserId;
+import com.pfplaybackend.api.party.domain.enums.PenaltyType;
+import com.pfplaybackend.api.party.domain.event.AdminCrewPenalizedEvent;
+import com.pfplaybackend.api.party.domain.value.CrewId;
+import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import com.pfplaybackend.api.user.domain.enums.ProfileChangeType;
 import com.pfplaybackend.api.user.domain.event.MemberRegisteredEvent;
 import com.pfplaybackend.api.user.domain.event.UserProfileChangedEvent;
@@ -63,6 +67,28 @@ class UserActivityLogListenerTest {
 
         assertThat(saved.getEventType()).isEqualTo(UserActivityEventType.PROFILE_UPDATED.name());
         assertThat(saved.getMetadata().data()).containsEntry("change_type", "AVATAR");
+    }
+
+    @Test
+    @DisplayName("AdminCrewPenalizedEvent → PENALIZED_IN_PARTYROOM row INSERT (by=ADMIN)")
+    void on_AdminCrewPenalizedEvent_inserts_PENALIZED_IN_PARTYROOM_row() {
+        AdminCrewPenalizedEvent event = new AdminCrewPenalizedEvent(
+                new PartyroomId(1L), 100L, new CrewId(50L),
+                999L, PenaltyType.PERMANENT_EXPULSION, 200L, "abuse");
+
+        listener.on(event);
+
+        ArgumentCaptor<UserActivityLogData> cap = ArgumentCaptor.forClass(UserActivityLogData.class);
+        verify(repository).save(cap.capture());
+        UserActivityLogData saved = cap.getValue();
+
+        assertThat(saved.getUserAccountId()).isEqualTo(999L);
+        assertThat(saved.getEventType()).isEqualTo(UserActivityEventType.PENALIZED_IN_PARTYROOM.name());
+        assertThat(saved.getPartyroomId()).isEqualTo(1L);
+        assertThat(saved.getMetadata().data())
+                .containsEntry("penalty_type", "PERMANENT_EXPULSION")
+                .containsEntry("by", "ADMIN")
+                .containsEntry("by_administrator_id", 100L);
     }
 
     @Test

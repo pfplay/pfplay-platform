@@ -93,6 +93,7 @@ public class AdminCrewPenaltyCommandService {
 
         eventPublisher.publishEvent(new AdminCrewPenalizedEvent(
                 pid, administratorId, new CrewId(crew.getId()),
+                crew.getUserId().getUid(),                        // PR 12a: punishedUserAccountId
                 partyEnum, historyId, cmd.reason()));
 
         log.info("[AdminCrewPenalty.apply] partyroomId={} crewId={} type={} historyId={} by adminId={}",
