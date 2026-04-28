@@ -448,16 +448,16 @@ PR 12b1은 read-only API + listener skeleton(unit test only). 큰 race risk 없�
 
 ### 12.1 G1 — §12.10 polish (Chunk 1)
 
-- **G1 commit `<G1 sha>`**: `UserActivityLogId.java` + `UserActivityLogIdTest.java` 삭제 (dead code, PR 12a §12.10 결정 (b)). `UserActivityLogRepository` Javadoc에서 `UserActivityLogId` 멘션 제거 + PR 12b1 derived query 도입 노트. `UserActivityLogListener` divider comment 추가 + handler 순서 재배치 (User/Member events 그룹: Member/SignedIn/Profile/TierChanged/Withdrawn; Party events 그룹: PartyroomCreated/CrewAccessed/CrewPenalized/AdminCrewPenalized).
+- **G1 commit `4621129e`**: `UserActivityLogId.java` + `UserActivityLogIdTest.java` 삭제 (dead code, PR 12a §12.10 결정 (b)). `UserActivityLogRepository` Javadoc에서 `UserActivityLogId` 멘션 제거 + PR 12b1 derived query 도입 노트. `UserActivityLogListener` divider comment 추가 + handler 순서 재배치 (User/Member events 그룹: Member/SignedIn/Profile/TierChanged/Withdrawn; Party events 그룹: PartyroomCreated/CrewAccessed/CrewPenalized/AdminCrewPenalized).
 
 ### 12.2 G2 — 이벤트 evolution + listener skeleton (Chunk 2)
 
-- **G2 commit `<G2 sha>`**: `MemberTierChangedEvent` 신규 (user domain) + `UserAccountWithdrawnEvent` PR 1 forward-evolution(`byAdministratorId` 추가) + `UserAccountData.withdraw()` → `withdraw(Long byAdministratorId)` 시그니처 evolve. Production caller 0건이라 cascade 안전. PR 12b2 A-4가 첫 caller. listener 2 핸들러 추가 — TIER_CHANGED + ADMIN_ACTED_ON 2 row, WITHDREW + ADMIN_ACTED_ON 2 row. metadata에 `by_administrator_id` 기록. idempotency guard `if (isWithdrawn()) return;` 보존, `lastLoginAt` 미변경 (spec roadmap §11.2.2 준수).
+- **G2 commit `bbe629f1`**: `MemberTierChangedEvent` 신규 (user domain) + `UserAccountWithdrawnEvent` PR 1 forward-evolution(`byAdministratorId` 추가) + `UserAccountData.withdraw()` → `withdraw(Long byAdministratorId)` 시그니처 evolve. Production caller 0건이라 cascade 안전. PR 12b2 A-4가 첫 caller. listener 2 핸들러 추가 — TIER_CHANGED + ADMIN_ACTED_ON 2 row, WITHDREW + ADMIN_ACTED_ON 2 row. metadata에 `by_administrator_id` 기록. idempotency guard `if (isWithdrawn()) return;` 보존, `lastLoginAt` 미변경 (spec roadmap §11.2.2 준수).
 - **`MemberTierChangedEvent.memberId` 미사용**: spec §11 #10 결정대로 listener metadata에 미기록. `getAggregateId()` 한정 사용.
 
 ### 12.3 G3 — A-2 detail endpoint (Chunk 3)
 
-- **G3 commit `<G3 sha>`**: `AdminMemberQueryRepository(Impl)` QueryDSL findDetail (member + userAccount join) + `UserActivityLogRepository.findTop30ByUserAccountIdOrderByOccurredAtDescLogIdDesc` derived query (LogIdDesc tie-breaker로 결정적 순서 보장 — spec §11 #9) + `AdminMemberQueryService.getDetail` cross-repository orchestration + Controller GET `{memberId}` + 4 DTO + WebMvc + IT (31 row SEED → 30 limit + DESC 검증).
+- **G3 commit `0ae83846`**: `AdminMemberQueryRepository(Impl)` QueryDSL findDetail (member + userAccount join) + `UserActivityLogRepository.findTop30ByUserAccountIdOrderByOccurredAtDescLogIdDesc` derived query (LogIdDesc tie-breaker로 결정적 순서 보장 — spec §11 #9) + `AdminMemberQueryService.getDetail` cross-repository orchestration + Controller GET `{memberId}` + 4 DTO + WebMvc + IT (31 row SEED → 30 limit + DESC 검증).
 - **§4 spec template 정정**:
   - `AdminMemberException`은 `domain/exception/`(NOT `application/exception/`) 패키지에 위치. `DomainException` interface 구현(NOT `ExceptionDefinition`), 필드는 `errorCode`/`message`/`errorType` (NOT `code`). PR 8 `AdministratorManagementException` 패턴 일관.
   - QueryDSL `Nickname` VO projection: `memberData.profileData.bio.nickname` 경로(spec template의 `profileData.nickname`보다 깊음)이며 `@Convert(NicknameConverter)` VO. `Expressions.stringTemplate("cast({0} as string)", ...)`로 raw String 추출(PR 8 패턴).
@@ -469,7 +469,7 @@ PR 12b1은 read-only API + listener skeleton(unit test only). 큰 race risk 없�
 
 ### 12.4 G4 — A-1 list endpoint (Chunk 4)
 
-- **G4 commit `<G4 sha>`**: `AdminMemberQueryRepository.search` QueryDSL filter (email LIKE / tier / dates) + 3 sort + pagination + count. `last_activity_desc`는 user_activity_log MAX(occurred_at) GROUP BY LEFT JOIN + COALESCE(..., m.created_at) fallback. Service `getList` Page<Row> → Page<Response> 매핑 + withdrawn flag derive (`withdrawnAt != null`). Controller validation: size cap 200 / date range / sort enum. `AdminMemberException.INVALID_LIST_QUERY`(MBR-002, BAD_REQUEST) 추가 + `ExceptionCreator.create(...)` 패턴 (`IllegalArgumentException` → `GlobalExceptionHandler` 500 매핑 회피).
+- **G4 commit `3d03aafe`**: `AdminMemberQueryRepository.search` QueryDSL filter (email LIKE / tier / dates) + 3 sort + pagination + count. `last_activity_desc`는 user_activity_log MAX(occurred_at) GROUP BY LEFT JOIN + COALESCE(..., m.created_at) fallback. Service `getList` Page<Row> → Page<Response> 매핑 + withdrawn flag derive (`withdrawnAt != null`). Controller validation: size cap 200 / date range / sort enum. `AdminMemberException.INVALID_LIST_QUERY`(MBR-002, BAD_REQUEST) 추가 + `ExceptionCreator.create(...)` 패턴 (`IllegalArgumentException` → `GlobalExceptionHandler` 500 매핑 회피).
 - **`last_activity_desc` MySQL strict GROUP BY mode**: 9 selected columns 모두 `groupBy(...)`에 명시(MySQL `ONLY_FULL_GROUP_BY` 5.7+ 기본 모드 호환).
 - **WebMvc test count**: spec §8.3 4 cases + 추가 2 happy-path 200(empty/content) + 1 anonymous 401 = 6 cases. defensive coverage.
 - **JSON path**: `ApiCommonResponse<Page<...>>.success(page)` wrap 시 Spring Data `Page`가 flat 직렬화 → `$.data.content` / `$.data.totalElements`. spec §3.1의 `pageInfo` envelope은 aspirational/unimplemented(custom wrapper 부재). 실제 Spring Data Page 모양으로 단언.
