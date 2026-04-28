@@ -483,8 +483,13 @@ PR 12b1은 read-only API + listener skeleton(unit test only). 큰 race risk 없�
 
 ### 12.6 Future polish 잔존 항목
 
-- **listener skeleton dead path 활성화**: PR 12b2 A-3/A-4 publish source 도입 시 end-to-end IT 추가 (현재 unit test only).
-- **403 WebMvc test 추가**: A-1/A-2 모두 인증된 non-admin user(예: MEMBER role)의 403 case 명시적 검증. `@WithMockUser(roles = "MEMBER")` fixture 도입 시점에 추가.
+- **listener skeleton dead path 활성화**: ✅ PR 12b2 G2/G3가 publish source 도입 — `AdminMemberTierCommandService` / `AdminMemberWithdrawCommandService`에서 `pollDomainEvents → eventPublisher` 명시 dispatch. listener AFTER_COMMIT IT (Awaitility 5s) 추가 완료.
+- **403 WebMvc test 추가**: ✅ PR 12b2 G1이 A-1/A-2에 `@WithMockUser(roles="USER")` 403 case 명시 보강 (M2 reviewer 권고 흡수).
+- **Listener 2-row INSERT non-atomicity (M1, PR 12b1 final reviewer 권고)**: 핸들러 안 2개의 INSERT — `PartyroomCreatedEvent`의 OWNER+GUEST, PR 12b2 활성화한 `MemberTierChangedEvent`의 TIER_CHANGED+ADMIN_ACTED_ON, `UserAccountWithdrawnEvent`의 WITHDREW+ADMIN_ACTED_ON, `CrewAccessedEvent`의 ENTERED/EXITED 등 — 각 try/catch swallow로 독립 실행. 부분 실패 시 audit row 누락 가능성. 현재는 limitation 명시만, 완화 옵션은 future PR로:
+  - (a) 단일 transaction wrap (single try/catch) — 첫 실패 시 둘 다 rollback. 단, listener는 AFTER_COMMIT phase라 source transaction은 이미 commit된 상태 — listener 자체 transaction으로 묶어도 source state와 audit row가 별 transaction이 됨.
+  - (b) Compensating retry queue — 실패 row를 별 큐에 저장, 주기 재시도.
+  - (c) Outbox 패턴 — event를 source transaction 안 outbox 테이블에 atomic write, async dispatcher가 listener fan-out. 가장 robust하지만 인프라 작업 큼.
+  PR 12b2가 listener 코드 변경 없이 publish source만 활성화 — 본 limitation은 활성된 4쌍 모두 동일하게 적용. atomic 보장은 별 PR.
 - **`memberId` listener metadata 추가 검토**: PR 12b2/추후 admin UI가 member ID 기반 navigation 필요 시 `MemberTierChangedEvent` listener의 `tierMeta`에 `member_id` 추가.
 - **`UserAccountData.withdraw(Long byAdministratorId)` self-withdrawal extension**: 사용자 self-withdrawal 기능 추가 시 `byAdministratorId=null` 허용 또는 별 메서드 도입.
 - **`activities` (DJ_PNT/ROOM_ACT) + `walletAddress` + Avatar nesting**: A-2 detail response 누락 — scoring/wallet 시스템 + PR 11 Avatar query port 통합 시점에 도입.

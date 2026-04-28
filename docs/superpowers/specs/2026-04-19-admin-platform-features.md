@@ -84,38 +84,39 @@ Response:
 
 Request: `{ "tier": "FM" }`
 
-처리:
+처리 (PR 12b2 G2 구현 ground truth):
 1. 기존 tier 읽기
-2. `member.authority_tier` UPDATE
-3. 도메인 이벤트 `MemberTierChanged(memberId, oldTier, newTier, byAdministratorId)` 발행
-4. 리스너가 `user_activity_log`에 `TIER_CHANGED` + `ADMIN_ACTED_ON` 2건 기록
-5. 리스너가 `partyroom_admin_action`에 `action_type='CHANGE_MEMBER_TIER'` 1건 기록
+2. Service-layer guard: `if (member.tier == request.targetTier) → 400 TIER_UNCHANGED (MBR-003)`
+3. `member.changeTier(newTier, byAdministratorId)` 도메인 메서드 — `member.authority_tier` UPDATE + `registerEvent`
+4. 도메인 이벤트 `MemberTierChangedEvent(userAccountId, memberId, oldTier, newTier, byAdministratorId)` ADR-004 hybrid publish (`pollDomainEvents → eventPublisher`)
+5. 리스너가 `user_activity_log`에 row 2건 INSERT — `TIER_CHANGED` (대상 user 관점) + `ADMIN_ACTED_ON` (`action_type='TIER_CHANGED'` metadata)
 
-권한: `@PreAuthorize("hasRole('ADMIN')")`
+> **Note (PR 12b1 §12.5 정정)**: 이전 spec draft에 명시된 `partyroom_admin_action` 1건 기록은 partyroom-scoped 테이블에 member-level admin action을 기록한다는 mismatch. PR 12b1 Q2 결정 (B)에 따라 `user_activity_log.ADMIN_ACTED_ON` 단독으로 통합 — `partyroom_admin_action` 손대지 않음.
+
+권한: `@PreAuthorize("@adminAuth.isAdmin()")`
 
 #### A-4. 탈퇴 처리 (비식별화)
 
 **API**: `POST /api/v1/admin/members/{memberId}/withdraw`
 
-처리:
-1. Member의 userAccountId 조회
-2. `UserAccount.withdraw()` 호출 (IAM aggregate 메서드)
-   - `email = "withdrawn-{userAccountId}@pfplay.local"`
-   - `password_hash = NULL`
-   - `last_login_at = NULL` (또는 유지 — 정책 결정 필요)
+처리 (PR 12b2 G3 구현 ground truth):
+1. Member의 userAccountId 조회 — 없으면 404 `MEMBER_NOT_FOUND` (MBR-001)
+2. UserAccount 로드. **Service-layer pre-check**: `if (userAccount.isWithdrawn()) → 200 + alreadyWithdrawn=true` (idempotent re-call, state 변경 0, event publish 0)
+3. `userAccount.withdraw(byAdministratorId)` 도메인 메서드 (PR 12b1 G2 evolve — 3-arg form)
+   - `email = "withdrawn-{userAccountId}@withdrawn.local"` (PII erase)
    - `withdrawn_at = NOW()`
-3. Member profile 익명화:
-   - `profileData.nickname = "탈퇴한 회원"`
-   - `profileData.introduction = NULL`
-   - avatar 기본값으로 리셋
-   - `walletAddress = NULL` (지갑 노출 방지)
-4. Crew, DJ, Playback 이력은 **그대로 유지** (userId 참조 보존 → orphan 방지)
-5. `UserAccountWithdrawn(userAccountId)` 이벤트 발행
-6. `user_activity_log` WITHDREW 기록
+   - `last_login_at` **미변경** (audit 보존 — roadmap §11.2.2 compliance)
+   - `password_hash` 미변경 (도메인 메서드는 손대지 않음 — 비식별화 범위 최소)
+4. Member profile 익명화는 **현재 구현에서는 미수행** — future PR 결정. 현재는 UserAccount-level 비식별화만.
+5. Crew, DJ, Playback 이력은 **그대로 유지** (userId 참조 보존 → orphan 방지)
+6. 도메인 이벤트 `UserAccountWithdrawnEvent(userAccountId, anonymizedEmail, byAdministratorId)` ADR-004 hybrid publish
+7. 리스너가 `user_activity_log`에 row 2건 INSERT — `WITHDREW` (대상 user 관점) + `ADMIN_ACTED_ON` (`action_type='WITHDRAW'` metadata)
 
-**정책**: 실제 row 삭제는 X. userAccountId는 영구 보존 (FK 없는 상태에서 다른 테이블의 참조 무결성 간접 보호). 재가입 가능: 새 이메일이면 새 UserAccount 생성.
+> **Note (PR 12b1 §12.5 정정)**: 이전 spec draft의 `last_login_at = NULL`, `profileData.nickname = "탈퇴한 회원"`, walletAddress NULL 등 풍부한 비식별화는 미구현. PR 12b2는 audit-friendly 최소 비식별화(email + withdrawnAt) + lastLoginAt 보존 채택 — Member profile 익명화 + walletAddress 처리는 future PR.
 
-권한: `@PreAuthorize("hasRole('ADMIN')")`
+**정책**: 실제 row 삭제는 X. userAccountId는 영구 보존. 재가입 가능: 새 이메일이면 새 UserAccount 생성. 동일 raw email 재가입 정책은 future PR 결정.
+
+권한: `@PreAuthorize("@adminAuth.isAdmin()")`
 
 ### 6.B 파티룸 관리
 

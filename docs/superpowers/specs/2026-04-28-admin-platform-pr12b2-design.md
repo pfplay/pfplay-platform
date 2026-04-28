@@ -459,19 +459,63 @@ PR 12b1 G2 listener 등록은 `@TransactionalEventListener(phase = AFTER_COMMIT)
 
 ## 12. Open Items / Implementation Reality (post-build catch-up)
 
-§12 backfill은 G4 commit에서 일괄 수행. PR 12b1 §12 패턴 follow:
+PR 12b1 §12 패턴 follow.
 
-- **§12.1 G1 commit `<sha>`** — Bean Validation 표준화 + WebMvc 403 + GlobalExceptionHandler ConstraintViolationException 핸들러. (TBD)
-- **§12.2 G2 commit `<sha>`** — A-3 PATCH tier 변경. (TBD)
-- **§12.3 G3 commit `<sha>`** — A-4 POST withdraw. (TBD)
-- **§12.4 G4 commit `<sha>`** — spec catch-up + PR 12b1 §12.6 M1 limitation doc + features.md A-3/A-4 본문 정정.
-- **§12.5 deviations / ground-truth 정정** — implementer가 발견한 spec과 코드 차이 backfill. PR 12b1 G3/G4 패턴 동형(§4 spec template 정정 등).
-- **§12.6 future polish 잔존**:
-  - Listener 2-row INSERT atomic wrap (M1 흡수 후 별 PR).
-  - Withdraw reason DTO 도입 + `UserAccountWithdrawnEvent` 4-arg evolve.
-  - Re-registration 동일 email 정책.
-  - Tier 변경 history 별도 테이블(분석 요구 시).
-  - Optimistic lock(version 컬럼) — 동시 어드민 race 방지.
+### 12.1 G1 — Bean Validation 표준화 + WebMvc 403 (Reviewer Follow-up M3 + M2)
+
+- **G1 commit `5a1e36b2`**: `AdminMemberQueryController`에 `@Validated` 클래스 어노테이션 + `@Min(0) page`, `@Min(1) @Max(MAX_PAGE_SIZE) size`, `@Pattern(SORT_PATTERN) sort`, `@Size(max=255) email`. inline `if (size > 200)` / `if (page < 0)` / `if (!isValidSort(sort))` 3건 폐기. cross-field `joinedFrom > joinedTo`만 inline 보존(`INVALID_LIST_QUERY` 사용처 1건 잔존). 미사용 `isValidSort` private 헬퍼 제거.
+- **GlobalExceptionHandler 확장**: `ConstraintViolationException → 400` 핸들러 신설 — `@Validated @RequestParam` per-field 위반 cover. `MethodArgumentNotValidException` 핸들러는 PR 12b1 시점부터 존재(`@Valid @RequestBody` cover).
+- **A-1/A-2 WebMvc 403 case 명시 보강**: `@WithMockUser(username="user", roles={"USER"})` fixture로 인증된 non-admin 케이스 2건(detail/list) 추가.
+
+### 12.2 G2 — A-3 PATCH /admin/members/{id}/tier
+
+- **G2 commit `d425285c`** (11 files):
+  - `MemberData.changeTier(AuthorityTier, Long)` 도메인 메서드 — pure mutation + `registerEvent(MemberTierChangedEvent)`. service-layer guard로 cross-module exception throw 회피.
+  - `AdminMemberTierCommandService` — `MemberRepository.findById` → service-layer `if (member.getAuthorityTier() == request.targetTier()) throw TIER_UNCHANGED;` guard → `member.changeTier(...)` → `repository.save` → **ADR-004 hybrid publish**: `member.pollDomainEvents().forEach(eventPublisher::publishEvent)`.
+  - `AdminMemberTierCommandController` PATCH endpoint — `@PreAuthorize("@adminAuth.isAdmin()")` + `@Valid @RequestBody AdminMemberTierChangeRequest`.
+  - DTO 2종 record: `AdminMemberTierChangeRequest(@NotNull AuthorityTier targetTier)`, `AdminMemberTierChangeResponse(memberId, oldTier, newTier)`.
+  - `AdminMemberException.TIER_UNCHANGED("MBR-003", BAD_REQUEST)` 추가.
+  - `AbstractAdminWebMvcTest` controller + `@MockBean` service 등록.
+  - WebMvc 7 case + service unit 3 case + IT 3 case (Awaitility 5s — TIER_CHANGED + ADMIN_ACTED_ON 2 row order ADMIN_ACTED_ON 먼저).
+
+### 12.3 G3 — A-4 POST /admin/members/{id}/withdraw
+
+- **G3 commit `38fbf941`** (7 files):
+  - `AdminMemberWithdrawCommandService` — `MemberRepository.findById` → `UserAccountRepository.findById(new UserId(...))` → **service-layer pre-check**: `if (userAccount.isWithdrawn()) return Response(.., alreadyWithdrawn=true)` (idempotent — domain method 호출 skip → event publish 0 → audit row 추가 0). 1차 호출만 `userAccount.withdraw(byAdministratorId)` → `save` → `pollDomainEvents → publishEvent`.
+  - `AdminMemberWithdrawCommandController` POST endpoint, body 없음. AdminContext 주입은 service-layer 위임(controller는 pure).
+  - DTO record: `AdminMemberWithdrawResponse(memberId, userAccountId, withdrawnAt, alreadyWithdrawn)`.
+  - WebMvc 5 case + service unit 3 case + IT 3 case.
+  - IT happy: `email` PII erase(`withdrawn-{uid}@withdrawn.local`) + `lastLoginAt` 미변경(roadmap §11.2.2 — `isCloseTo(seedLastLoginAt, within(1, MILLIS))` tolerance — MySQL DATETIME(6) round-trip 보정) + listener 2 row.
+  - IT idempotent: 2차 호출 alreadyWithdrawn=true + listener row count 그대로(2건 — 1차 호출 분만).
+
+### 12.4 G4 — spec §12 catch-up + M1 limitation + features.md 정정
+
+- **G4 commit (본 commit, SHA은 G4.1에서 backfill)**:
+  - PR 12b2 design.md §12 backfill (본 섹션).
+  - PR 12b1 design.md §12.6에 listener 2-row INSERT non-atomicity limitation 명시 + 완화 옵션 (a/b/c) future PR 분리. 동시에 PR 12b2가 흡수한 reviewer 권고 M2(WebMvc 403) + listener 활성화 항목을 ✅ 완료 표시.
+  - features.md A-3/A-4 본문을 PR 12b2 ground truth로 정정 — `partyroom_admin_action` 1건 기록 라인(A-3) → `user_activity_log` ADMIN_ACTED_ON 단독 통합으로 교체. A-4 `last_login_at = NULL` / 풍부한 profile 익명화 라인 → 최소 비식별화(email + withdrawnAt) + `lastLoginAt` 보존 + profile 익명화는 future PR로 명시.
+
+### 12.5 Deviations / ground-truth 정정 (implementer 발견)
+
+- **Repository 명칭**: spec 초안에 `MemberDataRepository` / `UserAccountDataRepository`로 명시했으나 ground-truth는 `MemberRepository` / `UserAccountRepository`(extends `JpaRepository<MemberData, Long>` 및 `JpaRepository<UserAccountData, UserId>`).
+- **AdminContext API**: spec/plan에 `adminContext.administratorId()`로 가정했으나 실제는 `adminContext.currentAdministratorId()`. `currentUserId()` / `currentAdministratorId()` 두 메서드 보유.
+- **DTO 패키지**: PR 12b2 새 DTO는 `adapter/in/web/dto/` (PR 12b1 read DTO와 동일 위치, 일관성). PR 8 penalty의 `application/dto/command/` + `adapter/in/web/payload/request/` 분리 패턴은 follow하지 않음 — spec의 cleaner choice.
+- **Domain event publish 메커니즘**: spec/plan이 "Spring Data `@DomainEvents` 자동 publish"라 가정했으나 ground-truth는 ADR-004 hybrid — `BaseEntity`의 `registerEvent(...)` + `pollDomainEvents()` 명시 polling, application service가 `eventPublisher.publishEvent(...)`로 직접 dispatch. `@DomainEvents`/`@AfterDomainEventPublication` 어노테이션 미사용. PR 12b2 service 2종(`AdminMemberTierCommandService`, `AdminMemberWithdrawCommandService`)은 `pollDomainEvents().forEach(eventPublisher::publishEvent)` 패턴 채택.
+- **`UserAccountRepository` PK 타입**: `JpaRepository<UserAccountData, UserId>` — `@EmbeddedId UserId`이라 `findById(new UserId(longUid))` 호출. `member.getUserAccountId()` (Long)을 `UserId` VO로 wrap 필요.
+- **`UserActivityLogData.getEventType()` 반환 타입**: spec 가정과 달리 `String` (enum.name() 저장 형태). IT 단언은 `assertThat(logs.get(0).getEventType()).isEqualTo(UserActivityEventType.ADMIN_ACTED_ON.name())`.
+- **`ApiErrorResponse` JSON shape**: flat record `{status, errorCode, message}`. WebMvc test JSON path는 `$.errorCode` (NOT `$.error.code` envelope).
+- **MySQL DATETIME(6) round-trip**: lastLoginAt nano 값이 MySQL 저장 → 재로드 시 micro로 truncate/round, 1µs off-by-one 발생 가능. assertion은 `isCloseTo(within(1, MILLIS))` tolerance 채택.
+
+### 12.6 Future polish 잔존
+
+- Listener 2-row INSERT atomic wrap (M1 — PR 12b1 §12.6에 흡수, 별 PR).
+- Withdraw reason DTO 도입 + `UserAccountWithdrawnEvent` 4-arg evolve.
+- Re-registration 동일 email 정책.
+- Tier 변경 history 별도 테이블(분석 요구 시).
+- Optimistic lock(version 컬럼) — 동시 어드민 race 방지.
+- Member profile 익명화(`profileData.nickname = "탈퇴한 회원"` / introduction NULL / avatar 리셋) — features.md A-4 원안 항목, MVP scope에서 보류.
+- AuthorityTier 변경 시 self-protection (admin이 자신을 demote 차단) — Member tier(FM/AM/GT)와 admin role 독립이라 현재 미적용. 정책 명문화 필요 시 추가.
+- A-3 service의 service-layer guard 대신 도메인-level guard로 재배치 (cross-module exception 우회 방안 더 elegant — `user.domain.exception.MemberException.TIER_UNCHANGED` 신설 검토).
 
 ---
 
