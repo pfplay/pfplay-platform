@@ -43,6 +43,8 @@ public class UserActivityLogListener {
 
     private final UserActivityLogRepository repository;
 
+    // === User/Member events ===
+
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Async(AsyncConfig.UAL_EXECUTOR_BEAN)
     public void on(MemberRegisteredEvent e) {
@@ -50,45 +52,6 @@ public class UserActivityLogListener {
         meta.put("provider", e.getProviderType().name());
         log(e.getUserId().getUid(), UserActivityEventType.SIGNED_UP, null,
             JsonMetadata.of(meta), e.getOccurredAt());
-    }
-
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
-    @Async(AsyncConfig.UAL_EXECUTOR_BEAN)
-    public void on(UserProfileChangedEvent e) {
-        Map<String, Object> meta = new HashMap<>();
-        meta.put("change_type", e.getChangeType().name());
-        log(e.getUserId().getUid(), UserActivityEventType.PROFILE_UPDATED, null,
-            JsonMetadata.of(meta), e.getOccurredAt());
-    }
-
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
-    @Async(AsyncConfig.UAL_EXECUTOR_BEAN)
-    public void on(AdminCrewPenalizedEvent e) {
-        Map<String, Object> meta = new HashMap<>();
-        meta.put("penalty_type", e.getPenaltyType().name());
-        meta.put("by", "ADMIN");
-        meta.put("by_administrator_id", e.getAdministratorId());
-        log(e.getPunishedUserAccountId(), UserActivityEventType.PENALIZED_IN_PARTYROOM,
-            e.getPartyroomId().getId(), JsonMetadata.of(meta), e.getOccurredAt());
-    }
-
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
-    @Async(AsyncConfig.UAL_EXECUTOR_BEAN)
-    public void on(CrewPenalizedEvent e) {
-        Map<String, Object> meta = new HashMap<>();
-        meta.put("penalty_type", e.getPenaltyType().name());
-        meta.put("by", "CREW");
-        log(e.getPunishedUserAccountId(), UserActivityEventType.PENALIZED_IN_PARTYROOM,
-            e.getPartyroomId().getId(), JsonMetadata.of(meta), e.getOccurredAt());
-    }
-
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
-    @Async(AsyncConfig.UAL_EXECUTOR_BEAN)
-    public void on(PartyroomCreatedEvent e) {
-        Map<String, Object> meta = new HashMap<>();
-        meta.put("stage_type", e.getStageType().name());
-        log(e.getHostUserAccountId(), UserActivityEventType.PARTYROOM_CREATED,
-            e.getPartyroomId().getId(), JsonMetadata.of(meta), e.getOccurredAt());
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
@@ -103,6 +66,26 @@ public class UserActivityLogListener {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Async(AsyncConfig.UAL_EXECUTOR_BEAN)
+    public void on(UserProfileChangedEvent e) {
+        Map<String, Object> meta = new HashMap<>();
+        meta.put("change_type", e.getChangeType().name());
+        log(e.getUserId().getUid(), UserActivityEventType.PROFILE_UPDATED, null,
+            JsonMetadata.of(meta), e.getOccurredAt());
+    }
+
+    // === Party events ===
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Async(AsyncConfig.UAL_EXECUTOR_BEAN)
+    public void on(PartyroomCreatedEvent e) {
+        Map<String, Object> meta = new HashMap<>();
+        meta.put("stage_type", e.getStageType().name());
+        log(e.getHostUserAccountId(), UserActivityEventType.PARTYROOM_CREATED,
+            e.getPartyroomId().getId(), JsonMetadata.of(meta), e.getOccurredAt());
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Async(AsyncConfig.UAL_EXECUTOR_BEAN)
     public void on(CrewAccessedEvent e) {
         UserActivityEventType type = (e.getAccessType() == AccessType.ENTER)
                 ? UserActivityEventType.PARTYROOM_ENTERED
@@ -112,6 +95,27 @@ public class UserActivityLogListener {
         // JsonMetadata.empty() — converter가 빈 map을 SQL NULL로 직렬화.
         log(e.getUserId().getUid(), type, e.getPartyroomId().getId(),
             JsonMetadata.empty(), e.getOccurredAt());
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Async(AsyncConfig.UAL_EXECUTOR_BEAN)
+    public void on(CrewPenalizedEvent e) {
+        Map<String, Object> meta = new HashMap<>();
+        meta.put("penalty_type", e.getPenaltyType().name());
+        meta.put("by", "CREW");
+        log(e.getPunishedUserAccountId(), UserActivityEventType.PENALIZED_IN_PARTYROOM,
+            e.getPartyroomId().getId(), JsonMetadata.of(meta), e.getOccurredAt());
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Async(AsyncConfig.UAL_EXECUTOR_BEAN)
+    public void on(AdminCrewPenalizedEvent e) {
+        Map<String, Object> meta = new HashMap<>();
+        meta.put("penalty_type", e.getPenaltyType().name());
+        meta.put("by", "ADMIN");
+        meta.put("by_administrator_id", e.getAdministratorId());
+        log(e.getPunishedUserAccountId(), UserActivityEventType.PENALIZED_IN_PARTYROOM,
+            e.getPartyroomId().getId(), JsonMetadata.of(meta), e.getOccurredAt());
     }
 
     /**
