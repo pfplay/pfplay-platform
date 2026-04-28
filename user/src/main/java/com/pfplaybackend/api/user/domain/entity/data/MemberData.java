@@ -4,6 +4,7 @@ import com.pfplaybackend.api.common.domain.annotation.AggregateRoot;
 import com.pfplaybackend.api.common.entity.BaseEntity;
 import com.pfplaybackend.api.common.enums.AuthorityTier;
 import com.pfplaybackend.api.user.domain.enums.FaceSourceType;
+import com.pfplaybackend.api.user.domain.event.MemberTierChangedEvent;
 import com.pfplaybackend.api.user.domain.value.ActivitySummary;
 import com.pfplaybackend.api.avatar.domain.value.AvatarBodyUri;
 import com.pfplaybackend.api.avatar.domain.value.AvatarFaceUri;
@@ -112,6 +113,18 @@ public class MemberData extends BaseEntity {
     public void updateWalletAddress(WalletAddress walletAddress) {
         this.profileData.updateWalletAddress(walletAddress);
         this.authorityTier = AuthorityTier.FM;
+    }
+
+    /**
+     * Admin-driven tier change: pure mutation + domain event registration.
+     * Service layer guards TIER_UNCHANGED before invoking. {@code byAdministratorId}
+     * is captured into the event for downstream audit trail (UAL row 2건 — TIER_CHANGED + ADMIN_ACTED_ON).
+     */
+    public void changeTier(AuthorityTier newTier, Long byAdministratorId) {
+        AuthorityTier oldTier = this.authorityTier;
+        this.authorityTier = newTier;
+        registerEvent(new MemberTierChangedEvent(
+                this.userAccountId, this.memberId, oldTier, newTier, byAdministratorId));
     }
 
     /**

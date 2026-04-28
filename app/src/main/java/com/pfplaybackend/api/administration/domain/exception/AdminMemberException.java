@@ -12,7 +12,8 @@ import lombok.Getter;
 public enum AdminMemberException implements DomainException {
 
     MEMBER_NOT_FOUND("MBR-001", "Member 가 존재하지 않습니다.", ErrorType.NOT_FOUND),
-    INVALID_LIST_QUERY("MBR-002", "Member 목록 조회 query 파라미터가 유효하지 않습니다.", ErrorType.BAD_REQUEST);
+    INVALID_LIST_QUERY("MBR-002", "Member 목록 조회 query 파라미터가 유효하지 않습니다.", ErrorType.BAD_REQUEST),
+    TIER_UNCHANGED("MBR-003", "현재 tier 와 동일합니다.", ErrorType.BAD_REQUEST);
 
     private final String errorCode;
     private final String message;
