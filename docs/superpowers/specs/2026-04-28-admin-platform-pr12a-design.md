@@ -444,9 +444,9 @@ eventPublisher.publishEvent(new AdminCrewPenalizedEvent(
 |---|---|---|---|
 | `MemberRegisteredEvent` | user BC, `MemberSignService` | SIGNED_UP | 없음 |
 | `UserProfileChangedEvent` | user BC, `UserBioCommandService` / `UserAvatarCommandService` | PROFILE_UPDATED | 없음 |
-| `CrewAccessedEvent` | party BC | PARTYROOM_ENTERED / _EXITED | inventory 후 누락 시 evolution (§5.5) |
-| `CrewPenalizedEvent` | party BC | PENALIZED_IN_PARTYROOM (`by=CREW`) | inventory 후 누락 시 evolution (§5.5) |
-| `AdminCrewPenalizedEvent` | party BC, PR 9 | PENALIZED_IN_PARTYROOM (`by=ADMIN`) | §5.3 evolution |
+| `CrewAccessedEvent` | party BC | PARTYROOM_ENTERED / _EXITED | ✅ 미evolution — listener `JsonMetadata.empty()` 사용 (§12.7 참조) |
+| `CrewPenalizedEvent` | party BC | PENALIZED_IN_PARTYROOM (`by=CREW`) | ✅ §5.5 evolution applied (G6 `fca0d81d`, §12.5 참조) |
+| `AdminCrewPenalizedEvent` | party BC, PR 9 | PENALIZED_IN_PARTYROOM (`by=ADMIN`) | ✅ §5.3 evolution applied (G3 `0a6519b3`, §12.4 참조) |
 
 ### 5.5 기존 이벤트 필드 inventory (PR 12a Task 0)
 
@@ -635,14 +635,17 @@ PR 12a 구현 완료 시점에 spec과의 차이 / 세부 결정사항을 기록
 
 - **`google-api-client` dead deps 제거** (commit `b698108f`): PR 11 `GcsAvatarStorageAdapter` `@PostConstruct`가 Cloud Storage 2.40.0을 호출하면서 `app/build.gradle` line 64-66의 `google-api-client:1.23.0` / `google-oauth-client-jetty:1.23.0` / `google-api-services-youtube:v3-rev222-1.25.0` 3종과 conflict → `:app:integrationTest` 116/116 fail. 이 3종은 코드 grep 0건의 dead deps였음 (실제 youtube 검색은 `PytubeSearchService`가 외부 pytube 서비스를 RestTemplate으로 호출). 제거 후 cloud-storage transitive `google-api-client:2.6.0`만 남아 정합. PR 12a baseline unblock.
 
-### 12.2 G1 — V10 + entity 인프라 (Chunk 1)
+### 12.2 G1/G1.1 — V10 + entity 인프라 (Chunk 1)
 
-- **§4.1 정정 — Hibernate `@IdClass + IDENTITY` 비호환** (commit `734bf892`): spec §4.1은 `@IdClass(UserActivityLogId.class)` + `GenerationType.IDENTITY`로 선언했으나 Hibernate가 runtime에 `JpaSystemException: Identity generation isn't supported for composite ids`로 거부. 해결: `log_id` 단독을 JPA `@Id`로 매핑, `occurred_at`은 `@Column(nullable=false, updatable=false)` 일반 컬럼으로 처리. DB-level composite PK `(log_id, occurred_at)`는 V10 SQL에 그대로 보존 (MySQL partition key 요구). Repository 시그니처는 `JpaRepository<UserActivityLogData, Long>`. `UserActivityLogId` value class는 보존 — 현재 미사용, PR 12b A-2 `recentActivityLog` projection 시점에 `@SqlResultSetMapping` 또는 interface projection으로 활용 검토.
+- **G1 본 commit** `734bf892`: V10 마이그레이션 + `UserActivityLogData` JPA entity + `UserActivityLogId` composite PK class + `UserActivityEventType` enum (10종) + `UserActivityLogRepository` + 단위/IT 테스트.
+- **G1.1 polish** `abae20e4`: `of()` factory에 `Objects.requireNonNull` (userAccountId/eventType/occurredAt) 추가, `columnDefinition "json"` → `"JSON"` (PR 8 일관), V10 SQL 헤더에 PK divergence 1줄 노트, `UserActivityEventTypeTest`로 VARCHAR(64) 한도 가드.
+- **§4.1 정정 — Hibernate `@IdClass + IDENTITY` 비호환** (G1 단계): spec §4.1은 `@IdClass(UserActivityLogId.class)` + `GenerationType.IDENTITY`로 선언했으나 Hibernate가 runtime에 `JpaSystemException: Identity generation isn't supported for composite ids`로 거부. 해결: `log_id` 단독을 JPA `@Id`로 매핑, `occurred_at`은 `@Column(nullable=false, updatable=false)` 일반 컬럼으로 처리. DB-level composite PK `(log_id, occurred_at)`는 V10 SQL에 그대로 보존 (MySQL partition key 요구). Repository 시그니처는 `JpaRepository<UserActivityLogData, Long>`. `UserActivityLogId` value class는 보존 — 현재 미사용, PR 12b A-2 `recentActivityLog` projection 시점에 `@SqlResultSetMapping` 또는 interface projection으로 활용 검토.
 - **IT path 컨벤션** — spec/plan은 `app/src/integration-test/java/...` 가정. 실제 repo는 별 `integration-test` source set 없음. 모든 IT는 `app/src/test/java/.../*IT.java` + `extends AbstractIntegrationTest` (별도 `@IntegrationTest` 애너테이션 부재). PR 8 `PartyroomAdminActionListenerIT` 패턴 그대로. PR 12a 모든 IT가 이 컨벤션 따름.
 
 ### 12.3 G2/G2.1 — Listener + AsyncConfig (Chunk 2)
 
-- **`AsyncConfig.UAL_EXECUTOR_BEAN` 상수 추출** (commit `2b4f9c3c`): listener `@Async(AsyncConfig.UAL_EXECUTOR_BEAN)` 컴파일 타임 linkage. 문자열 typo 시 silent fallback to default executor 차단.
+- **G2 본 commit** `64d87037`: `AsyncConfig` (`@EnableAsync` + `userActivityLogExecutor` bean) + `UserActivityLogListener` skeleton + 2 핸들러(SIGNED_UP / PROFILE_UPDATED) + Awaitility 5s IT.
+- **G2.1 polish** `2b4f9c3c`: `AsyncConfig.UAL_EXECUTOR_BEAN` 상수 추출 → listener `@Async(AsyncConfig.UAL_EXECUTOR_BEAN)` 컴파일 타임 linkage. 문자열 typo 시 silent fallback to default executor 차단. `log()` helper Javadoc에 Error 전파 의도 명시. IT `@Transactional` 의존성 1줄 코멘트.
 - **`AsyncConfigTest` graceful-shutdown 단언 미도입**: `setWaitForTasksToCompleteOnShutdown` / `setAwaitTerminationSeconds`는 public getter 부재. `ReflectionTestUtils.getField`가 Spring 6.x 내부 필드명과 어긋나 `IllegalArgumentException` → fragile. 5개 핵심 sizing/policy 단언만 유지. shutdown 회귀는 spec §6 본문 + AsyncConfig bean 코드 리뷰로 잡음.
 
 ### 12.4 G3/G3.1/G3.2 — AdminCrewPenalizedEvent evolution (Chunk 3)
@@ -666,13 +669,19 @@ PR 12a 구현 완료 시점에 spec과의 차이 / 세부 결정사항을 기록
   - `AuthService.processOAuthLogin`은 이미 `@Transactional` (write) 보유. spec wording "추가하여"는 부재 시 추가의 의미로 해석, 기존 write TX 다운그레이드 안 함. 동일하게 `getMemberOrCreate` write path 의존.
 - **§4.3 listener 코드 정정 — `CrewAccessedEvent` metadata 단순화**: `CrewAccessedEvent` 시그니처에 `stage_type` / `duration_sec` 부재 (PR 1부터 `(PartyroomId, CrewId, UserId, AccessType)` 4 필드). spec §4.3 listener 예시는 evolution 가정. PR 12a는 이벤트 evolution 회피 — listener는 `JsonMetadata.empty()` 사용 (converter가 빈 map → SQL NULL). spec §4.7.2 metadata catalog의 `stage_type` / `duration_sec`는 future evolution (별 PR) 대상.
 
-### 12.8 General — API ground truth
+### 12.8 Chunk 7 — ArchUnit + Concurrency + spec catch-up
+
+- **G7.1 본 commit (Chunk 7)**: ArchUnit 가드 (`22cccb41`) + Concurrency IT (`e0a09ff1`) + spec §12 backfill (`49e8dd7d`) + 본 polish (`<G7.1 sha>`).
+- **§7.2 reconciliation — Concurrency IT 시맨틱 deviation**: spec §7.2는 *"동일 user가 두 디바이스에서 SIGNED_IN 동시"*라 명시했으나 `UserActivityLogListenerConcurrencyIT`는 2개 별 administrator (서로 다른 `user_account_id`)로 동시 login 시나리오를 채택. 사유: 동일 admin × 2 thread 시 `MemberSignService.getMemberOrCreate`의 Member lazy-create race가 잠재적 flake 원인. 본 IT는 async listener의 PK auto-increment 동작 + executor 동작을 cover. 동일-admin race 자체는 future polish 대상 (idempotent Member create 또는 DB unique-key + retry 도입 시점에 별 IT로).
+- **§8.3 ArchUnit guard 도입**: `UserActivityLogListener` 핸들러 annotation 가드(`@TransactionalEventListener` + `@Async` 쌍 강제, annotation-driven 매처) + `user/party/auth.domain.event` → administration 단방향 의존성 가드. 본 polish에서 `on*` prefix 매처를 annotation-driven으로 강화 + cross-BC rule을 3 도메인 event 패키지 모두 cover.
+
+### 12.9 General — API ground truth
 
 - **`JsonMetadata` API**: `data()`가 정확한 accessor (asMap이 아님). `JsonMetadata.empty()` 정적 팩토리 존재. `JsonMetadata.of(null)` / `JsonMetadata.of(Map.of())`은 모두 `EMPTY` 싱글턴. converter가 빈 map → SQL NULL.
 - **`UserId` API**: `UserId.create(Long)` / `new UserId(Long)`. `getUid()` returns `Long`. UUID factory 부재.
 - **`DomainEvent` 베이스**: `getOccurredAt()` (Lombok `@Getter` from `LocalDateTime occurredAt`), `getEventType()` (`getClass().getSimpleName()`), `getEventId()` (UUID, auto-generated).
 
-### 12.9 Future polish (PR 12b 또는 별 PR로 처리)
+### 12.10 Future polish (PR 12b 또는 별 PR로 처리)
 
 - **`UserActivityLogId` 유지/삭제 결정**: 현재 unused. PR 12b A-2 projection 시점에 (a) 활용 (`@SqlResultSetMapping`/interface projection) 또는 (b) 삭제 결정.
 - **Listener grouping divider comment**: 7 handlers — readability 향상 위해 `// === Auth/Member events ===` / `// === Profile events ===` / `// === Party events ===` divider 추가 검토.

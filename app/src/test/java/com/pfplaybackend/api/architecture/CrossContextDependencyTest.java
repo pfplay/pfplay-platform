@@ -87,24 +87,34 @@ class CrossContextDependencyTest {
     }
 
     @Test
-    @DisplayName("UserActivityLogListener의 모든 on(...) public 메서드는 @TransactionalEventListener + @Async 보유 (PR 12a)")
-    void userActivityLogListenerMethodsHaveRequiredAnnotations() {
-        // PR 12a §4.3 / §8.3: listener 핸들러 누락 시 sync 동작이라 일관성 깨짐 → annotation 강제.
-        ArchRule rule = methods()
+    @DisplayName("UserActivityLogListener의 @TransactionalEventListener 메서드는 @Async도 보유 (annotation-driven, PR 12a)")
+    void userActivityLogListenerHandlersAreAsync() {
+        // PR 12a §4.3 / §8.3: listener 핸들러는 항상 @Async + @TransactionalEventListener 쌍.
+        // annotation-driven 매처 — `on*` prefix 가 아닌 임의 이름의 새 핸들러도 cover하고,
+        // 비-핸들러 utility method 가 우연히 `on...` 으로 시작해도 misfire 안 함.
+        ArchRule asyncRule = methods()
                 .that().areDeclaredInClassesThat().haveSimpleName("UserActivityLogListener")
-                .and().arePublic()
-                .and().haveNameStartingWith("on")
-                .should().beAnnotatedWith(org.springframework.transaction.event.TransactionalEventListener.class)
-                .andShould().beAnnotatedWith(org.springframework.scheduling.annotation.Async.class);
-        rule.check(allClasses);
+                .and().areAnnotatedWith(org.springframework.transaction.event.TransactionalEventListener.class)
+                .should().beAnnotatedWith(org.springframework.scheduling.annotation.Async.class);
+        asyncRule.check(allClasses);
+
+        // 역방향: @Async 단독 사용 차단. 모든 @Async 메서드는 @TransactionalEventListener 보유.
+        ArchRule txRule = methods()
+                .that().areDeclaredInClassesThat().haveSimpleName("UserActivityLogListener")
+                .and().areAnnotatedWith(org.springframework.scheduling.annotation.Async.class)
+                .should().beAnnotatedWith(org.springframework.transaction.event.TransactionalEventListener.class);
+        txRule.check(allClasses);
     }
 
     @Test
-    @DisplayName("auth.domain.event는 administration에 의존하지 않음 (단방향, PR 12a)")
-    void authEventDoesNotDependOnAdministration() {
-        // PR 12a §8.3: auth domain event(UserAccountSignedInEvent 등)는 administration BC를
-        // 알면 안 됨. administration 이 auth event 를 listener 로 소비하는 단방향 흐름 유지.
-        ArchRule rule = noClasses().that().resideInAPackage("com.pfplaybackend.api.auth.domain.event..")
+    @DisplayName("user/party/auth.domain.event는 administration에 의존하지 않음 (단방향, PR 12a)")
+    void domainEventsDoNotDependOnAdministration() {
+        // PR 12a §8.3: 도메인 이벤트는 administration BC를 알면 안 됨.
+        // administration이 다른 BC의 event를 listener로 소비하는 단방향 흐름 유지.
+        ArchRule rule = noClasses().that().resideInAnyPackage(
+                        "com.pfplaybackend.api.auth.domain.event..",
+                        "com.pfplaybackend.api.user.domain.event..",
+                        "com.pfplaybackend.api.party.domain.event..")
                 .should().dependOnClassesThat().resideInAPackage("com.pfplaybackend.api.administration..");
         rule.check(allClasses);
     }

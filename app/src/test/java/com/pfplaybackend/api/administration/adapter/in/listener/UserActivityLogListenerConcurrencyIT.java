@@ -106,8 +106,11 @@ class UserActivityLogListenerConcurrencyIT extends AbstractIntegrationTest {
             }
         });
 
-        latch.await(10, TimeUnit.SECONDS);
+        boolean settled = latch.await(10, TimeUnit.SECONDS);
+        assertThat(settled).as("두 login thread는 10초 내 완료되어야 함").isTrue();
         pool.shutdown();
+        boolean terminated = pool.awaitTermination(5, TimeUnit.SECONDS);
+        assertThat(terminated).as("executor 정상 종료 — leaked thread 없음").isTrue();
 
         Awaitility.await()
                 .atMost(Duration.ofSeconds(5))
