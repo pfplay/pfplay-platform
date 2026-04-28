@@ -666,12 +666,12 @@ PR 12b1/12b2 §12 패턴 follow. G1~G5 commit 후 본 섹션을 atomic group마�
 - **`from == to` no-op 거부 메시지**: `INVALID_STATE_TRANSITION(RPT-002)` enum의 default message에 from/to status는 노출하지 않음(현재 `ApiErrorResponse` shape이 detail params 미지원 — PR 12b2 `TIER_UNCHANGED` 패턴 일관). 향후 reviewer 권고 시 detail params 확장 검토.
 - **`buildDetailResponse(report)` 재사용**: G3에서 `public`으로 노출된 `AdminReportQueryService.buildDetailResponse(PartyroomReportData)`를 Command service가 inject + 호출 — PATCH 200 응답이 GET /admin/reports/{id}와 동일 shape 보장.
 
-### 13.5 G5 — spec §12 catch-up + features.md 정정
+### 13.5 G5 — spec §13 catch-up + features.md 정정 + roadmap M5 완료
 
-- _G5 commit: <SHA pending>_
-- features.md C-1 정정 항목 (24h 중복 방지 메커니즘 명확화 / Member-only 명시 / SELF_REPORT_FORBIDDEN 추가):
-- features.md C-2 정정 항목 (PATCH 응답 shape이 detail과 동일 / `ReportStatusChanged` 미발행 명시 / 전이 매트릭스 명시):
-- roadmap.md PR 13 status ✅ + M5 milestone 완료 표시:
+- **G5 commit `b867c3b2`** (3 files, +106/-34): PR 13 design.md §13.1~§13.4 backfill (G1-G4 SHAs + 누적 ground-truth deviations) + §13.6 cross-chunk index 재구성 + §13.7 deferred reviewer follow-ups 추가 + features.md §6.C-1/§6.C-2 본문 정정 + roadmap.md PR 12 / PR 13 ✅ + M5 milestone 완료 표기.
+- **features.md C-1 정정 항목**: 24h 중복 방지 — 앱 검증 채택(D1) 명시, DB unique constraint 미사용 / Member-only(D1.5) — Guest 차단은 service-layer guard + `PartyroomException.RESTRICTED_AUTHORITY(PTR-005)` 재사용 / `SELF_REPORT_FORBIDDEN(RPT-006)` D2 추가 / `PARTYROOM_NOT_REPORTABLE(RPT-005)` allow-list `status == ACTIVE` 명시 / `PartyroomException.NOT_FOUND_ROOM(PTR-001)` cross-context 재사용 명시.
+- **features.md C-2 정정 항목**: PATCH 응답 shape — `AdminReportDetailResponse` (GET detail과 동일 shape) cross-context join 4종 포함 / 전이 매트릭스(D3) 5 transitions 명시 + `from == to` 거부 / `resolutionNote` 검증 위치(D3.1) — service-layer guard `RESOLUTION_NOTE_REQUIRED(RPT-003)` / `reviewedByAdministratorId` 보존(D3.2) — hold 시 first reviewer 유지 / `ReportStatusChanged` 미발행(D4) / `partyroom_admin_action` 미기록(D5) / list cross-context join 미포함(D7) — summary는 raw fields만 / list cross-field 검증 `INVALID_LIST_QUERY(RPT-004)` / `createdTo` end-of-day inclusive 의미론.
+- **roadmap.md 정정**: §9.1 PR Sequence 표 — PR 12 / PR 13 row에 ✅ 마커 추가. §9.4 Milestone — `M5 (PR 12-13) ✅ — 완료` 표기.
 
 ### 13.6 Deviations / ground-truth 정정 (implementer 발견)
 
