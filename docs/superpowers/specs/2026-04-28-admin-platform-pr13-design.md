@@ -611,11 +611,16 @@ PR 12b1/12b2 §12 패턴 follow. G1~G5 commit 후 본 섹션을 atomic group마�
 
 ### 13.1 G1 — V13 마이그 + 도메인
 
-- _G1 commit: <SHA pending>_
-- DDL 변경 deviations (있을 경우):
-- enum 패키지 위치 확정(`administration/domain/value/` vs `administration/domain/entity/value/`):
-- BaseEntity 컬럼(audit 컬럼) 자동 적용 여부 — schema.md DDL의 `created_at` + entity의 BaseEntity 가능 충돌 확인:
-- `AdminReportException` 단일 enum vs 분리 결정:
+- **G1 commit `2037b1c0`** (8 files, 578 insertions): V13 SQL + PartyroomReportData entity + ReportStatus/ReportCategory enums + AdminReportException + PartyroomReportRepository + 단위 테스트 35건(전체 통과).
+- **G1.1 commit `<SHA pending>`**: code reviewer follow-up — `resolve()` dead defensive branch 삭제(matrix가 PENDING→RESOLVED 차단하므로 도달 불가) + `@Column(length=16/32)` ENUM 컬럼 sibling consistency 보강 + `hold(byAdministratorId)` callsite-symmetry 의도 주석 + resolve/dismiss `resolutionNote` 검증 위치(controller @NotBlank 위임, D3.1) 명시 주석.
+- DDL 변경 deviations: 없음 (schema.md §4.8.1 그대로).
+- **enum 패키지 위치**: `app/src/main/java/com/pfplaybackend/api/administration/domain/enums/` 채택. spec/plan 초안의 `domain/value/`는 misnomer — 기존 administration BC convention 검사 결과 status/category-style enums(`PartyroomAdminActionType`, `AdminActionTargetType`, `AdminPenaltyType`, `BulkActionType`, `UserActivityEventType`)는 모두 `domain/enums/`이고 `domain/value/`는 first-class VO(`AdministratorId`, `AdminRole`, `JsonMetadata*`) 전용. 후속 G2-G4 신규 enum도 `domain/enums/` follow.
+- **BaseEntity**: 미상속 (Plan §3 Option A). V13 DDL은 `created_at`만 보유, `updated_at` 부재. BaseEntity가 audit `updated_at`을 추가하면 Hibernate가 비존재 컬럼 write 시도 → JPA 부트 실패 risk. 엔티티가 자체 `private LocalDateTime createdAt;` 보유 + factory에서 `LocalDateTime.now()` 세팅. spec §4.1 코드 예시는 `extends BaseEntity`로 적혔으나 plan §3가 정정 — plan이 canonical.
+- **`AdminReportException` 단일 enum**: 단일 채택. 7 entries(RPT-001~007) 모두 본 enum에 수용. `PARTYROOM_NOT_FOUND`는 G2 시점에 기존 partyroom BC enum 또는 `AdminException`(ADM-006) 재사용 검토 — G1에서는 별도 추가 안 함.
+- **Exception interface naming**: spec/plan의 `ExceptionType` + `getCode()`는 misnomer. 실제 ground-truth는 `DomainException` + `getErrorCode()`(예: `AdminMemberException` 패턴). G1 `AdminReportException`도 `implements DomainException` + `getErrorCode()` 사용.
+- **모듈 path correction**: spec/plan은 `administration/src/main/...`로 적혔으나 `administration`은 별 Gradle 모듈 아님 — `app/src/main/java/com/pfplaybackend/api/administration/...` 패키지. 모든 G1 file은 `app` 모듈 안에 land. G2-G4 신규 file도 동일 위치 follow.
+- **JPA ENUM column 매핑**: V13 DDL은 MySQL `ENUM(...)`, 엔티티는 `@Enumerated(STRING) + @Column(length=N)` 사용(V4/V6/V8 precedent). `columnDefinition = "ENUM(...)"` 미사용 — Flyway가 DDL 소유, JPA는 string write/read만 책임. `hbm2ddl.auto=validate` mode에서 안전(prod precedent).
+- **resolutionNote 검증 위치**: 도메인은 빈 note도 영속(D3.1). G4 controller에서 `@NotBlank` 또는 service guard로 강제 — `RESOLUTION_NOTE_REQUIRED(RPT-003)` throw. 도메인 메서드 javadoc에 호출자 책임 명시.
 
 ### 13.2 G2 — C-1 유저 endpoint
 

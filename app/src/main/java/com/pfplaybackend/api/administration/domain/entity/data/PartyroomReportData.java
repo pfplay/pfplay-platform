@@ -47,14 +47,14 @@ public class PartyroomReportData {
     private Long reporterUserAccountId;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "category", nullable = false)
+    @Column(name = "category", nullable = false, length = 32)
     private ReportCategory category;
 
     @Column(name = "description", columnDefinition = "TEXT")
     private String description;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false)
+    @Column(name = "status", nullable = false, length = 16)
     private ReportStatus status;
 
     @Column(name = "reviewed_by_administrator_id")
@@ -102,13 +102,15 @@ public class PartyroomReportData {
     /**
      * RESOLVED 진입(terminal). REVIEWING에서만 허용(matrix).
      * resolvedAt = now, resolutionNote 기록.
+     *
+     * 호출자 책임: resolutionNote 비어있지 않음 보장 (G4 controller `@NotBlank` 또는 service guard).
+     * 도메인은 빈 note도 그대로 영속 — D3.1 결정에 따라 검증은 application layer.
+     *
+     * byAdministratorId 파라미터는 callsite symmetry 목적. resolve는 항상 REVIEWING에서 호출되므로
+     * (matrix 보장) 기존 reviewedByAdministratorId가 startReview 시점에 set됨 — overwrite 안 함.
      */
     public void resolve(Long byAdministratorId, String resolutionNote) {
         guardTransition(ReportStatus.RESOLVED);
-        if (this.reviewedByAdministratorId == null) {
-            // matrix 상 PENDING→RESOLVED는 금지지만 방어적으로 수용
-            this.reviewedByAdministratorId = byAdministratorId;
-        }
         this.resolutionNote = resolutionNote;
         this.status = ReportStatus.RESOLVED;
         this.resolvedAt = LocalDateTime.now();
@@ -117,6 +119,9 @@ public class PartyroomReportData {
     /**
      * DISMISSED 진입(terminal). PENDING/REVIEWING 양쪽에서 허용(matrix).
      * PENDING→DISMISSED 직접 전이 시 reviewedByAdministratorId가 처음 set됨 (D3.2).
+     * REVIEWING→DISMISSED 시 startReview 때 set된 reviewer 보존.
+     *
+     * 호출자 책임: resolutionNote 비어있지 않음 보장 (G4 controller `@NotBlank` 또는 service guard).
      */
     public void dismiss(Long byAdministratorId, String resolutionNote) {
         guardTransition(ReportStatus.DISMISSED);
@@ -130,11 +135,14 @@ public class PartyroomReportData {
 
     /**
      * REVIEWING → PENDING 회귀(보류). reviewedByAdministratorId 보존(D3.2).
+     *
+     * byAdministratorId 파라미터는 startReview/resolve/dismiss와의 callsite symmetry 목적.
+     * 본 메서드는 audit 가시성 위해 첫 검토자(reviewedByAdministratorId)를 그대로 두므로 사용하지 않음.
      */
+    @SuppressWarnings("unused")
     public void hold(Long byAdministratorId) {
         guardTransition(ReportStatus.PENDING);
         this.status = ReportStatus.PENDING;
-        // reviewedByAdministratorId 의도적으로 보존 — 누가 검토했었는지 audit 가시
     }
 
     private void guardTransition(ReportStatus target) {
