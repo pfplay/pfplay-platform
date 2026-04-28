@@ -52,7 +52,6 @@ import java.util.List;
 public class AdminReportQueryController {
 
     private static final int MAX_PAGE_SIZE = 200;
-    private static final String SORT_PATTERN = "created_at_desc|created_at_asc";
 
     private final AdminReportQueryService adminReportQueryService;
 
@@ -69,7 +68,7 @@ public class AdminReportQueryController {
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "50") @Min(1) @Max(MAX_PAGE_SIZE) int size,
             @RequestParam(defaultValue = AdminReportListQuery.SORT_CREATED_AT_DESC)
-            @Pattern(regexp = SORT_PATTERN) String sort
+            @Pattern(regexp = AdminReportListQuery.SORT_PATTERN) String sort
     ) {
         // cross-field 검증 — Bean Validation 표준 부재로 inline guard.
         if (createdFrom != null && createdTo != null && createdFrom.isAfter(createdTo)) {

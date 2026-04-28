@@ -21,6 +21,7 @@ import com.pfplaybackend.api.user.domain.entity.data.MemberData;
 import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
+import java.time.LocalDate;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -197,6 +198,45 @@ class AdminReportQueryServiceIT extends AbstractIntegrationTest {
         assertThat(page.getContent().get(0).reportId()).isEqualTo(pendingSpamId);
         assertThat(page.getContent().get(page.getContent().size() - 1).reportId())
                 .isEqualTo(dismissedOtherId);
+    }
+
+    @Test
+    @DisplayName("list createdTo end-of-day inclusion: 23:59:59 레코드도 createdTo 당일 필터에 포함")
+    void getList_filterCreatedTo_endOfDayBoundaryInclusive() {
+        // Seed an extra report with createdAt = today 23:59:59 — boundary record that must be
+        // included when filtering createdTo = today. Regression guard for `lt(createdTo.plusDays(1).atStartOfDay())`
+        // — naive `loe(createdTo.atStartOfDay())` would exclude this.
+        LocalDate today = LocalDate.now();
+        LocalDateTime endOfDay = today.atTime(23, 59, 59);
+        Long boundaryId = saveReport(ReportStatus.PENDING, ReportCategory.OTHER, endOfDay);
+
+        AdminReportListQuery query = new AdminReportListQuery(null, null, today, today);
+        Page<AdminReportSummaryResponse> page = service.getList(
+                query, PageRequest.of(0, 50, Sort.by("createdAt").descending()));
+
+        assertThat(page.getContent())
+                .extracting(AdminReportSummaryResponse::reportId)
+                .contains(boundaryId);
+    }
+
+    @Test
+    @DisplayName("list createdFrom~createdTo 범위 필터 happy: 범위 밖 레코드 제외")
+    void getList_filterCreatedRange_happyExcludesOutOfRange() {
+        // Seed two extra reports — one before window (2 days ago), one inside (today).
+        Long beforeId = saveReport(ReportStatus.PENDING, ReportCategory.OTHER,
+                LocalDate.now().minusDays(2).atTime(10, 0));
+        Long insideId = saveReport(ReportStatus.PENDING, ReportCategory.OTHER,
+                LocalDate.now().atTime(10, 0));
+
+        AdminReportListQuery query = new AdminReportListQuery(
+                null, null, LocalDate.now().minusDays(1), LocalDate.now());
+        Page<AdminReportSummaryResponse> page = service.getList(
+                query, PageRequest.of(0, 50, Sort.by("createdAt").descending()));
+
+        assertThat(page.getContent())
+                .extracting(AdminReportSummaryResponse::reportId)
+                .contains(insideId)
+                .doesNotContain(beforeId);
     }
 
     // ============================== detail ==============================

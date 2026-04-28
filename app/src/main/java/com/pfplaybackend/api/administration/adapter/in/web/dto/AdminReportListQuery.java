@@ -23,4 +23,7 @@ public record AdminReportListQuery(
 ) {
     public static final String SORT_CREATED_AT_DESC = "created_at_desc";
     public static final String SORT_CREATED_AT_ASC = "created_at_asc";
+
+    /** Controller {@code @Pattern} 정규식 — 새 sort key 추가 시 이 한 곳만 갱신. */
+    public static final String SORT_PATTERN = SORT_CREATED_AT_DESC + "|" + SORT_CREATED_AT_ASC;
 }
