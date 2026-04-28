@@ -6,7 +6,7 @@
 
 ## 0. TL;DR
 
-PFPlay는 파티룸 기반 음악 스트리밍 서비스다. 본 문서는 `pfplay-admin` 프런트엔드와 이를 뒷받침할 백엔드 어드민 플랫폼의 중장기 설계를 정의한다. 서비스는 pre-launch 상태이며, 이 설계를 기점으로 11개의 Flyway 마이그레이션(V4~V11)과 다수의 PR로 구현된다.
+PFPlay는 파티룸 기반 음악 스트리밍 서비스다. 본 문서는 `pfplay-admin` 프런트엔드와 이를 뒷받침할 백엔드 어드민 플랫폼의 중장기 설계를 정의한다. 서비스는 pre-launch 상태이며, 이 설계를 기점으로 10개의 Flyway 마이그레이션(V4~V13, V12 슬롯 채워짐)과 다수의 PR로 구현된다.
 
 핵심 설계 결정:
 - **F2 (Composition)** 바운디드 컨텍스트 분리: IAM / User Profile / Party / Playlist / Avatar / Administration / Operations + Realtime(Runtime-segregated) + Shared Kernel(`common`)
@@ -190,7 +190,7 @@ PFPlay 전체를 **7개 비즈니스 BC + 1 Runtime-segregated 모듈 + Shared K
 
 각 컨텍스트는 Gradle 모듈 또는 패키지로 구분된다. Gradle 모듈 분리된 경우 컴파일러가 경계를 강제하고, 패키지 분리인 경우 정적 검사(ArchUnit)로 보호한다.
 
-- 최종 모듈/패키지 구조 (V14 이후):
+- 최종 모듈/패키지 구조 (V12 이후):
   ```
   avatar/                                   ← 신규 Gradle 모듈 (PR 10)
     └── com.pfplaybackend.api.avatar.*      ← Avatar BC 전체
@@ -253,7 +253,7 @@ PFPlay 전체를 **7개 비즈니스 BC + 1 Runtime-segregated 모듈 + Shared K
 
 **`Member` (Aggregate Root)**
 
-> 주: Member는 **User Profile BC**에 속한다 (§3.1 #2). 여기 §3.3.2 Party와 분리 배치는 과거 문서 구조 상 편의이며, Party BC와 User Profile BC는 별 BC다. V14 이후 패키지 경계가 명확해진다.
+> 주: Member는 **User Profile BC**에 속한다 (§3.1 #2). 여기 §3.3.2 Party와 분리 배치는 과거 문서 구조 상 편의이며, Party BC와 User Profile BC는 별 BC다. V12 이후 패키지 경계가 명확해진다.
 
 속성:
 - `memberId` (PK)
@@ -268,11 +268,11 @@ PFPlay 전체를 **7개 비즈니스 BC + 1 Runtime-segregated 모듈 + Shared K
 - Avatar 리소스가 retire되어도 기존 유저 설정은 URI 기반이므로 깨지지 않음
 - 유저 피커는 `lifecycle_status='PUBLISHED'` 필터를 거쳐 유효 리소스만 선택 가능 (§6.I)
 
-**V14 이후 `avatarIconUri` 의미론** (중요):
-- V14로 `avatar_icon_resource` 테이블이 삭제되지만, `member.avatarSetting.avatarIconUri`는 **유지된다** (구조 변경 없음).
+**V12 이후 `avatarIconUri` 의미론** (중요):
+- V12로 `avatar_icon_resource` 테이블이 삭제되지만, `member.avatarSetting.avatarIconUri`는 **유지된다** (구조 변경 없음).
 - 이 필드의 의미가 "독립된 AvatarIconResource를 향한 참조" → "유저가 고른 body 또는 face의 `icon_uri` 값을 **캐시한 것**"으로 바뀐다.
 - 캐시 갱신 시점: 유저가 body 선택 시 → `body.icon_uri`를 복사. Face 선택 시 합성 구성에 따라 face 기반 또는 body 기반 아이콘을 복사 (기존 `UserAvatarDomainService` 로직과 동일 방향성).
-- V14 Step 3의 `UPDATE body SET icon_uri = (icon row's resource_uri)`로 본래 존재했던 URI 문자열이 그대로 부모 테이블로 옮겨오므로, 기존 유저가 캐시해둔 `avatarIconUri` 값은 **V14 전후로 동일한 문자열 URI를 계속 가리킨다**. 데이터 이전 불필요.
+- V12 Step 3의 `UPDATE body SET icon_uri = (icon row's resource_uri)`로 본래 존재했던 URI 문자열이 그대로 부모 테이블로 옮겨오므로, 기존 유저가 캐시해둔 `avatarIconUri` 값은 **V12 전후로 동일한 문자열 URI를 계속 가리킨다**. 데이터 이전 불필요.
 - 코드 변화: `AvatarResourceQueryService.findByNameAndPairType(...)` 호출부는 `body.getIconUri()` / `face.getIconUri()` 직접 조회로 치환 (PR 10에 포함).
 
 불변식:
@@ -438,7 +438,7 @@ MVP 용도:
   - `createdBy`/`updatedBy`는 **`Long`** raw 저장 (administrator_id 값). `AdministratorId` VO를 import하지 않는다 — Avatar BC는 Administration BC에 의존하지 않는 순수 생산자 규약. 호출자(`AdminAvatarCommandService`)가 `AdministratorId.getValue()`로 언팩해 전달.
   - NULL = 시스템 시드(V3 이전 부팅)
 
-**엔티티 기본값 주의**: V14는 `lifecycle_status`에 `DEFAULT 'PUBLISHED'`를 설정(기존 V3 15+1행을 PUBLISHED로 이전하기 위함). 그러나 **신규 레코드는 반드시 DRAFT로 들어가야** 하므로, `AvatarBodyResource.draft(...)` 팩토리는 컬럼 값을 명시적으로 `DRAFT`로 세팅해 INSERT한다 (DB default 의존 금지). 같은 규약이 Face에도 적용.
+**엔티티 기본값 주의**: V12는 `lifecycle_status`에 `DEFAULT 'PUBLISHED'`를 설정(기존 V3 15+1행을 PUBLISHED로 이전하기 위함). 그러나 **신규 레코드는 반드시 DRAFT로 들어가야** 하므로, `AvatarBodyResource.draft(...)` 팩토리는 컬럼 값을 명시적으로 `DRAFT`로 세팅해 INSERT한다 (DB default 의존 금지). 같은 규약이 Face에도 적용.
 
 불변식:
 - `name` 전역 UNIQUE
@@ -466,7 +466,7 @@ MVP 용도:
 Body와 동일한 lifecycle 규약 + 도메인 이벤트.
 
 **삭제된 개념**:
-- `AvatarIconResource` 테이블/엔티티 — body/face에 `iconUri` 필드로 흡수 (§4 V14)
+- `AvatarIconResource` 테이블/엔티티 — body/face에 `iconUri` 필드로 흡수 (§4 V12)
 - `PairType` enum — 불필요 (테이블 DROP으로 discriminator 소멸)
 
 **Avatar BC 포트**:
@@ -531,7 +531,7 @@ Shared Kernel: common (전 BC가 VO/예외/보안 인프라 import)
 
 | 섹션 | 문서 | 내용 |
 |---|---|---|
-| §4 Schema Design | `2026-04-19-admin-platform-schema.md` | V4~V11 스키마 + 마이그레이션 전략 |
+| §4 Schema Design | `2026-04-19-admin-platform-schema.md` | V4~V13 스키마 + 마이그레이션 전략 |
 | §5 Security Design | `2026-04-19-admin-platform-security.md` | 인증, 인가, 쿠키, 하드닝 |
 | §6~§7 Features & Listing UI | `2026-04-19-admin-platform-features.md` | A~H 기능 + 파티룸 목록 UI 템플릿 |
 | §8 Integrity Enforcement | `2026-04-19-admin-platform-integrity.md` | FK 없이 무결성 보장 전략 |
@@ -544,5 +544,5 @@ Shared Kernel: common (전 BC가 VO/예외/보안 인프라 import)
 **Revision history**:
 - 2026-04-19 Initial narrow auth design (now archived in git history as predecessor of this file)
 - 2026-04-19 Full admin platform design (§0~§11 across 6 docs), post architecture-review iteration
-- 2026-04-20 Avatar BC 신설 및 BC 재편 (4 → 7 BCs + Realtime + Shared Kernel). `avatar` Gradle 모듈 추가, IAM 현 분산 명시, Realtime을 Runtime-segregated로 재분류. §2.1 I 카테고리(아바타 리소스 관리) 추가. §3.1 BC 표 전면 재작성, §3.2 모듈 경계 규약 구체화, §3.3.5 Avatar aggregates 추가, §3.4 context map 재그림. 관련 V14 마이그레이션 및 §6.I 스펙은 별 문서. 아키텍처 리뷰 2차 반영 (`avatarIconUri` 캐시 의미론 명시, V14 JOIN 방어적 전환, lifecycle 기본값 규약 등).
+- 2026-04-20 Avatar BC 신설 및 BC 재편 (4 → 7 BCs + Realtime + Shared Kernel). `avatar` Gradle 모듈 추가, IAM 현 분산 명시, Realtime을 Runtime-segregated로 재분류. §2.1 I 카테고리(아바타 리소스 관리) 추가. §3.1 BC 표 전면 재작성, §3.2 모듈 경계 규약 구체화, §3.3.5 Avatar aggregates 추가, §3.4 context map 재그림. 관련 V12 마이그레이션 및 §6.I 스펙은 별 문서. 아키텍처 리뷰 2차 반영 (`avatarIconUri` 캐시 의미론 명시, V12 JOIN 방어적 전환, lifecycle 기본값 규약 등).
 - 2026-04-19 Expanded to full platform design (this revision)

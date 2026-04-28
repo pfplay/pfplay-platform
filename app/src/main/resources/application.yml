@@ -40,7 +40,7 @@ spring:
     enabled: true
     encoding: UTF-8
     clean-disabled: true
-    out-of-order: true
+    out-of-order: false
 
   data:
     redis:
@@ -203,7 +203,7 @@ spring:
     enabled: true
     encoding: UTF-8
     clean-disabled: true
-    out-of-order: true
+    out-of-order: false
 
 logging:
   level:
@@ -253,7 +253,7 @@ spring:
     enabled: true
     encoding: UTF-8
     clean-disabled: true
-    out-of-order: true
+    out-of-order: false
 
 server:
   error:
@@ -306,7 +306,7 @@ spring:
     enabled: true
     encoding: UTF-8
     clean-disabled: true
-    out-of-order: true
+    out-of-order: false
 
 server:
   error:

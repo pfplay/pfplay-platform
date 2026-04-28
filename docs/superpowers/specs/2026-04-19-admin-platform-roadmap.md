@@ -20,10 +20,10 @@
 | **PR 7** | V6 Partyroom 상태 enum + 카운터 + display_flag + 전체 엔티티 리팩토링 | V6 | 5 (security 정리 후) | **XL** |
 | **PR 8** | V7 partyroom_admin_action + admin partyroom management API (B-2~B-6, B-8) | V7 | 7 | L |
 | **PR 9** | V8 penalty history punisher_type + 어드민 페널티 경로 (B-7) | V8 | 8 | M |
-| **PR 10** 🆕 | **Avatar 모듈 스캐폴드 + V14 + 엔티티 이관.** 신규 `avatar` Gradle 모듈 생성, `AvatarBody/FaceResourceData` + VO + 레포 user→avatar 이관, `AvatarIconResourceData`/`PairType` 삭제. V14로 icon_uri 흡수 + lifecycle + 감사 컬럼 + face.obtainable_type. `user` 모듈 서비스/레포가 avatar 모듈 포트 경유하도록 내부 재배선 (외부 계약 불변). settings.gradle 수정. | V14 | 8 | **XL** |
+| **PR 10** 🆕 | **Avatar 모듈 스캐폴드 + V12 + 엔티티 이관.** 신규 `avatar` Gradle 모듈 생성, `AvatarBody/FaceResourceData` + VO + 레포 user→avatar 이관, `AvatarIconResourceData`/`PairType` 삭제. V12로 icon_uri 흡수 + lifecycle + 감사 컬럼 + face.obtainable_type. `user` 모듈 서비스/레포가 avatar 모듈 포트 경유하도록 내부 재배선 (외부 계약 불변). settings.gradle 수정. | V12 | 8 | **XL** |
 | **PR 11** 🆕 | **Avatar 어드민 CRUD + GCS 업로드 + 감사 리스너.** `AdminAvatarCommandController/QueryController`, `AvatarCatalogCommandService/QueryService`, `GcsAvatarStorageAdapter` (google-cloud-storage SDK), 아이콘 전용 재업로드 엔드포인트, Administration 리스너가 `AvatarResourcePublished/Retired` 소비 → `admin_action` 기록. SUPER_ADMIN 권한 가드 (§5 adminAuth bean). | — | 10 (+ 8의 admin_action) | **L** |
 | **PR 12** (←10) | V10 user_activity_log (partitioned) + event listeners + member 관리 API (A-1~A-4) | V10 | 8 | L |
-| **PR 13** (←11) | V11 partyroom_report + 유저용 신고 API + 어드민 검토 API (C-1~C-2) | V11 | 12 | M |
+| **PR 13** (←11) | V13 partyroom_report + 유저용 신고 API + 어드민 검토 API (C-1~C-2) | V13 | 12 | M |
 | **PR 14** (←12) | pfplay-admin (프런트엔드 — 별 레포) — 로그인 + 보호 라우트 + AuthStore + 유저/룸 목록 + **Avatar 관리 UI** (§6.I-10) | — | 4 (admin login API) + 11 (Avatar API) | **XL** |
 
 ### 9.2 PR 의존 그래프
@@ -53,7 +53,7 @@ PR 1 ─── PR 2 ─── PR 3 (병렬 가능)
 ```
 
 Avatar PR 10-11은 PR 9 이후에 들어간다. 이유:
-- PR 10은 V14 마이그레이션을 수반하며 V4~V11 뒤에 자연스럽게 배치.
+- PR 10은 V12 마이그레이션을 수반하며 V4~V11(PR 6 must_change_password 포함) 뒤에 자연스럽게 배치.
 - PR 11은 PR 8의 `admin_action` 테이블을 리스너가 참조.
 - PR 14(프런트) 출시에 Avatar 관리 UI가 포함되어야 하므로 PR 11이 PR 14 이전에 머지돼야 함. PR 13(신고 API)도 함께 포함되는 게 자연스러움.
 
@@ -70,7 +70,7 @@ Avatar PR 10-11은 PR 9 이후에 들어간다. 이유:
 | `system_config` 캐시 stale | 캐시 TTL 30~60초. 긴급 토글 시엔 관리자가 수동 새로고침 (rare) |
 | V10 user_activity_log 파티션 누락 | 매월 새 파티션 생성 배치 + 예비 MAXVALUE 파티션 |
 | `ApplicationReadyEventListener` 재부팅 시 seed 충돌 | 모든 initializer 이미 idempotent. V5도 placeholder 체크 idempotent. |
-| PR 10 (V14 + 엔티티 이관) MySQL DDL 암시적 커밋으로 인한 부분 실패 | pre-launch라 실데이터 영향 없음. Step 2 실패 시 Step 1만 적용된 상태로 남으면 V13 보정으로 처리 |
+| PR 10 (V12 + 엔티티 이관) MySQL DDL 암시적 커밋으로 인한 부분 실패 | pre-launch라 실데이터 영향 없음. Step 2 실패 시 Step 1만 적용된 상태로 남으면 V11 보정으로 처리 |
 | PR 10 JPA 재배선 누락 (`findByNameAndPairType` 호출부 잔존) | 컴파일러가 `PairType` 삭제로 빌드 실패 강제. 같은 PR에 포함되므로 놓칠 수 없음 |
 | PR 11 GCS 업로드 중 DB INSERT 실패 → orphan 파일 | 즉시 delete 호출(§6.I-2). 삭제도 실패하면 orphan으로 남음. MVP 배치 청소 비포함(§8.3.4), 문제 발생 시 도입 |
 | GCS 서비스 계정 키 유출 | Secret Manager/env 주입 원칙. 레포지토리 커밋 금지 (기존 security 가이드) |
@@ -124,7 +124,7 @@ reviewer 지적 외에도:
 | ArchUnit 컨텍스트 경계 테스트 | §8.5 |
 | Amplitude `authority_tier` 깨짐 방지 | §5.3.1 클레임 유지 |
 | 권한 SpEL 중앙화 (`adminAuth` bean) | §5.2.4 |
-| Avatar BC 분리 — 과금 기반 설계 대비 (2026-04-20 재검토) | §3.1 BC 표 재편, §3.3.5 Avatar aggregates, §4.11 V14 DDL, §6.I 어드민 CRUD, §9 PR 10-11 |
+| Avatar BC 분리 — 과금 기반 설계 대비 (2026-04-20 재검토) | §3.1 BC 표 재편, §3.3.5 Avatar aggregates, §4.11 V12 DDL, §6.I 어드민 CRUD, §9 PR 10-11 |
 | BC 재편 — 실제 Gradle 모듈 구조와 정합 | §3.1 (4→7 BCs), `user` 내 IAM/Profile 패키지 분리, Realtime = Runtime-segregated |
 
 ### 10.4 유지되지 않은 지적 — 정당화
@@ -231,7 +231,7 @@ reviewer가 제시한 것 중 다르게 판단한 것:
 
 본 문서 세트:
 1. `2026-04-19-admin-platform-design.md` — §0~§3 + 문서 인덱스
-2. `2026-04-19-admin-platform-schema.md` — §4 Schema Design (V4~V11)
+2. `2026-04-19-admin-platform-schema.md` — §4 Schema Design (V4~V13)
 3. `2026-04-19-admin-platform-security.md` — §5 Security Design
 4. `2026-04-19-admin-platform-features.md` — §6, §7 Features + Listing UI
 5. `2026-04-19-admin-platform-integrity.md` — §8 Integrity Enforcement
