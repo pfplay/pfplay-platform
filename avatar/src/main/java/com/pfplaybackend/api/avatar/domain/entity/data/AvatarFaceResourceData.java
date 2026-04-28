@@ -2,6 +2,8 @@ package com.pfplaybackend.api.avatar.domain.entity.data;
 
 import com.pfplaybackend.api.avatar.domain.enums.LifecycleStatus;
 import com.pfplaybackend.api.avatar.domain.enums.ObtainmentType;
+import com.pfplaybackend.api.avatar.domain.exception.AvatarException;
+import com.pfplaybackend.api.common.exception.ExceptionCreator;
 import jakarta.persistence.*;
 import lombok.Builder;
 import lombok.Getter;
@@ -82,5 +84,53 @@ public class AvatarFaceResourceData {
                 .updatedAt(now)
                 .updatedBy(createdByAdministratorId)
                 .build();
+    }
+
+    /** DRAFT → PUBLISHED. */
+    public void publish(Long updatedByAdministratorId) {
+        if (this.lifecycleStatus != LifecycleStatus.DRAFT) {
+            throw ExceptionCreator.create(AvatarException.AVATAR_INVALID_LIFECYCLE_TRANSITION);
+        }
+        this.lifecycleStatus = LifecycleStatus.PUBLISHED;
+        this.updatedAt = LocalDateTime.now();
+        this.updatedBy = updatedByAdministratorId;
+    }
+
+    /** PUBLISHED → RETIRED. */
+    public void retire(Long updatedByAdministratorId) {
+        if (this.lifecycleStatus != LifecycleStatus.PUBLISHED) {
+            throw ExceptionCreator.create(AvatarException.AVATAR_INVALID_LIFECYCLE_TRANSITION);
+        }
+        this.lifecycleStatus = LifecycleStatus.RETIRED;
+        this.updatedAt = LocalDateTime.now();
+        this.updatedBy = updatedByAdministratorId;
+    }
+
+    /** 본 이미지 URI 교체 — DRAFT에서만 허용. */
+    public void replaceResourceUri(String newResourceUri, Long updatedByAdministratorId) {
+        assertMutable();
+        if (this.lifecycleStatus != LifecycleStatus.DRAFT) {
+            throw ExceptionCreator.create(AvatarException.AVATAR_IMAGE_IMMUTABLE_AFTER_PUBLISH);
+        }
+        this.resourceUri = newResourceUri;
+        this.updatedAt = LocalDateTime.now();
+        this.updatedBy = updatedByAdministratorId;
+    }
+
+    /** 아이콘 이미지 URI 교체 — DRAFT에서만 허용. */
+    public void replaceIconUri(String newIconUri, Long updatedByAdministratorId) {
+        assertMutable();
+        if (this.lifecycleStatus != LifecycleStatus.DRAFT) {
+            throw ExceptionCreator.create(AvatarException.AVATAR_IMAGE_IMMUTABLE_AFTER_PUBLISH);
+        }
+        this.iconUri = newIconUri;
+        this.updatedAt = LocalDateTime.now();
+        this.updatedBy = updatedByAdministratorId;
+    }
+
+    private void assertMutable() {
+        if (this.lifecycleStatus == LifecycleStatus.RETIRED) {
+            throw ExceptionCreator.create(AvatarException.AVATAR_RESOURCE_RETIRED);
+        }
     }
 }
