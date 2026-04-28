@@ -220,6 +220,29 @@ class PartyroomDataTest {
     }
 
     @Nested
+    @DisplayName("isReportable() — 신고 가능 여부 (PR 13 G2)")
+    class IsReportable {
+        @Test @DisplayName("ACTIVE → 신고 가능 (true)")
+        void active() {
+            assertThat(newPartyroom().isReportable()).isTrue();
+        }
+
+        @Test @DisplayName("SUSPENDED → 신고 불가 (false)")
+        void suspended() {
+            PartyroomData p = newPartyroom();
+            p.suspend();
+            assertThat(p.isReportable()).isFalse();
+        }
+
+        @Test @DisplayName("TERMINATED → 신고 불가 (false)")
+        void terminated() {
+            PartyroomData p = newPartyroom();
+            p.terminate();
+            assertThat(p.isReportable()).isFalse();
+        }
+    }
+
+    @Nested
     @DisplayName("validateNotTerminated() — 기존 시맨틱 유지 (TERMINATED만 거부)")
     class ValidateNotTerminated {
         @Test @DisplayName("ACTIVE 통과")
