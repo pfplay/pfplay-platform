@@ -446,9 +446,51 @@ PR 12b1은 read-only API + listener skeleton(unit test only). 큰 race risk 없�
 
 ## 12. Open Items / Implementation Reality (post-build catch-up)
 
-PR 12b1 구현 완료 시점에 spec과의 차이/세부 결정사항 기록 (PR 8 §15 / PR 9 §11 / PR 12a §12 패턴):
+### 12.1 G1 — §12.10 polish (Chunk 1)
 
-- (placeholder — 구현 후 작성)
+- **G1 commit `<G1 sha>`**: `UserActivityLogId.java` + `UserActivityLogIdTest.java` 삭제 (dead code, PR 12a §12.10 결정 (b)). `UserActivityLogRepository` Javadoc에서 `UserActivityLogId` 멘션 제거 + PR 12b1 derived query 도입 노트. `UserActivityLogListener` divider comment 추가 + handler 순서 재배치 (User/Member events 그룹: Member/SignedIn/Profile/TierChanged/Withdrawn; Party events 그룹: PartyroomCreated/CrewAccessed/CrewPenalized/AdminCrewPenalized).
+
+### 12.2 G2 — 이벤트 evolution + listener skeleton (Chunk 2)
+
+- **G2 commit `<G2 sha>`**: `MemberTierChangedEvent` 신규 (user domain) + `UserAccountWithdrawnEvent` PR 1 forward-evolution(`byAdministratorId` 추가) + `UserAccountData.withdraw()` → `withdraw(Long byAdministratorId)` 시그니처 evolve. Production caller 0건이라 cascade 안전. PR 12b2 A-4가 첫 caller. listener 2 핸들러 추가 — TIER_CHANGED + ADMIN_ACTED_ON 2 row, WITHDREW + ADMIN_ACTED_ON 2 row. metadata에 `by_administrator_id` 기록. idempotency guard `if (isWithdrawn()) return;` 보존, `lastLoginAt` 미변경 (spec roadmap §11.2.2 준수).
+- **`MemberTierChangedEvent.memberId` 미사용**: spec §11 #10 결정대로 listener metadata에 미기록. `getAggregateId()` 한정 사용.
+
+### 12.3 G3 — A-2 detail endpoint (Chunk 3)
+
+- **G3 commit `<G3 sha>`**: `AdminMemberQueryRepository(Impl)` QueryDSL findDetail (member + userAccount join) + `UserActivityLogRepository.findTop30ByUserAccountIdOrderByOccurredAtDescLogIdDesc` derived query (LogIdDesc tie-breaker로 결정적 순서 보장 — spec §11 #9) + `AdminMemberQueryService.getDetail` cross-repository orchestration + Controller GET `{memberId}` + 4 DTO + WebMvc + IT (31 row SEED → 30 limit + DESC 검증).
+- **§4 spec template 정정**:
+  - `AdminMemberException`은 `domain/exception/`(NOT `application/exception/`) 패키지에 위치. `DomainException` interface 구현(NOT `ExceptionDefinition`), 필드는 `errorCode`/`message`/`errorType` (NOT `code`). PR 8 `AdministratorManagementException` 패턴 일관.
+  - QueryDSL `Nickname` VO projection: `memberData.profileData.bio.nickname` 경로(spec template의 `profileData.nickname`보다 깊음)이며 `@Convert(NicknameConverter)` VO. `Expressions.stringTemplate("cast({0} as string)", ...)`로 raw String 추출(PR 8 패턴).
+  - `RestApiException`은 codebase에 부재. 실제 throw 클래스는 `NotFoundException`/`BadRequestException` 등 `ErrorType`별 concrete subclass. service 단위 test도 concrete 사용.
+  - `AbstractAdminWebMvcTest.java`에 `AdminMemberQueryController.class` 등록 + `@MockBean AdminMemberQueryService` 추가 — `@WebMvcTest` boot 위해 필수 (Task 14 list 11 + 1 file = 12 total). G3 commit은 15 files (3 modified test 포함).
+- **§8.3 plan-spec gap**: spec §8.3은 A-2 WebMvc test에 "401/403/404/200" 명시했으나 G3 IT는 "200/404/401" 3 cases만 (403 member-role forbidden 누락). G4도 동일 3 cases만 추가 → A-1/A-2 모두 403 부재. PR 12b1 본 PR scope에서는 admin-only access는 이미 401 case로 cover됨 (no admin context = 401, role mismatch도 spring security가 401로 매핑). 명시적 403 (인증된 non-admin user)은 future polish — `@WithMockUser(roles = "MEMBER")` fixture 필요.
+- **`RECENT_ACTIVITY_LIMIT` package-private 상수**: `AdminMemberQueryService.java`에 documentation으로만 존재. 한도 30은 derived query 메서드 이름 `findTop30...`에 하드코딩. constant 자체는 코드에서 미참조 — 의미적 명료성 위해 보존.
+- **`getDetail` null-safety guard**: `MemberData.userAccountId`는 `@Column(nullable = false)`라 schema-level 보장. service의 defensive null check는 미도달이지만 보존(NPE 방지 — 향후 schema 변경 시 안전).
+
+### 12.4 G4 — A-1 list endpoint (Chunk 4)
+
+- **G4 commit `<G4 sha>`**: `AdminMemberQueryRepository.search` QueryDSL filter (email LIKE / tier / dates) + 3 sort + pagination + count. `last_activity_desc`는 user_activity_log MAX(occurred_at) GROUP BY LEFT JOIN + COALESCE(..., m.created_at) fallback. Service `getList` Page<Row> → Page<Response> 매핑 + withdrawn flag derive (`withdrawnAt != null`). Controller validation: size cap 200 / date range / sort enum. `AdminMemberException.INVALID_LIST_QUERY`(MBR-002, BAD_REQUEST) 추가 + `ExceptionCreator.create(...)` 패턴 (`IllegalArgumentException` → `GlobalExceptionHandler` 500 매핑 회피).
+- **`last_activity_desc` MySQL strict GROUP BY mode**: 9 selected columns 모두 `groupBy(...)`에 명시(MySQL `ONLY_FULL_GROUP_BY` 5.7+ 기본 모드 호환).
+- **WebMvc test count**: spec §8.3 4 cases + 추가 2 happy-path 200(empty/content) + 1 anonymous 401 = 6 cases. defensive coverage.
+- **JSON path**: `ApiCommonResponse<Page<...>>.success(page)` wrap 시 Spring Data `Page`가 flat 직렬화 → `$.data.content` / `$.data.totalElements`. spec §3.1의 `pageInfo` envelope은 aspirational/unimplemented(custom wrapper 부재). 실제 Spring Data Page 모양으로 단언.
+- **`AuthorityTier` enum**: 실제 값은 `FM/AM/GT` 3종(spec 일부 라인 mention `CLUBBER` 오기). IT는 `GT` 사용.
+- **IT cleanup scoped DELETE**: V5 마이그레이션이 글로벌 super-admin (uid=1)을 SEED — Testcontainers shared baseline. `userAccountRepository.deleteAll()`은 V5 super-admin도 삭제 → 다른 IT 영향. 본 IT는 native `DELETE WHERE user_id IN (...)` scoped + 테스트 email 도메인 `g4it.local`로 격리.
+- **defensive validation**: Controller에서 `size < 1` / `page < 0`도 `INVALID_LIST_QUERY`로 거부(spec 명시 외 robustness).
+
+### 12.5 spec features.md A-3/A-4 reconciliation (PR 12b2 publisher 시점)
+
+- **spec features.md A-3 line 92** ("리스너가 `partyroom_admin_action`에 `action_type='CHANGE_MEMBER_TIER'` 1건 기록") 및 A-4 line 113 ("user_activity_log WITHDREW 기록")은 partyroom-scoped table에 member-level admin action을 기록한다는 mismatch. PR 12b1 Q2 결정 (B)대로 `user_activity_log`의 `ADMIN_ACTED_ON` 단독으로 통합. `partyroom_admin_action` 손대지 않음. PR 12b2 publish source 도입 후 features.md 본문 수정 별 doc commit으로 반영.
+
+### 12.6 Future polish 잔존 항목
+
+- **listener skeleton dead path 활성화**: PR 12b2 A-3/A-4 publish source 도입 시 end-to-end IT 추가 (현재 unit test only).
+- **403 WebMvc test 추가**: A-1/A-2 모두 인증된 non-admin user(예: MEMBER role)의 403 case 명시적 검증. `@WithMockUser(roles = "MEMBER")` fixture 도입 시점에 추가.
+- **`memberId` listener metadata 추가 검토**: PR 12b2/추후 admin UI가 member ID 기반 navigation 필요 시 `MemberTierChangedEvent` listener의 `tierMeta`에 `member_id` 추가.
+- **`UserAccountData.withdraw(Long byAdministratorId)` self-withdrawal extension**: 사용자 self-withdrawal 기능 추가 시 `byAdministratorId=null` 허용 또는 별 메서드 도입.
+- **`activities` (DJ_PNT/ROOM_ACT) + `walletAddress` + Avatar nesting**: A-2 detail response 누락 — scoring/wallet 시스템 + PR 11 Avatar query port 통합 시점에 도입.
+- **`member.last_activity_at` denormalized column**: 회원 1만 명+ 시점에 GROUP BY join 비용 회피용 도입 검토.
+- **`pageInfo` envelope vs Spring Data Page flat shape**: spec §3.1 example의 `pageInfo: {page, size, totalElements}` envelope은 현재 미구현(`ApiCommonResponse + Page` flat). 정식 envelope 도입 시 spec 본문 수정 + IT 갱신.
+- **`RECENT_ACTIVITY_LIMIT` 상수 사용처 부재**: 30 한도가 derived query 이름에 하드코딩. constant 자체는 미참조 — 정리 또는 사용처 추가 검토.
 
 ---
 
