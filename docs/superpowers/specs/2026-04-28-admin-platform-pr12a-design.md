@@ -629,9 +629,58 @@ listener 메서드 try/catch + ERROR 로그. `@Async`라 throw해도 caller(publ
 
 ## 12. Open Items / Implementation Reality (post-build catch-up)
 
-PR 12a 구현 완료 시점에 spec과의 차이 / 세부 결정사항을 기록 (PR 8 §15 / PR 9 §11 패턴):
+PR 12a 구현 완료 시점에 spec과의 차이 / 세부 결정사항을 기록 (PR 8 §15 / PR 9 §11 패턴).
 
-- (placeholder — 구현 후 작성)
+### 12.1 Baseline unblock (pre-Chunk 1)
+
+- **`google-api-client` dead deps 제거** (commit `b698108f`): PR 11 `GcsAvatarStorageAdapter` `@PostConstruct`가 Cloud Storage 2.40.0을 호출하면서 `app/build.gradle` line 64-66의 `google-api-client:1.23.0` / `google-oauth-client-jetty:1.23.0` / `google-api-services-youtube:v3-rev222-1.25.0` 3종과 conflict → `:app:integrationTest` 116/116 fail. 이 3종은 코드 grep 0건의 dead deps였음 (실제 youtube 검색은 `PytubeSearchService`가 외부 pytube 서비스를 RestTemplate으로 호출). 제거 후 cloud-storage transitive `google-api-client:2.6.0`만 남아 정합. PR 12a baseline unblock.
+
+### 12.2 G1 — V10 + entity 인프라 (Chunk 1)
+
+- **§4.1 정정 — Hibernate `@IdClass + IDENTITY` 비호환** (commit `734bf892`): spec §4.1은 `@IdClass(UserActivityLogId.class)` + `GenerationType.IDENTITY`로 선언했으나 Hibernate가 runtime에 `JpaSystemException: Identity generation isn't supported for composite ids`로 거부. 해결: `log_id` 단독을 JPA `@Id`로 매핑, `occurred_at`은 `@Column(nullable=false, updatable=false)` 일반 컬럼으로 처리. DB-level composite PK `(log_id, occurred_at)`는 V10 SQL에 그대로 보존 (MySQL partition key 요구). Repository 시그니처는 `JpaRepository<UserActivityLogData, Long>`. `UserActivityLogId` value class는 보존 — 현재 미사용, PR 12b A-2 `recentActivityLog` projection 시점에 `@SqlResultSetMapping` 또는 interface projection으로 활용 검토.
+- **IT path 컨벤션** — spec/plan은 `app/src/integration-test/java/...` 가정. 실제 repo는 별 `integration-test` source set 없음. 모든 IT는 `app/src/test/java/.../*IT.java` + `extends AbstractIntegrationTest` (별도 `@IntegrationTest` 애너테이션 부재). PR 8 `PartyroomAdminActionListenerIT` 패턴 그대로. PR 12a 모든 IT가 이 컨벤션 따름.
+
+### 12.3 G2/G2.1 — Listener + AsyncConfig (Chunk 2)
+
+- **`AsyncConfig.UAL_EXECUTOR_BEAN` 상수 추출** (commit `2b4f9c3c`): listener `@Async(AsyncConfig.UAL_EXECUTOR_BEAN)` 컴파일 타임 linkage. 문자열 typo 시 silent fallback to default executor 차단.
+- **`AsyncConfigTest` graceful-shutdown 단언 미도입**: `setWaitForTasksToCompleteOnShutdown` / `setAwaitTerminationSeconds`는 public getter 부재. `ReflectionTestUtils.getField`가 Spring 6.x 내부 필드명과 어긋나 `IllegalArgumentException` → fragile. 5개 핵심 sizing/policy 단언만 유지. shutdown 회귀는 spec §6 본문 + AsyncConfig bean 코드 리뷰로 잡음.
+
+### 12.4 G3/G3.1/G3.2 — AdminCrewPenalizedEvent evolution (Chunk 3)
+
+- **PR 9 `AdminCrewPenalizedEvent` forward-evolution** (commit `0a6519b3`, SHA backfilled in PR 9 §11 via `d184e299`): `punishedUserAccountId` 4번째 필드 추가. `AdminCrewPenaltyCommandService.apply` publisher가 `crew.getUserId().getUid()` 채움. `PartyroomAdminActionListenerTest` (PR 8/9 unit) 6-arg → 7-arg constructor cascade 갱신.
+- **§5.3 reconciliation** (commit `9e9ec9df`): spec §5.3 line 550-551은 PR 9 IT/Listener IT 갱신을 명시했으나 두 IT는 event payload를 capture하지 않고 DB row만 검증 → 갱신 불필요. `punishedUserAccountId` 검증은 `AdminCrewPenaltyCommandServiceTest`(unit, ArgumentCaptor) + 신규 `UserActivityLogListenerAdminPenaltyIT`(end-to-end)로 이중 cover. `PartyroomAdminActionListenerTest`(unit)만 cascade 갱신.
+
+### 12.5 G6 — CrewPenalizedEvent evolution (Chunk 4)
+
+- **`CrewPenalizedEvent` evolution** (commit `fca0d81d`): `punishedUserAccountId` 4번째 필드 추가. `CrewPenaltyCommandService.addPenalty` publisher가 `punishedCrew.getUserId().getUid()` 채움. `DomainEventRedisRelayTest` 1 cascade fix.
+- **§5.4 row 갱신 정책**: spec §5.4 표의 `AdminCrewPenalizedEvent` / `CrewPenalizedEvent` row가 "evolution applied (G3/G6 sha)"로 갱신되지 않음. 본 catch-up 항목 자체가 reconciliation 역할.
+
+### 12.6 G4 — PartyroomCreatedEvent (Chunk 5)
+
+- **§5.2 정정 — service 코드 변경 0 가정 부정확** (commit `ffdb9e84`): spec §5.2 "도메인 이벤트 register, 기존 `pollDomainEvents()` 패턴 자동 publish — service 코드 변경 0"는 사실과 다름. 실제 `PartyroomCommandService.createPartyroom` (private)은 publish 호출 부재. `PartyroomData.create`도 `registerDomainEvent` 호출 없음. 결정: aggregate 손대지 않고 `createPartyroom` private 메서드 끝에 `eventPublisher.publishEvent(new PartyroomCreatedEvent(...))` 한 줄 추가 (createMainStage / createGeneralPartyRoom 모두 cover).
+
+### 12.7 G5 — UserAccountSignedInEvent + ENTER/EXIT (Chunk 6)
+
+- **§5.1.1 정정 — `@Transactional(readOnly = true)` 가정 부정확** (commit `8bf139ce`):
+  - `AdminLoginService.login`은 `@Transactional` (write) 사용. `MemberSignService.getMemberOrCreate`가 lazy-create UserAccount + `recordLogin()` write를 수반 → readOnly outer TX는 REQUIRED propagation 시 "Connection is read-only"로 INSERT 실패. spec §5.1.1 wording은 "TX boundary 보장"의 약식 — readOnly는 적용 가능한 곳에 한정.
+  - `AuthService.processOAuthLogin`은 이미 `@Transactional` (write) 보유. spec wording "추가하여"는 부재 시 추가의 의미로 해석, 기존 write TX 다운그레이드 안 함. 동일하게 `getMemberOrCreate` write path 의존.
+- **§4.3 listener 코드 정정 — `CrewAccessedEvent` metadata 단순화**: `CrewAccessedEvent` 시그니처에 `stage_type` / `duration_sec` 부재 (PR 1부터 `(PartyroomId, CrewId, UserId, AccessType)` 4 필드). spec §4.3 listener 예시는 evolution 가정. PR 12a는 이벤트 evolution 회피 — listener는 `JsonMetadata.empty()` 사용 (converter가 빈 map → SQL NULL). spec §4.7.2 metadata catalog의 `stage_type` / `duration_sec`는 future evolution (별 PR) 대상.
+
+### 12.8 General — API ground truth
+
+- **`JsonMetadata` API**: `data()`가 정확한 accessor (asMap이 아님). `JsonMetadata.empty()` 정적 팩토리 존재. `JsonMetadata.of(null)` / `JsonMetadata.of(Map.of())`은 모두 `EMPTY` 싱글턴. converter가 빈 map → SQL NULL.
+- **`UserId` API**: `UserId.create(Long)` / `new UserId(Long)`. `getUid()` returns `Long`. UUID factory 부재.
+- **`DomainEvent` 베이스**: `getOccurredAt()` (Lombok `@Getter` from `LocalDateTime occurredAt`), `getEventType()` (`getClass().getSimpleName()`), `getEventId()` (UUID, auto-generated).
+
+### 12.9 Future polish (PR 12b 또는 별 PR로 처리)
+
+- **`UserActivityLogId` 유지/삭제 결정**: 현재 unused. PR 12b A-2 projection 시점에 (a) 활용 (`@SqlResultSetMapping`/interface projection) 또는 (b) 삭제 결정.
+- **Listener grouping divider comment**: 7 handlers — readability 향상 위해 `// === Auth/Member events ===` / `// === Profile events ===` / `// === Party events ===` divider 추가 검토.
+- **`createMainStage` 단위 test gap**: G4가 `createPartyroom` private 메서드에 publish 추가, `createMainStage` (admin path)에는 단위 test 부재 (pre-existing gap, G4 도입 안 함).
+- **`crew.user_id NOT NULL` 스키마 제약**: 현재 nullable. App 코드 `CrewData.create`는 non-null 강제. future V11 ALTER로 schema-level codify 검토.
+- **partition/index INFORMATION_SCHEMA assertion**: spec §8.2가 명시한 IT (`SHOW CREATE TABLE` 또는 `INFORMATION_SCHEMA.PARTITIONS`) 미도입. PR 12b 또는 future.
+- **`AuthService` broad catch swallow**: `processOAuthLogin`의 광범위 catch가 publish failure를 generic auth failure로 변환. pre-existing pattern, narrow catch는 future polish.
+- **TODO marker in `CrewAccessedEvent` listener**: future evolution 시 metadata 보강 위치 명시 grep용 TODO 주석 검토.
 
 ---
 
