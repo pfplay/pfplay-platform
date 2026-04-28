@@ -490,7 +490,7 @@ PR 12b1 §12 패턴 follow.
 
 ### 12.4 G4 — spec §12 catch-up + M1 limitation + features.md 정정
 
-- **G4 commit (본 commit, SHA은 G4.1에서 backfill)**:
+- **G4 commit `dc4b6ce2`**:
   - PR 12b2 design.md §12 backfill (본 섹션).
   - PR 12b1 design.md §12.6에 listener 2-row INSERT non-atomicity limitation 명시 + 완화 옵션 (a/b/c) future PR 분리. 동시에 PR 12b2가 흡수한 reviewer 권고 M2(WebMvc 403) + listener 활성화 항목을 ✅ 완료 표시.
   - features.md A-3/A-4 본문을 PR 12b2 ground truth로 정정 — `partyroom_admin_action` 1건 기록 라인(A-3) → `user_activity_log` ADMIN_ACTED_ON 단독 통합으로 교체. A-4 `last_login_at = NULL` / 풍부한 profile 익명화 라인 → 최소 비식별화(email + withdrawnAt) + `lastLoginAt` 보존 + profile 익명화는 future PR로 명시.
