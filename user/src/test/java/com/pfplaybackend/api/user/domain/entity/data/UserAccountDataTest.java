@@ -37,7 +37,7 @@ class UserAccountDataTest {
         var account = UserAccountData.createForSocial(
             new UserId(1L), "alice@gmail.com", ProviderType.GOOGLE);
 
-        account.withdraw();
+        account.withdraw(999L);
 
         assertThat(account.getWithdrawnAt()).isNotNull();
         assertThat(account.getEmail()).startsWith("withdrawn-").endsWith("@withdrawn.local");
@@ -48,7 +48,7 @@ class UserAccountDataTest {
         var account = UserAccountData.createForSocial(
             new UserId(7L), "alice@gmail.com", ProviderType.GOOGLE);
 
-        account.withdraw();
+        account.withdraw(999L);
 
         var events = account.pollDomainEvents();
         assertThat(events).hasSize(1);
@@ -56,6 +56,7 @@ class UserAccountDataTest {
         var withdrawn = (UserAccountWithdrawnEvent) events.get(0);
         assertThat(withdrawn.getUserAccountId()).isEqualTo(7L);
         assertThat(withdrawn.getAnonymizedEmail()).startsWith("withdrawn-7@");
+        assertThat(withdrawn.getByAdministratorId()).isEqualTo(999L);
     }
 
     @Test
@@ -73,12 +74,12 @@ class UserAccountDataTest {
     void withdraw_isIdempotent() {
         var account = UserAccountData.createForSocial(
             new UserId(1L), "alice@gmail.com", ProviderType.GOOGLE);
-        account.withdraw();
+        account.withdraw(999L);
         var firstWithdrawnAt = account.getWithdrawnAt();
         var firstEmail = account.getEmail();
         account.pollDomainEvents(); // drain first event
 
-        account.withdraw(); // second call should be no-op
+        account.withdraw(999L); // second call should be no-op
 
         assertThat(account.getWithdrawnAt()).isEqualTo(firstWithdrawnAt);
         assertThat(account.getEmail()).isEqualTo(firstEmail);

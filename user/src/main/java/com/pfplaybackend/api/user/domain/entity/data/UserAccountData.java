@@ -123,13 +123,13 @@ public class UserAccountData extends BaseEntity {
         this.lastLoginAt = LocalDateTime.now();
     }
 
-    public void withdraw() {
+    public void withdraw(Long byAdministratorId) {
         if (isWithdrawn()) {
             return; // idempotent
         }
         this.withdrawnAt = LocalDateTime.now();
         this.email = "withdrawn-" + this.userId.getUid() + "@withdrawn.local";
-        registerEvent(new UserAccountWithdrawnEvent(this.userId.getUid(), this.email));
+        registerEvent(new UserAccountWithdrawnEvent(this.userId.getUid(), this.email, byAdministratorId));
     }
 
     public boolean isWithdrawn() {

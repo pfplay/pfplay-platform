@@ -12,6 +12,8 @@ import com.pfplaybackend.api.party.domain.event.CrewAccessedEvent;
 import com.pfplaybackend.api.party.domain.event.CrewPenalizedEvent;
 import com.pfplaybackend.api.party.domain.event.PartyroomCreatedEvent;
 import com.pfplaybackend.api.user.domain.event.MemberRegisteredEvent;
+import com.pfplaybackend.api.user.domain.event.MemberTierChangedEvent;
+import com.pfplaybackend.api.user.domain.event.UserAccountWithdrawnEvent;
 import com.pfplaybackend.api.user.domain.event.UserProfileChangedEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -71,6 +73,42 @@ public class UserActivityLogListener {
         meta.put("change_type", e.getChangeType().name());
         log(e.getUserId().getUid(), UserActivityEventType.PROFILE_UPDATED, null,
             JsonMetadata.of(meta), e.getOccurredAt());
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Async(AsyncConfig.UAL_EXECUTOR_BEAN)
+    public void on(MemberTierChangedEvent e) {
+        // Row 1: 대상 user 관점 TIER_CHANGED (insertion 먼저)
+        Map<String, Object> tierMeta = new HashMap<>();
+        tierMeta.put("old_tier", e.getOldTier().name());
+        tierMeta.put("new_tier", e.getNewTier().name());
+        tierMeta.put("by_administrator_id", e.getByAdministratorId());
+        log(e.getUserAccountId(), UserActivityEventType.TIER_CHANGED, null,
+            JsonMetadata.of(tierMeta), e.getOccurredAt());
+
+        // Row 2: 대상 user 관점 ADMIN_ACTED_ON (log_id가 더 큼 → ORDER BY DESC에서 먼저 노출)
+        Map<String, Object> actMeta = new HashMap<>();
+        actMeta.put("action_type", "TIER_CHANGED");
+        actMeta.put("by_administrator_id", e.getByAdministratorId());
+        log(e.getUserAccountId(), UserActivityEventType.ADMIN_ACTED_ON, null,
+            JsonMetadata.of(actMeta), e.getOccurredAt());
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    @Async(AsyncConfig.UAL_EXECUTOR_BEAN)
+    public void on(UserAccountWithdrawnEvent e) {
+        // Row 1: WITHDREW
+        Map<String, Object> wMeta = new HashMap<>();
+        wMeta.put("by_administrator_id", e.getByAdministratorId());
+        log(e.getUserAccountId(), UserActivityEventType.WITHDREW, null,
+            JsonMetadata.of(wMeta), e.getOccurredAt());
+
+        // Row 2: ADMIN_ACTED_ON
+        Map<String, Object> actMeta = new HashMap<>();
+        actMeta.put("action_type", "WITHDRAW");
+        actMeta.put("by_administrator_id", e.getByAdministratorId());
+        log(e.getUserAccountId(), UserActivityEventType.ADMIN_ACTED_ON, null,
+            JsonMetadata.of(actMeta), e.getOccurredAt());
     }
 
     // === Party events ===

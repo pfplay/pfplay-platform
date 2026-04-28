@@ -6,6 +6,7 @@ import com.pfplaybackend.api.administration.domain.enums.UserActivityEventType;
 import com.pfplaybackend.api.auth.domain.event.UserAccountSignedInEvent;
 import com.pfplaybackend.api.common.config.security.enums.ProviderType;
 import com.pfplaybackend.api.common.domain.value.UserId;
+import com.pfplaybackend.api.common.enums.AuthorityTier;
 import com.pfplaybackend.api.party.domain.enums.AccessType;
 import com.pfplaybackend.api.party.domain.enums.PenaltyType;
 import com.pfplaybackend.api.party.domain.enums.StageType;
@@ -17,6 +18,8 @@ import com.pfplaybackend.api.party.domain.value.CrewId;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import com.pfplaybackend.api.user.domain.enums.ProfileChangeType;
 import com.pfplaybackend.api.user.domain.event.MemberRegisteredEvent;
+import com.pfplaybackend.api.user.domain.event.MemberTierChangedEvent;
+import com.pfplaybackend.api.user.domain.event.UserAccountWithdrawnEvent;
 import com.pfplaybackend.api.user.domain.event.UserProfileChangedEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -218,5 +221,63 @@ class UserActivityLogListenerTest {
         listener.on(event);   // throw 안 함
 
         verify(repository).save(any());
+    }
+
+    @Test
+    @DisplayName("MemberTierChangedEvent → TIER_CHANGED + ADMIN_ACTED_ON 2 row INSERT")
+    void on_MemberTierChangedEvent_inserts_two_rows() {
+        MemberTierChangedEvent event = new MemberTierChangedEvent(
+                100L, 50L, AuthorityTier.AM, AuthorityTier.FM, 999L);
+
+        listener.on(event);
+
+        ArgumentCaptor<UserActivityLogData> cap = ArgumentCaptor.forClass(UserActivityLogData.class);
+        verify(repository, times(2)).save(cap.capture());
+        var rows = cap.getAllValues();
+
+        // Row 1: TIER_CHANGED (insertion order — log_id ASC)
+        assertThat(rows.get(0).getEventType()).isEqualTo(UserActivityEventType.TIER_CHANGED.name());
+        assertThat(rows.get(0).getUserAccountId()).isEqualTo(100L);
+        assertThat(rows.get(0).getPartyroomId()).isNull();
+        assertThat(rows.get(0).getMetadata().data())
+                .containsEntry("old_tier", "AM")
+                .containsEntry("new_tier", "FM")
+                .containsEntry("by_administrator_id", 999L);
+        assertThat(rows.get(0).getOccurredAt()).isEqualTo(event.getOccurredAt());
+
+        // Row 2: ADMIN_ACTED_ON
+        assertThat(rows.get(1).getEventType()).isEqualTo(UserActivityEventType.ADMIN_ACTED_ON.name());
+        assertThat(rows.get(1).getUserAccountId()).isEqualTo(100L);
+        assertThat(rows.get(1).getMetadata().data())
+                .containsEntry("action_type", "TIER_CHANGED")
+                .containsEntry("by_administrator_id", 999L);
+        assertThat(rows.get(1).getOccurredAt()).isEqualTo(event.getOccurredAt());
+    }
+
+    @Test
+    @DisplayName("UserAccountWithdrawnEvent → WITHDREW + ADMIN_ACTED_ON 2 row INSERT")
+    void on_UserAccountWithdrawnEvent_inserts_two_rows() {
+        UserAccountWithdrawnEvent event = new UserAccountWithdrawnEvent(
+                100L, "withdrawn-100@withdrawn.local", 999L);
+
+        listener.on(event);
+
+        ArgumentCaptor<UserActivityLogData> cap = ArgumentCaptor.forClass(UserActivityLogData.class);
+        verify(repository, times(2)).save(cap.capture());
+        var rows = cap.getAllValues();
+
+        // Row 1: WITHDREW
+        assertThat(rows.get(0).getEventType()).isEqualTo(UserActivityEventType.WITHDREW.name());
+        assertThat(rows.get(0).getUserAccountId()).isEqualTo(100L);
+        assertThat(rows.get(0).getPartyroomId()).isNull();
+        assertThat(rows.get(0).getMetadata().data())
+                .containsEntry("by_administrator_id", 999L);
+
+        // Row 2: ADMIN_ACTED_ON
+        assertThat(rows.get(1).getEventType()).isEqualTo(UserActivityEventType.ADMIN_ACTED_ON.name());
+        assertThat(rows.get(1).getUserAccountId()).isEqualTo(100L);
+        assertThat(rows.get(1).getMetadata().data())
+                .containsEntry("action_type", "WITHDRAW")
+                .containsEntry("by_administrator_id", 999L);
     }
 }
