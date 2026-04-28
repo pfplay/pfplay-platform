@@ -12,6 +12,7 @@ import com.pfplaybackend.api.administration.adapter.in.web.AdminMemberTierComman
 import com.pfplaybackend.api.administration.adapter.in.web.AdminMemberWithdrawCommandController;
 import com.pfplaybackend.api.administration.adapter.in.web.AdminPartyroomCommandController;
 import com.pfplaybackend.api.administration.adapter.in.web.AdminPartyroomQueryController;
+import com.pfplaybackend.api.administration.adapter.in.web.AdminReportQueryController;
 import com.pfplaybackend.api.administration.adapter.in.web.AdministratorManagementController;
 import com.pfplaybackend.api.administration.adapter.in.web.AdminPasswordController;
 import com.pfplaybackend.api.avatar.application.port.in.AvatarAdminCatalogQueryUseCase;
@@ -24,6 +25,7 @@ import com.pfplaybackend.api.administration.application.service.AdminMemberTierC
 import com.pfplaybackend.api.administration.application.service.AdminMemberWithdrawCommandService;
 import com.pfplaybackend.api.administration.application.service.AdminPartyroomCommandService;
 import com.pfplaybackend.api.administration.application.service.AdminPartyroomQueryService;
+import com.pfplaybackend.api.administration.application.service.AdminReportQueryService;
 import com.pfplaybackend.api.administration.application.service.AdministratorManagementService;
 import com.pfplaybackend.api.administration.application.service.AdminPasswordService;
 import com.pfplaybackend.api.common.config.security.authorization.AdminAuthorizationSpEL;
@@ -54,7 +56,8 @@ import org.springframework.test.web.servlet.MockMvc;
         AdminAvatarQueryController.class,
         AdminMemberQueryController.class,
         AdminMemberTierCommandController.class,
-        AdminMemberWithdrawCommandController.class
+        AdminMemberWithdrawCommandController.class,
+        AdminReportQueryController.class
 })
 @Import({
         AbstractAdminWebMvcTest.SharedMethodSecurityConfig.class,
@@ -89,4 +92,5 @@ public abstract class AbstractAdminWebMvcTest {
     @MockBean protected AdminCrewPenaltyCommandService adminCrewPenaltyCommandService;
     @MockBean protected AvatarCatalogCommandUseCase avatarCatalogCommandUseCase;
     @MockBean protected AvatarAdminCatalogQueryUseCase avatarAdminCatalogQueryUseCase;
+    @MockBean protected AdminReportQueryService adminReportQueryService;
 }

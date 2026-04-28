@@ -9,10 +9,10 @@ import java.time.LocalDateTime;
 /**
  * PartyroomReport 저장소.
  *
- * 본 G1에는 24h 중복 검증 method query만 노출(D1).
- * 어드민 list query는 G3 Task 14에서 custom interface로 확장.
+ * 24h 중복 검증 method query (G1) + 어드민 C-2 list QueryDSL custom (G3).
  */
-public interface PartyroomReportRepository extends JpaRepository<PartyroomReportData, Long> {
+public interface PartyroomReportRepository
+        extends JpaRepository<PartyroomReportData, Long>, PartyroomReportRepositoryCustom {
 
     /**
      * 동일 reporter가 동일 partyroom을 동일 category로 since(보통 now-24h) 이후 신고했는지.
