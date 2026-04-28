@@ -283,7 +283,7 @@ public void on(UserAccountWithdrawnEvent e) {
 ```
 
 **미세 결정**:
-- **2 row INSERT의 occurredAt**: 같은 `e.getOccurredAt()` 재사용 → 두 row가 정확히 같은 timestamp. ORDER BY occurred_at DESC + log_id DESC tie-breaker로 안정 정렬.
+- **2 row INSERT의 occurredAt**: 같은 `e.getOccurredAt()` 재사용 → 두 row가 정확히 같은 timestamp. ORDER BY occurred_at DESC + log_id DESC tie-breaker로 안정 정렬. 핸들러는 결정적 순서로 INSERT — `MemberTierChangedEvent`는 `TIER_CHANGED` 먼저 → `ADMIN_ACTED_ON` 나중. `log_id`가 AUTO_INCREMENT이므로 `ADMIN_ACTED_ON.log_id > TIER_CHANGED.log_id`. ORDER BY `occurred_at DESC, log_id DESC` 정렬에서는 `ADMIN_ACTED_ON`이 먼저 노출 — 어드민 viewer 입장에서 "어드민이 액션을 했다 → 결과 state change" 순으로 audit-first 읽기. `UserAccountWithdrawnEvent`도 동형(WITHDREW → ADMIN_ACTED_ON, 표시는 ADMIN_ACTED_ON 먼저).
 - **Listener total handlers = 9 (PR 12a 7 + PR 12b1 2)**: divider comment로 grouping (`// === User/Member events ===`: SIGNED_UP / SIGNED_IN / PROFILE_UPDATED / TIER_CHANGED / WITHDREW; `// === Party events ===`: PARTYROOM_CREATED / ENTERED·EXITED / PENALIZED-CREW / PENALIZED-ADMIN).
 - **ADMIN_ACTED_ON row 발생 패턴**: source event(MemberTierChanged / UserAccountWithdrawn)가 internal logic으로 row 2건 INSERT. 별도 `AdminActedOnEvent`는 도입 안 함 (Q3.5).
 - **`UserActivityEventType.TIER_CHANGED` / `WITHDREW` / `ADMIN_ACTED_ON`** — PR 12a §11.8에서 미리 정의된 enum 값. PR 12b1에서 처음 활성.
@@ -347,6 +347,8 @@ ORDER BY last_activity DESC
 LIMIT ?, ?;
 ```
 
+`COALESCE(MAX(ual.occurred_at), m.created_at)` — 신규 가입자(활동 로그 0건)는 `last_activity` 정렬 키가 NULL이 되어 ORDER BY DESC에서 마지막에 밀리는 surprise를 차단. `m.created_at`을 fallback으로 사용 → 최근 가입자가 자연스럽게 상위에 노출. IT는 SEED 시 활동 0건 member도 정렬 결과에 포함됨을 검증해야 함.
+
 QueryDSL 형태로 작성. user_activity_log MVP 회원 수에서 acceptable. future polish: Member에 `lastActivityAt` denormalized column + listener fan-out write.
 
 ---
@@ -368,7 +370,9 @@ PR 12b1은 read-only API + listener skeleton(unit test only). 큰 race risk 없�
 - `MemberTierChangedEventTest` — 5 필드 + getOccurredAt + getAggregateId.
 - `UserAccountWithdrawnEventTest` evolution — `byAdministratorId` 추가 단언 + 기존 fixture 갱신.
 - `UserActivityLogListenerTest` — `on(MemberTierChangedEvent)` 2 row INSERT (TIER_CHANGED + ADMIN_ACTED_ON, ArgumentCaptor 2회 검증) + `on(UserAccountWithdrawnEvent)` 2 row INSERT (WITHDREW + ADMIN_ACTED_ON). 9 handlers total (existing 7 + new 2).
-- `AdminMemberQueryServiceTest` — `getList` / `getDetail` mock 단위 (orchestration + projection 매핑 검증).
+- `AdminMemberQueryServiceTest` — `getList` / `getDetail` mock 단위:
+  - `getList` 분기 (filter/sort/pagination 인자가 repository로 정확히 위임).
+  - `getDetail` cross-repository orchestration — `AdminMemberQueryRepository.findDetail` mock + `UserActivityLogRepository.findTop30...` mock 2개를 함께 stub하여 두 source 결과가 단일 `AdminMemberDetailResponse`로 합쳐지는 지 검증. memberId 부재 시 `MEMBER_NOT_FOUND` 예외 매핑.
 
 ### 8.2 통합 테스트 (Testcontainers MySQL)
 - `AdminMemberQueryRepositoryImplIT` — A-1 filter (email LIKE / tier / dates) + sort (3 옵션) + pagination. PR 8 `AdminPartyroomQueryRepositoryImplIT` 패턴.
@@ -414,7 +418,7 @@ PR 12b1은 read-only API + listener skeleton(unit test only). 큰 race risk 없�
 | 4 | A-1 size DoS (size=10000) | size cap 200 (validation 400) |
 | 5 | `recentActivityLog` 응답 누적 — 활동 많은 user에서 metadata JSON 크기 | 30 limit + metadata는 짧은 string/number 위주 metadata 컨벤션 유지 |
 | 6 | `withdrawn` member의 detail 조회 정책 | 어드민은 모든 member 조회 가능 (404 아님). withdrawn=true + anonymizedEmail 노출 |
-| 7 | `MemberTierChangedEvent`가 `userAccountId` + `memberId` 둘 다 보유 — 중복 위험 | listener는 `userAccountId` 사용 (audit subject). `memberId`는 future audit metadata 또는 unused |
+| 7 | `MemberTierChangedEvent`가 `userAccountId` + `memberId` 둘 다 보유 — 중복 위험 | §11 #10 결정 따라 `userAccountId`는 listener subject, `memberId`는 `getAggregateId()` (audit log eventType 외 컨텍스트 미저장) 한정 사용. listener metadata에는 `memberId` 미기록 (불필요). |
 | 8 | listener handler 2 row INSERT의 timestamp 동일 | ORDER BY occurred_at DESC + log_id DESC tie-breaker로 안정 정렬. recentActivityLog query에 명시 |
 | 9 | A-2 response의 profile에 avatar 미포함 — 어드민 프런트엔드 사용성 | future PR (PR 11 Avatar 모듈 query port 통합) |
 
@@ -434,7 +438,9 @@ PR 12b1은 read-only API + listener skeleton(unit test only). 큰 race risk 없�
 6. **`UserAccountWithdrawnEvent` evolution**: `byAdministratorId` 필드 추가 (PR 1 forward-evolution). PR 12a `AdminCrewPenalizedEvent` evolution 패턴 동형.
 7. **`last_activity_desc` 구현**: user_activity_log MAX(occurred_at) GROUP BY join. denormalized column은 future polish.
 8. **A-2 response 축소**: `activities`(DJ_PNT/ROOM_ACT) + `walletAddress` OOS — scoring/wallet 시스템 미정. avatar nesting은 PR 12b2 또는 future.
-9. **2 row INSERT의 occurredAt 동일**: source event의 `getOccurredAt()` 재사용. ORDER BY tie-breaker는 log_id DESC.
+9. **2 row INSERT의 occurredAt 동일**: source event의 `getOccurredAt()` 재사용. ORDER BY tie-breaker는 log_id DESC. 결정적 INSERT 순서(TIER_CHANGED → ADMIN_ACTED_ON, WITHDREW → ADMIN_ACTED_ON)로 어드민 viewer는 ADMIN_ACTED_ON을 먼저 보게 됨 (audit-first 읽기).
+10. **`MemberTierChangedEvent.memberId` 보유 결정**: `userAccountId`는 listener의 audit row subject로 사용. `memberId`는 `getAggregateId()` 반환값으로만 사용 (DDD aggregate 식별). listener metadata에는 `memberId` 미기록 — audit 시 user_account_id가 식별자로 충분, member_id는 derived. PR 12b2 A-3 endpoint도 `memberId` path → 내부에서 `MemberData.getUserAccountId()` 참조하여 publish.
+11. **Response field `withdrawn` + `withdrawnAt` 둘 다 노출**: 의미적으로 `withdrawnAt != null` ↔ `withdrawn=true`로 redundant이지만, 프런트엔드 편의 (boolean 분기 + timestamp 포맷팅 양쪽 사용)로 둘 다 응답에 포함. spec features.md A-1 표 그대로.
 
 ---
 
