@@ -1,6 +1,10 @@
 package com.pfplaybackend.api.administration.adapter.out.persistence;
 
+import com.pfplaybackend.api.administration.adapter.in.web.dto.AdminMemberListQuery;
 import com.pfplaybackend.api.administration.adapter.out.persistence.dto.AdminMemberDetailRow;
+import com.pfplaybackend.api.administration.adapter.out.persistence.dto.AdminMemberSummaryRow;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 import java.util.Optional;
 
@@ -18,5 +22,13 @@ public interface AdminMemberQueryRepository {
      */
     Optional<AdminMemberDetailRow> findDetail(Long memberId);
 
-    // A-1 search 메서드는 Task 17(G4)에서 추가.
+    /**
+     * A-1: filter(email LIKE / tier / 가입일 range) + sort(created_at asc/desc,
+     * last_activity_desc) + pagination(size cap 200은 Controller validation).
+     *
+     * <p>{@code last_activity_desc}: user_activity_log MAX(occurredAt)에 활동이
+     * 0건인 member는 fallback으로 user_account.createdAt 사용 — LEFT JOIN +
+     * COALESCE 패턴 (spec §6 SQL).
+     */
+    Page<AdminMemberSummaryRow> search(AdminMemberListQuery query, Pageable pageable);
 }

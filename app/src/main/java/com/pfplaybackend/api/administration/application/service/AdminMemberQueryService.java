@@ -1,6 +1,8 @@
 package com.pfplaybackend.api.administration.application.service;
 
 import com.pfplaybackend.api.administration.adapter.in.web.dto.AdminMemberDetailResponse;
+import com.pfplaybackend.api.administration.adapter.in.web.dto.AdminMemberListQuery;
+import com.pfplaybackend.api.administration.adapter.in.web.dto.AdminMemberSummaryResponse;
 import com.pfplaybackend.api.administration.adapter.in.web.dto.MemberProfileSummary;
 import com.pfplaybackend.api.administration.adapter.in.web.dto.RecentActivityLogItem;
 import com.pfplaybackend.api.administration.adapter.in.web.dto.UserAccountSummary;
@@ -11,6 +13,8 @@ import com.pfplaybackend.api.administration.domain.entity.UserActivityLogData;
 import com.pfplaybackend.api.administration.domain.exception.AdminMemberException;
 import com.pfplaybackend.api.common.exception.ExceptionCreator;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -62,5 +66,25 @@ public class AdminMemberQueryService {
                 row.authorityTier(),
                 row.createdAt(),
                 activityItems);
+    }
+
+    /**
+     * A-1: paginated list of admin members. Filter/sort/pagination을 repository에 위임하고,
+     * Page&lt;Row&gt;를 Page&lt;Response&gt;로 매핑하면서 {@code withdrawn}을 {@code withdrawnAt != null}로
+     * derive한다 (spec §11 #11 — frontend convenience flag).
+     */
+    public Page<AdminMemberSummaryResponse> getList(AdminMemberListQuery query, Pageable pageable) {
+        return memberRepository.search(query, pageable)
+                .map(r -> new AdminMemberSummaryResponse(
+                        r.memberId(),
+                        r.userAccountId(),
+                        r.email(),
+                        r.providerType(),
+                        r.nickname(),
+                        r.authorityTier(),
+                        r.lastLoginAt(),
+                        r.createdAt(),
+                        r.withdrawnAt() != null,
+                        r.withdrawnAt()));
     }
 }
