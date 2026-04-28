@@ -6,8 +6,10 @@ import com.pfplaybackend.api.administration.domain.enums.UserActivityEventType;
 import com.pfplaybackend.api.common.config.security.enums.ProviderType;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.party.domain.enums.PenaltyType;
+import com.pfplaybackend.api.party.domain.enums.StageType;
 import com.pfplaybackend.api.party.domain.event.AdminCrewPenalizedEvent;
 import com.pfplaybackend.api.party.domain.event.CrewPenalizedEvent;
+import com.pfplaybackend.api.party.domain.event.PartyroomCreatedEvent;
 import com.pfplaybackend.api.party.domain.value.CrewId;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import com.pfplaybackend.api.user.domain.enums.ProfileChangeType;
@@ -112,6 +114,24 @@ class UserActivityLogListenerTest {
                 .containsEntry("penalty_type", "PERMANENT_EXPULSION")
                 .containsEntry("by", "CREW");
         assertThat(saved.getMetadata().data()).doesNotContainKey("by_administrator_id");
+    }
+
+    @Test
+    @DisplayName("PartyroomCreatedEvent → PARTYROOM_CREATED row INSERT (host metadata)")
+    void on_PartyroomCreatedEvent_inserts_PARTYROOM_CREATED_row() {
+        PartyroomCreatedEvent event = new PartyroomCreatedEvent(
+                new PartyroomId(1L), 100L, StageType.GENERAL);
+
+        listener.on(event);
+
+        ArgumentCaptor<UserActivityLogData> cap = ArgumentCaptor.forClass(UserActivityLogData.class);
+        verify(repository).save(cap.capture());
+        UserActivityLogData saved = cap.getValue();
+
+        assertThat(saved.getUserAccountId()).isEqualTo(100L);
+        assertThat(saved.getEventType()).isEqualTo(UserActivityEventType.PARTYROOM_CREATED.name());
+        assertThat(saved.getPartyroomId()).isEqualTo(1L);
+        assertThat(saved.getMetadata().data()).containsEntry("stage_type", "GENERAL");
     }
 
     @Test

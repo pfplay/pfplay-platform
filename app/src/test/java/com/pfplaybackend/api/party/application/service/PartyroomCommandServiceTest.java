@@ -15,6 +15,7 @@ import com.pfplaybackend.api.party.domain.entity.data.PartyroomPlaybackData;
 import com.pfplaybackend.api.party.domain.enums.PartyroomStatus;
 import com.pfplaybackend.api.party.domain.enums.QueueStatus;
 import com.pfplaybackend.api.party.domain.enums.StageType;
+import com.pfplaybackend.api.party.domain.event.PartyroomCreatedEvent;
 import com.pfplaybackend.api.party.domain.port.PartyroomAggregatePort;
 import com.pfplaybackend.api.party.domain.value.LinkDomain;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
@@ -89,6 +90,8 @@ class PartyroomCommandServiceTest {
         verify(aggregatePort).savePlaybackState(any(PartyroomPlaybackData.class));
         verify(aggregatePort).saveDjQueueState(any(DjQueueData.class));
         verify(partyroomAccessCommandService).enterByHost(eq(userId), any(PartyroomData.class));
+        // PR 12a G4 — UserActivityLogListener consumes this for PARTYROOM_CREATED audit row.
+        verify(eventPublisher, atLeastOnce()).publishEvent(any(PartyroomCreatedEvent.class));
     }
 
     @Test

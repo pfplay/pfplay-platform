@@ -13,6 +13,7 @@ import com.pfplaybackend.api.party.domain.entity.data.PartyroomData;
 import com.pfplaybackend.api.party.domain.entity.data.PartyroomPlaybackData;
 import com.pfplaybackend.api.party.domain.enums.QueueStatus;
 import com.pfplaybackend.api.party.domain.enums.StageType;
+import com.pfplaybackend.api.party.domain.event.PartyroomCreatedEvent;
 import com.pfplaybackend.api.party.domain.exception.PartyroomException;
 import com.pfplaybackend.api.party.domain.policy.PartyroomCreationPolicy;
 import com.pfplaybackend.api.party.domain.port.PartyroomAggregatePort;
@@ -73,6 +74,12 @@ public class PartyroomCommandService {
         PartyroomData saved = aggregatePort.savePartyroom(partyroom);
         aggregatePort.savePlaybackState(PartyroomPlaybackData.createFor(saved.getPartyroomId()));
         aggregatePort.saveDjQueueState(DjQueueData.createFor(saved.getPartyroomId()));
+
+        // PR 12a — UserActivityLogListener consumes this for PARTYROOM_CREATED row.
+        // spec §5.2 "service 코드 변경 0" 가정은 부정확 — Chunk 7 §12 catch-up.
+        eventPublisher.publishEvent(new PartyroomCreatedEvent(
+                saved.getPartyroomId(), hostId.getUid(), saved.getStageType()));
+
         return saved;
     }
 
