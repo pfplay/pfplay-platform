@@ -49,6 +49,11 @@ spring:
       repositories:
         enabled: false
 
+  servlet:
+    multipart:
+      max-file-size: 4MB
+      max-request-size: 8MB
+
 server:
   tomcat:
     relaxed-query-chars: '[,],|,{,},^,`,<,>'
@@ -165,6 +170,14 @@ app:
     allowed-headers: ${CORS_ALLOWED_HEADERS:*}
     allow-credentials: ${CORS_ALLOW_CREDENTIALS:true}
     max-age: ${CORS_MAX_AGE:3600}
+
+  # 아바타 카탈로그 GCS 업로드 (PR 11). 키 경로 미지정 시 ApplicationDefaultCredentials 사용.
+  avatar:
+    storage:
+      bucket: ${PFPLAY_AVATAR_BUCKET:pfplay-firebase.appspot.com}
+      service-account-path: ${PFPLAY_AVATAR_GCS_KEY_PATH:}
+      base-url-prefix: https://storage.googleapis.com
+      max-file-size-bytes: 2097152   # 2 MiB
 
 ---
 

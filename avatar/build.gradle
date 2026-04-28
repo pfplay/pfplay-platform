@@ -20,6 +20,9 @@ dependencies {
 	// Swagger (SpringDoc OpenAPI 3)
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.4.0'
 
+	// GCS — backend-proxy 업로드 어댑터 (PR 11). Firebase Storage = GCS 동일 백엔드.
+	implementation 'com.google.cloud:google-cloud-storage:2.40.0'
+
 	// Test
 	testImplementation 'org.springframework.security:spring-security-test'
 }
