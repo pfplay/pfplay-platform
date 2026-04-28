@@ -81,6 +81,14 @@ class AdminMemberQueryControllerTest extends AbstractAdminWebMvcTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    @Test
+    @WithMockUser(username = "user", roles = {"USER"})
+    @DisplayName("GET /admin/members/{id} 403 — 인증된 non-admin")
+    void getDetail_authenticatedNonAdmin_returns403() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/members/50"))
+                .andExpect(status().isForbidden());
+    }
+
     // -------- A-1 list --------
 
     @Test
@@ -152,5 +160,13 @@ class AdminMemberQueryControllerTest extends AbstractAdminWebMvcTest {
     void getList_anonymous_returns401() throws Exception {
         mockMvc.perform(get("/api/v1/admin/members"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @WithMockUser(username = "user", roles = {"USER"})
+    @DisplayName("GET /admin/members 403 — 인증된 non-admin")
+    void getList_authenticatedNonAdmin_returns403() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/members"))
+                .andExpect(status().isForbidden());
     }
 }

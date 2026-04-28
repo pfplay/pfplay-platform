@@ -10,6 +10,10 @@ import com.pfplaybackend.api.common.enums.AuthorityTier;
 import com.pfplaybackend.api.common.exception.ExceptionCreator;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -17,6 +21,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -42,9 +47,11 @@ import java.time.LocalDate;
 @RestController
 @RequestMapping("/api/v1/admin/members")
 @RequiredArgsConstructor
+@Validated
 public class AdminMemberQueryController {
 
     private static final int MAX_PAGE_SIZE = 200;
+    private static final String SORT_PATTERN = "created_at_desc|created_at_asc|last_activity_desc";
 
     private final AdminMemberQueryService adminMemberQueryService;
 
@@ -52,26 +59,19 @@ public class AdminMemberQueryController {
     @PreAuthorize("@adminAuth.isAdmin()")
     @GetMapping
     public ResponseEntity<ApiCommonResponse<Page<AdminMemberSummaryResponse>>> getList(
-            @RequestParam(required = false) String email,
+            @RequestParam(required = false) @Size(max = 255) String email,
             @RequestParam(required = false) AuthorityTier tier,
             @RequestParam(name = "joined_from", required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate joinedFrom,
             @RequestParam(name = "joined_to", required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate joinedTo,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size,
-            @RequestParam(defaultValue = AdminMemberListQuery.SORT_CREATED_AT_DESC) String sort
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "50") @Min(1) @Max(MAX_PAGE_SIZE) int size,
+            @RequestParam(defaultValue = AdminMemberListQuery.SORT_CREATED_AT_DESC)
+            @Pattern(regexp = SORT_PATTERN) String sort
     ) {
-        if (size < 1 || size > MAX_PAGE_SIZE) {
-            throw ExceptionCreator.create(AdminMemberException.INVALID_LIST_QUERY);
-        }
-        if (page < 0) {
-            throw ExceptionCreator.create(AdminMemberException.INVALID_LIST_QUERY);
-        }
+        // cross-field 검증은 Bean Validation 표준 부재 — inline 보존
         if (joinedFrom != null && joinedTo != null && joinedFrom.isAfter(joinedTo)) {
-            throw ExceptionCreator.create(AdminMemberException.INVALID_LIST_QUERY);
-        }
-        if (!isValidSort(sort)) {
             throw ExceptionCreator.create(AdminMemberException.INVALID_LIST_QUERY);
         }
 
@@ -88,11 +88,5 @@ public class AdminMemberQueryController {
             @PathVariable Long memberId) {
         return ResponseEntity.ok(ApiCommonResponse.success(
                 adminMemberQueryService.getDetail(memberId)));
-    }
-
-    private static boolean isValidSort(String sort) {
-        return AdminMemberListQuery.SORT_CREATED_AT_DESC.equals(sort)
-                || AdminMemberListQuery.SORT_CREATED_AT_ASC.equals(sort)
-                || AdminMemberListQuery.SORT_LAST_ACTIVITY_DESC.equals(sort);
     }
 }

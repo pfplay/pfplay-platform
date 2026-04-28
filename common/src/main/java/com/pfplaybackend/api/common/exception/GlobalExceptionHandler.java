@@ -3,6 +3,7 @@ package com.pfplaybackend.api.common.exception;
 import com.pfplaybackend.api.common.ApiErrorResponse;
 import com.pfplaybackend.api.common.enums.ExceptionEnum;
 import com.pfplaybackend.api.common.exception.http.*;
+import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -89,6 +90,17 @@ public class GlobalExceptionHandler {
                 .map(fe -> fe.getField() + ": " + fe.getDefaultMessage())
                 .collect(Collectors.joining("; "));
         log.error("Validation failed: {}", detail);
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ApiErrorResponse.of(HttpStatus.BAD_REQUEST, null, detail));
+    }
+
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<ApiErrorResponse> handleConstraintViolation(ConstraintViolationException e) {
+        String detail = e.getConstraintViolations().stream()
+                .map(cv -> cv.getPropertyPath() + ": " + cv.getMessage())
+                .collect(Collectors.joining("; "));
+        log.error("Constraint violation: {}", detail);
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(ApiErrorResponse.of(HttpStatus.BAD_REQUEST, null, detail));
