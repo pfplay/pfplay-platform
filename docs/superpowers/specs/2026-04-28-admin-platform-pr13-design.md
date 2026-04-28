@@ -612,36 +612,59 @@ PR 12b1/12b2 §12 패턴 follow. G1~G5 commit 후 본 섹션을 atomic group마�
 ### 13.1 G1 — V13 마이그 + 도메인
 
 - **G1 commit `2037b1c0`** (8 files, 578 insertions): V13 SQL + PartyroomReportData entity + ReportStatus/ReportCategory enums + AdminReportException + PartyroomReportRepository + 단위 테스트 35건(전체 통과).
-- **G1.1 commit `<SHA pending>`**: code reviewer follow-up — `resolve()` dead defensive branch 삭제(matrix가 PENDING→RESOLVED 차단하므로 도달 불가) + `@Column(length=16/32)` ENUM 컬럼 sibling consistency 보강 + `hold(byAdministratorId)` callsite-symmetry 의도 주석 + resolve/dismiss `resolutionNote` 검증 위치(controller @NotBlank 위임, D3.1) 명시 주석.
+- **G1.1 commit `b0105119`**: code reviewer follow-up — `resolve()` dead defensive branch 삭제(matrix가 PENDING→RESOLVED 차단하므로 `if (this.reviewedByAdministratorId == null) ...` 분기는 도달 불가) + `@Column(length=16/32)` ENUM 컬럼 sibling consistency 보강(PartyroomAdminActionType / UserActivityEventType 등 동형) + `hold(byAdministratorId)` callsite-symmetry 의도 주석(`@SuppressWarnings("unused")` + javadoc — REVIEWING→PENDING 전이는 reviewer id를 보존하므로 인자는 의도적 미사용) + resolve/dismiss javadoc에 D3.1 contract 명시(`resolutionNote` non-blank 검증은 caller(G4 controller/service) 책임이지 도메인 책임 아님 — `RESOLUTION_NOTE_REQUIRED(RPT-003)`는 service-layer guard에서 throw).
 - DDL 변경 deviations: 없음 (schema.md §4.8.1 그대로).
 - **enum 패키지 위치**: `app/src/main/java/com/pfplaybackend/api/administration/domain/enums/` 채택. spec/plan 초안의 `domain/value/`는 misnomer — 기존 administration BC convention 검사 결과 status/category-style enums(`PartyroomAdminActionType`, `AdminActionTargetType`, `AdminPenaltyType`, `BulkActionType`, `UserActivityEventType`)는 모두 `domain/enums/`이고 `domain/value/`는 first-class VO(`AdministratorId`, `AdminRole`, `JsonMetadata*`) 전용. 후속 G2-G4 신규 enum도 `domain/enums/` follow.
-- **BaseEntity**: 미상속 (Plan §3 Option A). V13 DDL은 `created_at`만 보유, `updated_at` 부재. BaseEntity가 audit `updated_at`을 추가하면 Hibernate가 비존재 컬럼 write 시도 → JPA 부트 실패 risk. 엔티티가 자체 `private LocalDateTime createdAt;` 보유 + factory에서 `LocalDateTime.now()` 세팅. spec §4.1 코드 예시는 `extends BaseEntity`로 적혔으나 plan §3가 정정 — plan이 canonical.
-- **`AdminReportException` 단일 enum**: 단일 채택. 7 entries(RPT-001~007) 모두 본 enum에 수용. `PARTYROOM_NOT_FOUND`는 G2 시점에 기존 partyroom BC enum 또는 `AdminException`(ADM-006) 재사용 검토 — G1에서는 별도 추가 안 함.
+- **BaseEntity**: 미상속 (Plan §3 Option A). V13 DDL은 `created_at`만 보유, `updated_at` 부재. BaseEntity가 audit `updated_at`을 추가하면 Hibernate가 비존재 컬럼 write 시도 → JPA 부트 실패 risk(`hbm2ddl.auto=validate` mismatch). 엔티티가 자체 `private LocalDateTime createdAt;` 보유 + factory에서 `LocalDateTime.now()` 세팅. spec §4.1 코드 예시는 `extends BaseEntity`로 적혔으나 plan §3가 정정 — plan이 canonical.
+- **`AdminReportException` 단일 enum**: 단일 채택. 7 entries(RPT-001~007) 모두 본 enum에 수용. `PARTYROOM_NOT_FOUND`는 G2 시점에 기존 partyroom BC enum 또는 `AdminException`(ADM-006) 재사용 검토 — G1에서는 별도 추가 안 함(G2에서 `PartyroomException.NOT_FOUND_ROOM(PTR-001)` 재사용 결정 — §13.2 참조).
 - **Exception interface naming**: spec/plan의 `ExceptionType` + `getCode()`는 misnomer. 실제 ground-truth는 `DomainException` + `getErrorCode()`(예: `AdminMemberException` 패턴). G1 `AdminReportException`도 `implements DomainException` + `getErrorCode()` 사용.
 - **모듈 path correction**: spec/plan은 `administration/src/main/...`로 적혔으나 `administration`은 별 Gradle 모듈 아님 — `app/src/main/java/com/pfplaybackend/api/administration/...` 패키지. 모든 G1 file은 `app` 모듈 안에 land. G2-G4 신규 file도 동일 위치 follow.
 - **JPA ENUM column 매핑**: V13 DDL은 MySQL `ENUM(...)`, 엔티티는 `@Enumerated(STRING) + @Column(length=N)` 사용(V4/V6/V8 precedent). `columnDefinition = "ENUM(...)"` 미사용 — Flyway가 DDL 소유, JPA는 string write/read만 책임. `hbm2ddl.auto=validate` mode에서 안전(prod precedent).
-- **resolutionNote 검증 위치**: 도메인은 빈 note도 영속(D3.1). G4 controller에서 `@NotBlank` 또는 service guard로 강제 — `RESOLUTION_NOTE_REQUIRED(RPT-003)` throw. 도메인 메서드 javadoc에 호출자 책임 명시.
+- **resolutionNote 검증 위치 (D3.1 contract)**: 도메인은 빈 note도 영속. G4 service-layer guard가 `if (target.isTerminal() && isBlank(note)) throw RESOLUTION_NOTE_REQUIRED(RPT-003)` 강제. 도메인 메서드 javadoc(G1.1 polish)에 호출자 책임 명시.
 
 ### 13.2 G2 — C-1 유저 endpoint
 
-- _G2 commit: <SHA pending>_
-- `MemberContext` 실제 API 명칭(`@AuthenticationPrincipal` 형태 / `currentUserId()` 등) deviation:
-- `partyroom.isReportable()` — 신설 OR 기존 메서드 재사용 deviation:
-- description max length 2000 — DTO `@Size` vs DB column constraint 양쪽 적용 여부:
+- **G2 commit `64e2a1c3`**: `PartyroomReportCommandService` + `PartyroomReportCommandController` + `PartyroomReportCreateRequest/Response` DTO + `PartyroomData.isReportable()` 신설 + 24h 중복/self-report/active/Guest 차단 검증 + WebMvc + IT.
+- **G2.1 commit `a2454d09`** (reviewer follow-up polish): `PartyroomRepository` direct injection → `PartyroomAggregatePort` 전환(admin BC 4 service 일관) + Guest/active 검증을 deny-list → allow-list 패턴으로 재작성.
+- **`PartContextAspect` 비-coverage**: administration BC service는 `PartContextAspect` weave 대상 아님 — service 내부에서 `ThreadLocalContext.getAuthContext()` 호출 시 `IllegalStateException` throw. 패턴 정착: auth context 추출은 controller layer에서 수행하고 primitive args(reporterTier, reporterUserAccountId)로 service에 전달.
+- **Auth 추출 — Member context**: controller가 `SecurityContextHolder.getContext().getAuthentication()`를 read → `CustomJwtAuthenticationToken`으로 cast → `getUserId().getUid()` (Long) + `getAuthorityTier()` 추출. service signature: `create(Long partyroomId, PartyroomReportCreateRequest request, AuthorityTier reporterTier, Long reporterUserAccountId)` (4-arg). spec/plan의 `MemberContext` 추상 명칭 — 실제로는 별 추상 없이 primitive 2개로 분해.
+- **`PartyroomData.getHostId()` 반환 타입**: `UserId` (Long 직접 아님). Self-report 비교는 `partyroom.getHostId().getUid().equals(reporterUserAccountId)`로 unwrap.
+- **`PartyroomStatus` enum**: 3 값(`ACTIVE`, `SUSPENDED`, `TERMINATED`). spec §3.1의 "비-active" 표현이 모호했으나 ground-truth 결정.
+- **`PartyroomData.isReportable()` 신설** (party module 내부, non-breaking pure-read): allow-list — `status == ACTIVE`만 reportable. G2.1 polish에서 deny-list(`status != TERMINATED && status != SUSPENDED`) → allow-list로 전환 — future status 추가 시 안전(default 거부).
+- **`PARTYROOM_NOT_FOUND` exception 재사용**: 신설 안 함. `PartyroomException.NOT_FOUND_ROOM(PTR-001)` party BC enum 재사용 — cross-context loose-ref read 패턴이라 administration BC가 party BC exception을 import해도 layered violation 아님(read-only). `AdminReportException`에 추가하지 않음.
+- **Guest 차단 — service-layer guard + party BC exception 재사용**: `if (reporterTier != AuthorityTier.AM && reporterTier != AuthorityTier.FM) throw PartyroomException.RESTRICTED_AUTHORITY(PTR-005)` — 별 SpEL bean(`@memberAuth.isMember()`) 신설 안 함. allow-list 패턴(G2.1 polish) — Guest/Anonymous 외 future tier 추가 시 안전 default 거부.
+- **`PartyroomAggregatePort` 사용 (G2.1)**: `AdminPartyroomCommandService` / `AdminPartyroomQueryService` / `AdminCrewPenaltyCommandService` precedent — 4개 admin service가 일관 port 경유. 직접 `PartyroomRepository` 주입은 admin BC 외부 의존성 노출 + 테스트 stubbing 비대칭이라 회피.
+- **WebMvc test scaffolding**: `PartyroomReportCommandController`은 user-facing endpoint이므로 `AbstractAdminWebMvcTest` 미상속. bespoke `TestSecurityConfig` 사용(authenticated Member + Guest 차단 시나리오 직접 wire).
+- **IT cleanup pattern**: PR 12b2 `deleteAll()` unscoped 패턴 follow — V5 super-admin SEED은 `administrator` 테이블에 land하지 `member`/`user_account`에 영향 없음을 verify. `partyroom_report` / `partyroom` / `member` / `user_account` 4 테이블 unscoped delete 안전.
+- description max length 2000 — DTO `@Size(max=2000)` 적용. DB column은 `TEXT`(64KB)이므로 column-level constraint 별도 추가 안 함 — `@Size`가 first line of defense.
 
 ### 13.3 G3 — C-2 list/detail
 
-- _G3 commit: <SHA pending>_
-- Cross-context loose-ref read 4종 — repository 명칭 / API 시그니처 deviations:
-- list 응답 envelope (Spring `Page<>` JSON shape — `content`/`pageable`/`totalElements`)이 PR 12b1 `AdminMemberQueryController`와 일관한지:
-- detail 응답 nested DTO 패키지 위치:
-- orphan tolerance — 부재 시 응답 필드 형태(null vs `{}` empty object) 결정:
+- **G3 commit `d14fc603`**: `AdminReportQueryService` + `AdminReportQueryController` + `AdminReportSummaryResponse` + `AdminReportDetailResponse`(nested Reporter/Partyroom/Host/Review records) + `AdminReportListQuery` + `PartyroomReportRepository` QueryDSL impl + cross-context loose-ref read 4종(member×2, userAccount, partyroom) + WebMvc + IT.
+- **G3.1 commit `ab460fae`** (reviewer follow-up polish): `createdTo` 종일 inclusion 경계 IT 2건 추가 + `SORT_PATTERN` 상수 통합(controller가 `AdminReportListQuery.SORT_PATTERN` import — 이전엔 controller-private 중복).
+- **`MemberRepository.findByUserAccountId(Long)`**: Spring Data method query를 JpaRepository에 직접 추가 — 별 `@Query` JPQL 불필요. spec §3.3의 `findByUserAccountId(...)` 표현 그대로.
+- **MemberData → nickname 접근 경로**: `member.getProfileData().getBio().getNicknameValue()`. `Bio.getNicknameValue()`가 내부 null-safe(profileData 존재 + bio 존재 가정)이지만 service는 `profileData == null` / `bio == null` 외부 null 가드를 추가(profile 미시드 fixture 케이스 tolerance).
+- **`QPartyroomReportData` Q-class 위치**: 프로젝트-wide QueryDSL annotation processor가 자동 생성 — `app/build/generated/sources/annotationProcessor/java/main/com/pfplaybackend/api/administration/domain/entity/data/QPartyroomReportData.java`. build script 변경 0(precedent: `QAdminMemberData` / `QPartyroomData` 동형).
+- **`AdminReportListQuery` placement**: `app/.../administration/adapter/in/web/dto/AdminReportListQuery.java` (PR 12b1 `AdminMemberListQuery` mirror). controller-bound Bean Validation record.
+- **`AdminReportListQuery` `sortKey` 필드 미포함**: controller가 `Pageable.Sort`를 직접 build해서 service에 pass(service signature는 Pageable 수용). repo는 `pageable.getSort().getOrderFor("createdAt")`로 derive. `SORT_CREATED_AT_DESC/ASC` 상수는 record class에 거주 — controller import 가능.
+- **`createdTo` upper bound 의미론**: `createdAt < createdTo.plusDays(1).atStartOfDay()` — 종일(end-of-day) inclusive. `2026-04-28` 입력 시 `2026-04-28T23:59:59`까지의 row 포함. spec/plan은 단지 "LocalDate" optional만 명시 — G3 implementer가 inclusive UX 채택.
+- **`PartyroomReportRepositoryImpl` packaging**: `app/.../administration/adapter/out/persistence/impl/PartyroomReportRepositoryImpl.java`(`AdminMemberQueryRepositoryImpl`, `AdminPartyroomQueryRepositoryImpl` mirror). `adapter/out/persistence/` 하위 `impl/` 서브패키지 convention follow.
+- **Orphan tolerance — nested record always built, internal nullable**: spec §5는 "응답 필드 null"만 명시. ground-truth 결정: nested `Reporter` / `Partyroom` / `Host` / `Review` record 자체는 항상 build(except: Host는 `partyroom.hostId == null` 시 전체 null), internal 필드(email, nickname, title 등)만 individually nullable. 503 fail-fast 안 함 — cross-context entity 누락은 normal(탈퇴/룸 종료).
+- **`buildDetailResponse(PartyroomReportData)` 가시성**: `public` (G3 구현 시점에 G4 PATCH 응답 재사용 의도). spec §5(b) 채택 — Command service가 Query service inject. BC 내부 service-to-service 결합은 PR 12b1 precedent(`AdminMemberCommandService` ↔ `AdminMemberQueryService`).
+- **list 응답 envelope**: PR 12b1 `AdminMemberQueryController`와 동일한 `ApiCommonResponse<Page<AdminReportSummaryResponse>>` shape (Spring `Page<>` JSON `content` / `pageable` / `totalElements` / `totalPages` / `size` / `number` 그대로).
+- **G3.1 polish: 2 IT cases 추가** — `createdTo`가 입력 day end-of-day까지 inclusive(boundary case) + date-range 필터 happy/exclusion. `SORT_PATTERN` controller-private 중복을 `AdminReportListQuery.SORT_PATTERN` 단일 상수로 consolidate(reviewer 권고).
+- **MockitoExtension strict-stubbing trap**: `Mockito.when(...)` 호출이 outer `BDDMockito.given(...)` chain 안에 nested되면 `UnfinishedStubbingException` throw. 우회: mock-bearing 중간 값들을 outer `given(...)` 호출 *전*에 build해서 변수에 저장 후 stubbing chain은 한 단계만 — `AdminReportQueryServiceTest` cross-context mock 다중 케이스에서 발견.
 
 ### 13.4 G4 — C-2 PATCH
 
-- _G4 commit: <SHA pending>_
-- `AdminReportQueryService.buildDetailResponse(report)` public method 추출 deviations:
-- `from == to` no-op 거부 메시지 형태(`message`에 status 노출):
+- **G4 commit `56686ce3`**: `AdminReportCommandService` + `AdminReportCommandController` + `AdminReportStatusUpdateRequest` DTO + `RESOLUTION_NOTE_REQUIRED(RPT-003)` service-layer guard + 4 transition switch dispatch + `AbstractAdminWebMvcTest` 등록 확장 + WebMvc + IT 10건.
+- **`AdminContext`는 service-field, NOT method-parameter**: PR 12b2 `AdminMemberTierCommandService` mirror. controller는 `AdminContext`를 inject 안 함. service signature: `changeStatus(Long reportId, AdminReportStatusUpdateRequest request)` (2-arg). service field로 `private final AdminContext adminContext;`. spec §3.4 코드 예시는 `(reportId, req, ctx)` 3-arg로 적혔으나 PR 12b2 정착 패턴이 canonical.
+- **IT 어드민 시드 — `@MockBean AdminContext`**: `given(adminContext.currentAdministratorId()).willReturn(ADMIN_ID)` 패턴으로 SecurityContext 우회. `AdminMemberTierCommandServiceIT` mirror — `@WithMockUser` + `SecurityContextHolder` 직접 stub 없이 service-layer가 보는 `AdminContext`만 모킹.
+- **D3.2 reviewer-preservation IT**: 별 admin id 분리(`FIRST_REVIEWER_ADMIN_ID = 88L`은 JPQL로 직접 시드 — REVIEWING entry 시점 set / `ADMIN_ID = 99L`은 `@MockBean AdminContext`가 반환). REVIEWING→RESOLVED와 REVIEWING→PENDING(hold) 시나리오 모두에서 `report.getReviewedByAdministratorId() == 88L`로 보존 검증 — 두 번째 검토 admin이 first reviewer를 덮어쓰지 않음.
+- **IT 케이스 수 = 10** (plan 추정 ~8): G4 implementer가 DISMISSED→REVIEWING terminal-rejection 1건과 RESOLVED→DISMISSED 1건을 추가 — RESOLVED/DISMISSED 두 terminal 모두에서 invalid transition reject가 symmetric하게 cover되도록 보강.
+- **`save(report)` 명시 — defensive flush rationale**: JPA dirty-checking이 `@Transactional` 종료 시 자동 flush하므로 `save()`는 redundant — but G4는 *의도적으로 explicit save* 호출. 이유: (1) 순서 문서화(mutation → flush → cross-context query in `buildDetailResponse`), (2) 동일 트랜잭션 내 이후 cross-context read가 fresh state 보장, (3) reader가 transition → audit row 갱신 흐름을 명시적으로 인지.
+- **`from == to` no-op 거부 메시지**: `INVALID_STATE_TRANSITION(RPT-002)` enum의 default message에 from/to status는 노출하지 않음(현재 `ApiErrorResponse` shape이 detail params 미지원 — PR 12b2 `TIER_UNCHANGED` 패턴 일관). 향후 reviewer 권고 시 detail params 확장 검토.
+- **`buildDetailResponse(report)` 재사용**: G3에서 `public`으로 노출된 `AdminReportQueryService.buildDetailResponse(PartyroomReportData)`를 Command service가 inject + 호출 — PATCH 200 응답이 GET /admin/reports/{id}와 동일 shape 보장.
 
 ### 13.5 G5 — spec §12 catch-up + features.md 정정
 
@@ -652,7 +675,24 @@ PR 12b1/12b2 §12 패턴 follow. G1~G5 commit 후 본 섹션을 atomic group마�
 
 ### 13.6 Deviations / ground-truth 정정 (implementer 발견)
 
-(PR 12b2 §12.5 패턴 follow — 빌드 중 발견되는 spec과 ground-truth 불일치 모두 본 섹션에 기록)
+PR 12b2 §12.5 패턴 follow — 모든 chunk별 deviation은 §13.1~§13.4에 inline 기록. 본 절은 cross-chunk 공통 패턴 + index 역할.
+
+- **모듈 / 패키지 명명 정정** (G1 발견, G2-G4 follow): `administration`은 `app` Gradle 모듈 내부 package. spec/plan의 `administration/src/main/...`는 misnomer. 모든 PR 13 file은 `app/src/main/java/com/pfplaybackend/api/administration/...` 거주. → §13.1
+- **enum 패키지 — `domain/enums/`** (sibling convention): `domain/value/`는 first-class VO 전용. → §13.1
+- **Exception interface — `DomainException` + `getErrorCode()`**: spec/plan의 `ExceptionType` + `getCode()`는 misnomer. → §13.1
+- **Auth context 추출 패턴**: `PartContextAspect`가 administration BC service를 weave하지 않음 → controller layer에서 SecurityContext read + primitive args로 service에 전달. user-facing(C-1)은 `CustomJwtAuthenticationToken`, admin(C-2)은 `AdminContext` (service-field). → §13.2 / §13.4
+- **Cross-context exception 재사용 (read-only loose-ref)**: party BC `PartyroomException.NOT_FOUND_ROOM(PTR-001)` / `RESTRICTED_AUTHORITY(PTR-005)` 재사용. `AdminReportException`에는 추가 안 함. → §13.2
+- **`PartyroomData.getHostId()` 반환 타입**: `UserId` (Long unwrap via `.getUid()` 필요). → §13.2
+- **`PartyroomData.isReportable()` 신설** (allow-list `status == ACTIVE`, G2.1 polish 후): party module 내부, non-breaking pure-read 메서드. → §13.2
+- **`PartyroomAggregatePort` 채택 (G2.1 polish)**: admin BC 4 service 일관 — direct `PartyroomRepository` 주입 회피. → §13.2
+- **Cross-context loose-ref 4종 read 시그니처**: `MemberRepository.findByUserAccountId(Long)` Spring Data method query / nickname access는 `member.getProfileData().getBio().getNicknameValue()` (외부 null 가드 포함). → §13.3
+- **Orphan tolerance shape**: nested record 자체는 항상 build, internal 필드만 nullable (Host record는 hostId null 시 전체 null). → §13.3
+- **`createdTo` end-of-day inclusive** (`< plusDays(1).atStartOfDay()`): UX 결정. → §13.3
+- **`AdminReportListQuery.sortKey` 필드 미포함**: controller가 Pageable.Sort build, service는 Pageable 수용. → §13.3
+- **`buildDetailResponse(report)` public method**: G3에서 G4 재사용 의도로 노출. → §13.3 / §13.4
+- **`AdminContext`는 service-field, NOT method-parameter**: PR 12b2 mirror. service signature 2-arg. → §13.4
+- **save(report) 명시는 defensive flush** (mutation → cross-context query 순서 문서화). → §13.4
+- **MockitoExtension strict-stubbing trap**: outer `given(...)` chain 안에 `when(...)` nested 회피. → §13.3
 
 ### 13.7 Future polish 잔존
 
@@ -667,6 +707,13 @@ PR 12b1/12b2 §12 패턴 follow. G1~G5 commit 후 본 섹션을 atomic group마�
 - Optimistic lock(version) — 동시 어드민 race 방지.
 - Description content sanitization (XSS / abuse).
 - Report metrics dashboard (E-2 metrics).
+
+#### Deferred reviewer follow-ups (PR 13 시점 미흡수, future PR 후보)
+
+- **G1 M1**: `hold(byAdministratorId)` 인자 callsite-symmetry 의도 — javadoc + `@SuppressWarnings("unused")`로 표현했으나 reviewer는 별 메서드 분리(`hold()` no-arg) 또는 record 패턴(`HoldRequest`)을 권고. 현 채택은 sibling 메서드(startReview/resolve/dismiss)와 시그니처 대칭 우선.
+- **G2 M3**: `ReporterContext` 추상화(reporterTier + reporterUserAccountId 묶음 record) — 현재는 service 4-arg primitive. controller-layer에서 추출 책임이 분산되므로 record 도입 시 인터페이스 안정성 +. PR 14 프런트 진입 후 user-facing endpoint가 추가될 때 상위 패턴으로 reconsider.
+- **G3 M2-M7**: cosmetic — (M2) `AdminReportListQuery` Bean Validation message i18n 키 / (M3) `Sort.Order` factory를 record 정적 메서드로 / (M4) `buildDetailResponse` 응답 record를 outer class assembler로 분리 / (M5) repo `BooleanExpression` null-safe wrapper 유틸 / (M6) `MemberRepository.findByUserAccountId` projection으로 nickname-only fetch / (M7) WebMvc test의 `@WithMockUser` 대신 `JwtMockBeanFactory` 도입. 모두 acceptable-as-is.
+- **G4 M1-M4**: cosmetic — (M1) `INVALID_STATE_TRANSITION` exception detail에 from/to enum 노출 (`ApiErrorResponse` shape 확장 필요) / (M2) `RESOLUTION_NOTE_REQUIRED` 검증을 controller `@AssertTrue` validator로 / (M3) IT 10건의 fixture 시드 helper builder 패턴 도입 / (M4) `save(report)` 호출을 javadoc 주석으로 의도 노출. 모두 acceptable-as-is.
 
 ---
 

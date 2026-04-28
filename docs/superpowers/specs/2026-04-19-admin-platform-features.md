@@ -256,25 +256,50 @@ Request:
 
 **API**: `POST /api/v1/partyrooms/{partyroomId}/reports`
 
-권한: 인증된 Member (크루)
+**권한**: 인증된 Member (크루) — Guest는 service-layer guard로 차단(allow-list `tier ∈ {AM, FM}`) → `PartyroomException.RESTRICTED_AUTHORITY(PTR-005)` 403.
 
-Request: `{ "category": "HARASSMENT", "description": "..." }`
+Request: `{ "category": "HARASSMENT", "description": "..." }` (description `@Size(max=2000)`)
 
-처리:
-- 해당 partyroom active인지 확인
-- `partyroom_report` INSERT status=PENDING
-- 신고자(reporterUserAccountId) 동일 룸 동일 카테고리 24h 내 중복 신고 방지 (unique constraint 또는 앱 검증)
+**처리 순서**:
+1. `partyroom = partyroomAggregatePort.findById(partyroomId)` — 부재 → `PartyroomException.NOT_FOUND_ROOM(PTR-001)` 404 (party BC enum cross-context 재사용, `AdminReportException`에 추가 안 함).
+2. `if (!partyroom.isReportable()) throw PARTYROOM_NOT_REPORTABLE(RPT-005)` 400 — `isReportable()`은 allow-list `status == ACTIVE`만 true (party module pure-read 메서드).
+3. `if (partyroom.getHostId().getUid().equals(reporterUserAccountId)) throw SELF_REPORT_FORBIDDEN(RPT-006)` 400 — D2 결정. `getHostId()` 반환 타입은 `UserId` 이므로 `.getUid()` unwrap 필수.
+4. **24h 중복 방지 — 앱 검증 채택 (D1)**: `if (reportRepository.existsByReporter...CreatedAtAfter(reporterUserAccountId, partyroomId, category, now-24h)) throw DUPLICATE_REPORT(RPT-007)` 400. DB unique constraint 추가 안 함 — race window는 ms 단위로 audit 영향 미미.
+5. `partyroom_report` INSERT status=PENDING.
 
-응답: 201 + `{ "reportId": 123 }`
+**응답**: 201 + `{ "reportId": 123 }`
 
 #### C-2. 어드민 신고 목록/검토
 
-**API**: 
-- `GET /api/v1/admin/reports?status=PENDING` — 목록
-- `GET /api/v1/admin/reports/{reportId}` — 상세 (신고자 프로필 정보 + 룸 정보)
+**API**:
+- `GET /api/v1/admin/reports?status=...&category=...&createdFrom=...&createdTo=...&page=...&size=...&sort=...` — 목록
+- `GET /api/v1/admin/reports/{reportId}` — 상세 (신고자 프로필 정보 + 룸 정보 cross-context join)
 - `PATCH /api/v1/admin/reports/{reportId}` — status 전이
 
-Status 전이 요청 예:
+**list 필터**: `status` (List, optional), `category` (List, optional), `createdFrom`/`createdTo` (LocalDate, optional, **inclusive of end-of-day** — `createdAt < createdTo.plusDays(1).atStartOfDay()`), `page` (`@Min(0)`, 기본 0), `size` (`@Min(1) @Max(200)`, 기본 50), `sort` (`@Pattern("created_at_desc|created_at_asc")`, 기본 desc).
+
+**list cross-field 검증**: `createdFrom > createdTo` → `INVALID_LIST_QUERY(RPT-004)` 400 (PR 12b2 `INVALID_LIST_QUERY` 패턴 일관).
+
+**list 응답 — cross-context join 미포함 (D7)**: summary는 raw fields(`reporterUserAccountId`, `partyroomId`, `category`, `status`, `createdAt`, `reviewedByAdministratorId`, `resolvedAt`)만. nickname/email/title 등은 detail에서. 성능 + N+1 회피.
+
+**detail 응답 — cross-context loose-ref join 4종**: reporter member nickname (`MemberRepository.findByUserAccountId`) + reporter UserAccount email + partyroom title + host member nickname. **Orphan tolerance**: nested record(`Reporter`/`Partyroom`/`Host`/`Review`) 자체는 항상 build, internal 필드만 nullable (단 Host는 `partyroom.hostId == null` 시 record 전체 null).
+
+**PATCH Body**: `{ "status": "RESOLVED" | "REVIEWING" | "DISMISSED" | "PENDING", "resolutionNote": "..." }`.
+
+**PATCH 응답 shape**: 200 + `AdminReportDetailResponse` — GET /admin/reports/{reportId}와 **동일 shape** (cross-context join 4종 포함). PATCH가 mutation 후 detail을 재구성해 응답하므로 어드민 UI가 단일 호출로 갱신 상태 + 풍부한 컨텍스트 확보.
+
+**전이 매트릭스 (D3) — 5 transitions만 허용**:
+- `PENDING → REVIEWING / DISMISSED`
+- `REVIEWING → RESOLVED / DISMISSED / PENDING(hold)`
+- terminal(RESOLVED/DISMISSED) 변경 금지. PENDING→RESOLVED skip 금지. `from == to` 거부 → `INVALID_STATE_TRANSITION(RPT-002)` 400.
+
+**`resolutionNote` 검증 (D3.1)**: terminal 진입(RESOLVED/DISMISSED) 시 service-layer에서 non-blank 강제 → `RESOLUTION_NOTE_REQUIRED(RPT-003)` 400. 도메인 메서드는 빈 note도 영속(검증 위치는 caller 책임 — javadoc 명시).
+
+**Audit 메타 set 시점**:
+- `reviewedByAdministratorId`: 첫 PATCH (REVIEWING 진입 OR PENDING→DISMISSED 직접) 시 set. 이후 hold(REVIEWING→PENDING)에서도 **보존** — 누가 검토했는지 audit 가시 (D3.2). 두 번째 검토 admin이 first reviewer를 덮어쓰지 않음.
+- `resolvedAt`: terminal 진입(RESOLVED/DISMISSED) 시 set. hold로 PENDING 회귀 시 null 유지(애초 terminal 진입 안 한 상태이므로 자연).
+
+**Status 전이 요청 예**:
 ```json
 {
   "status": "RESOLVED",
@@ -282,9 +307,9 @@ Status 전이 요청 예:
 }
 ```
 
-처리:
-- `status` 업데이트, `reviewedByAdministratorId` + `resolvedAt` 세팅
-- `ReportStatusChanged` 이벤트 발행 (필요 시)
+**`ReportStatusChanged` 이벤트 — 미발행 (D4)**: 현 시점 consumer 0. `user_activity_log`(user-centric) / `partyroom_admin_action`(partyroom lifecycle용) 모두 신고 status 전이를 audit 대상으로 보지 않음. consumer 도입 시 future PR로 evolve.
+
+**`partyroom_admin_action` 미기록 (D5)**: `partyroom_report` 자체가 audit 테이블 — `reviewedByAdministratorId` + `resolvedAt` + `resolutionNote` + status 보유. 신고 status 전이는 partyroom의 lifecycle이 아닌 신고의 lifecycle. 중복 audit 회피.
 
 #### C-3. 금지어 관리
 

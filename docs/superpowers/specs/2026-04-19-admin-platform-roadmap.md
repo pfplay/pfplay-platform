@@ -22,8 +22,8 @@
 | **PR 9** | V8 penalty history punisher_type + 어드민 페널티 경로 (B-7) | V8 | 8 | M |
 | **PR 10** 🆕 | **Avatar 모듈 스캐폴드 + V12 + 엔티티 이관.** 신규 `avatar` Gradle 모듈 생성, `AvatarBody/FaceResourceData` + VO + 레포 user→avatar 이관, `AvatarIconResourceData`/`PairType` 삭제. V12로 icon_uri 흡수 + lifecycle + 감사 컬럼 + face.obtainable_type. `user` 모듈 서비스/레포가 avatar 모듈 포트 경유하도록 내부 재배선 (외부 계약 불변). settings.gradle 수정. | V12 | 8 | **XL** |
 | **PR 11** 🆕 | **Avatar 어드민 CRUD + GCS 업로드 + 감사 리스너.** `AdminAvatarCommandController/QueryController`, `AvatarCatalogCommandService/QueryService`, `GcsAvatarStorageAdapter` (google-cloud-storage SDK), 아이콘 전용 재업로드 엔드포인트, Administration 리스너가 `AvatarResourcePublished/Retired` 소비 → `admin_action` 기록. SUPER_ADMIN 권한 가드 (§5 adminAuth bean). | — | 10 (+ 8의 admin_action) | **L** |
-| **PR 12** (←10) | V10 user_activity_log (partitioned) + event listeners + member 관리 API (A-1~A-4) | V10 | 8 | L |
-| **PR 13** (←11) | V13 partyroom_report + 유저용 신고 API + 어드민 검토 API (C-1~C-2) | V13 | 12 | M |
+| **PR 12** (←10) ✅ | V10 user_activity_log (partitioned) + event listeners + member 관리 API (A-1~A-4) | V10 | 8 | L |
+| **PR 13** (←11) ✅ | V13 partyroom_report + 유저용 신고 API + 어드민 검토 API (C-1~C-2) | V13 | 12 | M |
 | **PR 14** (←12) | pfplay-admin (프런트엔드 — 별 레포) — 로그인 + 보호 라우트 + AuthStore + 유저/룸 목록 + **Avatar 관리 UI** (§6.I-10) | — | 4 (admin login API) + 11 (Avatar API) | **XL** |
 
 ### 9.2 PR 의존 그래프
@@ -82,7 +82,7 @@ Avatar PR 10-11은 PR 9 이후에 들어간다. 이유:
 - **M2 (PR 4-6)**: 어드민 로그인 + 어드민 CRUD — 최소 어드민 자체 관리 가능
 - **M3 (PR 7-9)**: 파티룸 운영 도구 — 상태/flag/페널티 관리
 - **M4 🆕 (PR 10-11)**: Avatar BC + 아바타 리소스 관리 — 과금 기반 스키마/운영 도구 완성 (실제 과금/엔타이틀먼트는 별 마일스톤)
-- **M5 (PR 12-13)**: 유저 관리 + 활동 로그 + 신고 시스템
+- **M5 (PR 12-13) ✅**: 유저 관리 + 활동 로그 + 신고 시스템 — 완료
 - **M6 (PR 14)**: pfplay-admin 프런트엔드 배포 → 실제 사용 가능한 어드민 플랫폼 완성
 
 각 Milestone은 독립 가치 있으므로 중간 배포 가능.
