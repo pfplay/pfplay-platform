@@ -22,7 +22,10 @@ import java.util.concurrent.ThreadPoolExecutor;
 @EnableAsync
 public class AsyncConfig {
 
-    @Bean(name = "userActivityLogExecutor")
+    /** UserActivityLogListener `@Async` qualifier — 컴파일 타임 linkage. */
+    public static final String UAL_EXECUTOR_BEAN = "userActivityLogExecutor";
+
+    @Bean(name = UAL_EXECUTOR_BEAN)
     public ThreadPoolTaskExecutor userActivityLogExecutor() {
         ThreadPoolTaskExecutor exec = new ThreadPoolTaskExecutor();
         exec.setCorePoolSize(2);

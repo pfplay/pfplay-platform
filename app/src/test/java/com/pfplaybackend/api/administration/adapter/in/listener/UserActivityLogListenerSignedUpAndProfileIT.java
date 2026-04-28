@@ -36,6 +36,8 @@ class UserActivityLogListenerSignedUpAndProfileIT extends AbstractIntegrationTes
     @Test
     @DisplayName("회원가입 시 SIGNED_UP row 1건 INSERT (async, ≤5s)")
     void registerMember_inserts_SIGNED_UP_row() {
+        // MemberSignService.getMemberOrCreate는 @Transactional — 그 TX 경계에 AFTER_COMMIT listener가 hangs.
+        // @Transactional 제거 시 listener 무동작 → 본 IT가 timeout으로 fail (silent drop 아님).
         memberSignService.getMemberOrCreate("ual-test@example.com", ProviderType.GOOGLE);
 
         Awaitility.await()

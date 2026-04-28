@@ -4,6 +4,7 @@ import com.pfplaybackend.api.administration.adapter.out.persistence.UserActivity
 import com.pfplaybackend.api.administration.domain.entity.UserActivityLogData;
 import com.pfplaybackend.api.administration.domain.enums.UserActivityEventType;
 import com.pfplaybackend.api.administration.domain.value.JsonMetadata;
+import com.pfplaybackend.api.common.config.AsyncConfig;
 import com.pfplaybackend.api.user.domain.event.MemberRegisteredEvent;
 import com.pfplaybackend.api.user.domain.event.UserProfileChangedEvent;
 import lombok.RequiredArgsConstructor;
@@ -37,7 +38,7 @@ public class UserActivityLogListener {
     private final UserActivityLogRepository repository;
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
-    @Async("userActivityLogExecutor")
+    @Async(AsyncConfig.UAL_EXECUTOR_BEAN)
     public void on(MemberRegisteredEvent e) {
         Map<String, Object> meta = new HashMap<>();
         meta.put("provider", e.getProviderType().name());
@@ -46,7 +47,7 @@ public class UserActivityLogListener {
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
-    @Async("userActivityLogExecutor")
+    @Async(AsyncConfig.UAL_EXECUTOR_BEAN)
     public void on(UserProfileChangedEvent e) {
         Map<String, Object> meta = new HashMap<>();
         meta.put("change_type", e.getChangeType().name());
@@ -57,6 +58,7 @@ public class UserActivityLogListener {
     /**
      * 공통 INSERT 헬퍼 — drop-가능 정책 (try/catch swallow).
      * `@Async` thread context이므로 throw해도 publisher에 전파 안 됨 — 명시적 swallow.
+     * `Throwable`이 아닌 `Exception`만 잡아 `Error`(OOM 등)는 그대로 전파한다.
      */
     private void log(Long userAccountId, UserActivityEventType type,
                      Long partyroomId, JsonMetadata meta, LocalDateTime occurredAt) {
