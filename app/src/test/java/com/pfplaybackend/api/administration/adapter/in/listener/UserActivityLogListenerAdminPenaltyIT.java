@@ -81,6 +81,8 @@ class UserActivityLogListenerAdminPenaltyIT extends AbstractIntegrationTest {
 
     @AfterEach
     void cleanup() {
+        // listener는 @Async — 본 test의 Awaitility wait가 통과한 시점이면 핸들러 thread가
+        // user_activity_log INSERT를 완료한 상태이므로 cleanup-vs-late-INSERT race 없음.
         transactionTemplate.executeWithoutResult(status -> {
             userActivityLogRepository.deleteAll();
             auditRepository.deleteAll();

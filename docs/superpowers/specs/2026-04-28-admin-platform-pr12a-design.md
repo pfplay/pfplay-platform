@@ -547,8 +547,7 @@ listener 메서드 try/catch + ERROR 로그. `@Async`라 throw해도 caller(publ
   - 비즈니스 service 호출(`MemberSignService.register*`, `PartyroomCommandService.createGeneralPartyRoom`, `AdminLoginService.login`, etc.) → user_activity_log row 누적 (await 최대 5초).
   - `repository.save` mock으로 throw → 비즈니스는 commit 정상, ERROR 로그만.
 - **`AsyncConfig` bean 검증** — `ThreadPoolTaskExecutor` bean이 `userActivityLogExecutor` 이름으로 등록 + core / max / queue / policy 값.
-- **PR 9 IT 갱신 (`AdminCrewPenaltyCommandServiceIT`)** — `AdminCrewPenalizedEvent` payload에 `punishedUserAccountId` 검증 추가.
-- **`PartyroomAdminActionListenerIT`** (PR 8) — `punishedUserAccountId` 추가 인자에 따른 fixture 갱신 (event 생성 시그니처 변경 cover).
+- **PR 9 IT 갱신** — 구현 단계에서 inspection 결과 `AdminCrewPenaltyCommandServiceIT`는 event payload를 capture하지 않고 `partyroom_admin_action` / `crew_penalty_history` 테이블 row만 검증함 → 별도 갱신 불필요. `punishedUserAccountId` 검증은 `AdminCrewPenaltyCommandServiceTest`(unit, ArgumentCaptor) + 신규 `UserActivityLogListenerAdminPenaltyIT`(end-to-end)로 이중 cover. `PartyroomAdminActionListenerIT`도 `commandService.terminate/setDisplayFlag/...` 경유라 event 직접 생성 부재 → 갱신 불필요. 단 `PartyroomAdminActionListenerTest`(unit)는 event 생성 fixture 보유 → 7-arg constructor cascade 갱신.
 
 ### 8.3 ArchUnit
 
