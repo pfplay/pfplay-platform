@@ -9,6 +9,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.Objects;
 
 /**
  * user_activity_log row mapping (V10).
@@ -50,14 +51,22 @@ public class UserActivityLogData {
     private Long partyroomId;
 
     @Convert(converter = JsonMetadataConverter.class)
-    @Column(name = "metadata", columnDefinition = "json")
+    @Column(name = "metadata", columnDefinition = "JSON")
     private JsonMetadata metadata;
 
+    /**
+     * Append-only audit row 생성. listener가 비즈니스 commit 후 호출.
+     * `userAccountId`/`eventType`/`occurredAt`은 NOT NULL이라 호출자가 반드시 채워야 한다.
+     * `partyroomId`/`metadata`는 nullable (룸 무관 이벤트 + metadata 없는 이벤트 허용).
+     */
     public static UserActivityLogData of(Long userAccountId,
                                          UserActivityEventType eventType,
                                          Long partyroomId,
                                          JsonMetadata metadata,
                                          LocalDateTime occurredAt) {
+        Objects.requireNonNull(userAccountId, "userAccountId required");
+        Objects.requireNonNull(eventType, "eventType required");
+        Objects.requireNonNull(occurredAt, "occurredAt required");
         UserActivityLogData d = new UserActivityLogData();
         d.userAccountId = userAccountId;
         d.eventType = eventType.name();

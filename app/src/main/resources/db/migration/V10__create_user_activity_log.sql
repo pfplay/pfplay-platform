@@ -7,6 +7,10 @@
 -- Append-only audit timeline. 월별 RANGE 파티셔닝.
 -- 모든 user_account 참조는 loose ref (cross-context, no FK).
 -- p_future MAXVALUE는 partition 자동 생성 배치 부재 시 안전망.
+--
+-- PRIMARY KEY는 (log_id, occurred_at) — MySQL partitioned table 요구사항.
+-- log_id는 AUTO_INCREMENT로 글로벌 유일하므로 JPA 매핑은 log_id 단독 @Id로 처리
+-- (Hibernate가 @IdClass + IDENTITY 조합을 거부함). UserActivityLogData Javadoc 참조.
 -- =====================================================
 
 CREATE TABLE user_activity_log (
