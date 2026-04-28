@@ -106,6 +106,33 @@ class AdminEndpointSecurityTest extends AbstractIntegrationTest {
                 .andExpect(status().is(Matchers.not(Matchers.isOneOf(401, 403))));
     }
 
+    // -------- /api/v1/admin/avatar/** (→ ROLE_SUPER_ADMIN, PR 11) --------
+
+    @Test
+    @WithAnonymousUser
+    void anonymousRequest_toAvatarAdminEndpoint_returns401() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/avatar/bodies/1/publish")
+                        .with(csrf()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @WithMockUser(roles = {"ADMIN"})
+    void plainAdmin_toAvatarAdminEndpoint_returns403() throws Exception {
+        // ROLE_ADMIN alone은 avatar 경로 URL 규칙에서 거부 — SUPER_ADMIN 필요.
+        mockMvc.perform(post("/api/v1/admin/avatar/bodies/1/publish")
+                        .with(csrf()))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(roles = {"SUPER_ADMIN", "ADMIN"})
+    void superAdmin_toAvatarAdminEndpoint_doesNotReturn401or403() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/avatar/bodies/1/publish")
+                        .with(csrf()))
+                .andExpect(status().is(Matchers.not(Matchers.isOneOf(401, 403))));
+    }
+
     // -------- /api/v1/admin/password/change (→ ROLE_ADMIN, PR 6 Decision 4) --------
 
     @Test
