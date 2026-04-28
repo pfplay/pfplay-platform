@@ -671,7 +671,7 @@ PR 12a 구현 완료 시점에 spec과의 차이 / 세부 결정사항을 기록
 
 ### 12.8 Chunk 7 — ArchUnit + Concurrency + spec catch-up
 
-- **G7.1 본 commit (Chunk 7)**: ArchUnit 가드 (`22cccb41`) + Concurrency IT (`e0a09ff1`) + spec §12 backfill (`49e8dd7d`) + 본 polish (`<G7.1 sha>`).
+- **G7.1 본 commit (Chunk 7)**: ArchUnit 가드 (`22cccb41`) + Concurrency IT (`e0a09ff1`) + spec §12 backfill (`49e8dd7d`) + 본 polish (`cb20666e`).
 - **§7.2 reconciliation — Concurrency IT 시맨틱 deviation**: spec §7.2는 *"동일 user가 두 디바이스에서 SIGNED_IN 동시"*라 명시했으나 `UserActivityLogListenerConcurrencyIT`는 2개 별 administrator (서로 다른 `user_account_id`)로 동시 login 시나리오를 채택. 사유: 동일 admin × 2 thread 시 `MemberSignService.getMemberOrCreate`의 Member lazy-create race가 잠재적 flake 원인. 본 IT는 async listener의 PK auto-increment 동작 + executor 동작을 cover. 동일-admin race 자체는 future polish 대상 (idempotent Member create 또는 DB unique-key + retry 도입 시점에 별 IT로).
 - **§8.3 ArchUnit guard 도입**: `UserActivityLogListener` 핸들러 annotation 가드(`@TransactionalEventListener` + `@Async` 쌍 강제, annotation-driven 매처) + `user/party/auth.domain.event` → administration 단방향 의존성 가드. 본 polish에서 `on*` prefix 매처를 annotation-driven으로 강화 + cross-BC rule을 3 도메인 event 패키지 모두 cover.
 
