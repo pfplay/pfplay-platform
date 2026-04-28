@@ -8,6 +8,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.methods;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
 /**
@@ -82,6 +83,29 @@ class CrossContextDependencyTest {
                         "com.pfplaybackend.api.party..",
                         "com.pfplaybackend.api.administration.."
                 );
+        rule.check(allClasses);
+    }
+
+    @Test
+    @DisplayName("UserActivityLogListener의 모든 on(...) public 메서드는 @TransactionalEventListener + @Async 보유 (PR 12a)")
+    void userActivityLogListenerMethodsHaveRequiredAnnotations() {
+        // PR 12a §4.3 / §8.3: listener 핸들러 누락 시 sync 동작이라 일관성 깨짐 → annotation 강제.
+        ArchRule rule = methods()
+                .that().areDeclaredInClassesThat().haveSimpleName("UserActivityLogListener")
+                .and().arePublic()
+                .and().haveNameStartingWith("on")
+                .should().beAnnotatedWith(org.springframework.transaction.event.TransactionalEventListener.class)
+                .andShould().beAnnotatedWith(org.springframework.scheduling.annotation.Async.class);
+        rule.check(allClasses);
+    }
+
+    @Test
+    @DisplayName("auth.domain.event는 administration에 의존하지 않음 (단방향, PR 12a)")
+    void authEventDoesNotDependOnAdministration() {
+        // PR 12a §8.3: auth domain event(UserAccountSignedInEvent 등)는 administration BC를
+        // 알면 안 됨. administration 이 auth event 를 listener 로 소비하는 단방향 흐름 유지.
+        ArchRule rule = noClasses().that().resideInAPackage("com.pfplaybackend.api.auth.domain.event..")
+                .should().dependOnClassesThat().resideInAPackage("com.pfplaybackend.api.administration..");
         rule.check(allClasses);
     }
 }
