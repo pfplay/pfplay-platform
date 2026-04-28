@@ -1,0 +1,80 @@
+package com.pfplaybackend.api.administration.adapter.in.listener;
+
+import com.pfplaybackend.api.administration.adapter.out.persistence.UserActivityLogRepository;
+import com.pfplaybackend.api.administration.domain.entity.UserActivityLogData;
+import com.pfplaybackend.api.administration.domain.enums.UserActivityEventType;
+import com.pfplaybackend.api.common.config.security.enums.ProviderType;
+import com.pfplaybackend.api.common.domain.value.UserId;
+import com.pfplaybackend.api.user.domain.enums.ProfileChangeType;
+import com.pfplaybackend.api.user.domain.event.MemberRegisteredEvent;
+import com.pfplaybackend.api.user.domain.event.UserProfileChangedEvent;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class UserActivityLogListenerTest {
+
+    @Mock UserActivityLogRepository repository;
+    UserActivityLogListener listener;
+
+    @BeforeEach
+    void setUp() {
+        listener = new UserActivityLogListener(repository);
+    }
+
+    @Test
+    @DisplayName("MemberRegisteredEvent → SIGNED_UP row INSERT (provider metadata)")
+    void on_MemberRegisteredEvent_inserts_SIGNED_UP_row() {
+        UserId userId = UserId.create(100L);
+        MemberRegisteredEvent event = new MemberRegisteredEvent(userId, "user@example.com", ProviderType.GOOGLE);
+
+        listener.on(event);
+
+        ArgumentCaptor<UserActivityLogData> cap = ArgumentCaptor.forClass(UserActivityLogData.class);
+        verify(repository).save(cap.capture());
+        UserActivityLogData saved = cap.getValue();
+
+        assertThat(saved.getUserAccountId()).isEqualTo(100L);
+        assertThat(saved.getEventType()).isEqualTo(UserActivityEventType.SIGNED_UP.name());
+        assertThat(saved.getPartyroomId()).isNull();
+        assertThat(saved.getOccurredAt()).isEqualTo(event.getOccurredAt());
+        assertThat(saved.getMetadata().data()).containsEntry("provider", "GOOGLE");
+    }
+
+    @Test
+    @DisplayName("UserProfileChangedEvent → PROFILE_UPDATED row INSERT (change_type metadata)")
+    void on_UserProfileChangedEvent_inserts_PROFILE_UPDATED_row() {
+        UserId userId = UserId.create(100L);
+        UserProfileChangedEvent event = new UserProfileChangedEvent(userId, ProfileChangeType.AVATAR);
+
+        listener.on(event);
+
+        ArgumentCaptor<UserActivityLogData> cap = ArgumentCaptor.forClass(UserActivityLogData.class);
+        verify(repository).save(cap.capture());
+        UserActivityLogData saved = cap.getValue();
+
+        assertThat(saved.getEventType()).isEqualTo(UserActivityEventType.PROFILE_UPDATED.name());
+        assertThat(saved.getMetadata().data()).containsEntry("change_type", "AVATAR");
+    }
+
+    @Test
+    @DisplayName("repository.save 실패해도 throw 없이 swallow (drop-가능)")
+    void on_save_failure_swallows() {
+        doThrow(new RuntimeException("db down")).when(repository).save(any());
+
+        UserId userId = UserId.create(100L);
+        MemberRegisteredEvent event = new MemberRegisteredEvent(userId, "user@example.com", ProviderType.LOCAL);
+
+        listener.on(event);   // throw 안 함
+
+        verify(repository).save(any());
+    }
+}
