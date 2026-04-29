@@ -164,6 +164,7 @@ class AdminPartyroomQueryControllerTest extends AbstractAdminWebMvcTest {
         AdminPartyroomDetailResponse response = new AdminPartyroomDetailResponse(
                 7L,
                 "room title",
+                "intro text",
                 PartyroomStatus.ACTIVE,
                 DisplayFlag.NORMAL,
                 42L,
@@ -172,6 +173,7 @@ class AdminPartyroomQueryControllerTest extends AbstractAdminWebMvcTest {
                 3,
                 LocalDateTime.of(2026, 4, 27, 12, 0, 0),
                 StageType.GENERAL,
+                30,
                 new PlaybackSummary(false, null, null),
                 List.of(),
                 List.of(),
@@ -185,8 +187,10 @@ class AdminPartyroomQueryControllerTest extends AbstractAdminWebMvcTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.partyroomId").value(7))
                 .andExpect(jsonPath("$.title").value("room title"))
+                .andExpect(jsonPath("$.introduction").value("intro text"))
                 .andExpect(jsonPath("$.status").value("ACTIVE"))
                 .andExpect(jsonPath("$.hostUserAccountId").value(42))
+                .andExpect(jsonPath("$.playbackTimeLimit").value(30))
                 .andExpect(jsonPath("$.playback.activated").value(false));
     }
 

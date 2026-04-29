@@ -185,6 +185,9 @@ class AdminPartyroomQueryServiceTest {
         assertThat(detail.hostEmail()).isEqualTo("host@example.com");
         assertThat(detail.hostNickname()).isEqualTo("hostNick");
         assertThat(detail.crewCount()).isEqualTo(4);
+        // PR 14g §5: root-level introduction + playbackTimeLimit (minutes) 노출
+        assertThat(detail.introduction()).isEqualTo("intro");
+        assertThat(detail.playbackTimeLimit()).isEqualTo(5);
 
         // crews
         assertThat(detail.crews()).hasSize(1);

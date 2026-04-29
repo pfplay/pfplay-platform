@@ -28,6 +28,7 @@ import java.util.List;
 public record AdminPartyroomDetailResponse(
         Long partyroomId,
         String title,
+        String introduction,
         PartyroomStatus status,
         DisplayFlag displayFlag,
         Long hostUserAccountId,
@@ -36,6 +37,7 @@ public record AdminPartyroomDetailResponse(
         int crewCount,
         LocalDateTime lastActivityAt,
         StageType stageType,
+        Integer playbackTimeLimit,
         PlaybackSummary playback,
         List<CrewSummary> crews,
         List<DjSummary> djQueue,

@@ -151,9 +151,16 @@ public class AdminPartyroomQueryService {
         PartyroomPlaybackData playback = aggregatePort.findPlaybackState(partyroomId);
         PlaybackSummary playbackSummary = toPlaybackSummary(playback);
 
+        // PR 14g §5: introduction + playbackTimeLimit root-level 노출 — frontend update-meta
+        // dialog placeholder + detail card 활성화. PlaybackTimeLimit VO는 minutes로 평탄화 (null tolerant).
+        Integer playbackLimitMinutes = partyroom.getPlaybackTimeLimit() == null
+                ? null
+                : partyroom.getPlaybackTimeLimit().getMinutes();
+
         return new AdminPartyroomDetailResponse(
                 partyroom.getId(),
                 partyroom.getTitle(),
+                partyroom.getIntroduction(),
                 partyroom.getStatus(),
                 partyroom.getDisplayFlag(),
                 hostUserId == null ? null : hostUserId.getUid(),
@@ -162,6 +169,7 @@ public class AdminPartyroomQueryService {
                 partyroom.getCrewCount(),
                 partyroom.getLastActivityAt(),
                 partyroom.getStageType(),
+                playbackLimitMinutes,
                 playbackSummary,
                 crewSummaries,
                 djSummaries,
