@@ -65,6 +65,8 @@ public class AdminMemberQueryService {
                 new MemberProfileSummary(row.nickname(), row.introduction()),
                 row.authorityTier(),
                 row.createdAt(),
+                row.withdrawnAt() != null,
+                row.withdrawnAt(),
                 activityItems);
     }
 

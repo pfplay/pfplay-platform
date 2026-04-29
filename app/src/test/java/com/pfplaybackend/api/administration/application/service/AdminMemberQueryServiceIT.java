@@ -103,6 +103,9 @@ class AdminMemberQueryServiceIT extends AbstractIntegrationTest {
         assertThat(response.profile().nickname()).isEqualTo("Tester");
         assertThat(response.profile().introduction()).isEqualTo("hello");
         assertThat(response.authorityTier()).isEqualTo(AuthorityTier.AM);
+        // PR 14g §5: root-level withdrawn flag + withdrawnAt 노출 (list response 일관)
+        assertThat(response.withdrawn()).isFalse();
+        assertThat(response.withdrawnAt()).isNull();
 
         List<RecentActivityLogItem> activity = response.recentActivityLog();
         assertThat(activity).hasSize(30);

@@ -49,6 +49,8 @@ class AdminMemberQueryControllerTest extends AbstractAdminWebMvcTest {
                 new MemberProfileSummary("Nick", "intro"),
                 AuthorityTier.FM,
                 LocalDateTime.of(2025, 12, 1, 0, 0),
+                false,
+                null,
                 List.of());
         given(adminMemberQueryService.getDetail(50L)).willReturn(response);
 
@@ -59,6 +61,7 @@ class AdminMemberQueryControllerTest extends AbstractAdminWebMvcTest {
                 .andExpect(jsonPath("$.data.userAccount.email").value("u@x"))
                 .andExpect(jsonPath("$.data.profile.nickname").value("Nick"))
                 .andExpect(jsonPath("$.data.authorityTier").value("FM"))
+                .andExpect(jsonPath("$.data.withdrawn").value(false))
                 .andExpect(jsonPath("$.data.recentActivityLog").isArray());
     }
 
