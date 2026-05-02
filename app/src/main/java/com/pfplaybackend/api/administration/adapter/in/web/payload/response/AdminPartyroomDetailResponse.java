@@ -6,6 +6,7 @@ import com.pfplaybackend.api.party.domain.enums.GradeType;
 import com.pfplaybackend.api.party.domain.enums.PartyroomStatus;
 import com.pfplaybackend.api.party.domain.enums.PenaltyType;
 import com.pfplaybackend.api.party.domain.enums.StageType;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -45,6 +46,7 @@ public record AdminPartyroomDetailResponse(
         List<ReportSummary> recentReports,
         List<AdminActionSummary> recentAdminActions
 ) {
+    @Schema(name = "AdminPartyroomPlaybackSummary")  // springdoc simple-name 충돌 회피
     public record PlaybackSummary(
             boolean activated,
             String currentTrackName,
