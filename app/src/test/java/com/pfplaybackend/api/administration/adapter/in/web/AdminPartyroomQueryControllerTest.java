@@ -54,7 +54,7 @@ class AdminPartyroomQueryControllerTest extends AbstractAdminWebMvcTest {
 
         mockMvc.perform(get("/api/v1/admin/partyrooms"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content").isArray());
+                .andExpect(jsonPath("$.data.content").isArray());
 
         ArgumentCaptor<AdminPartyroomListFilter> filterCaptor =
                 ArgumentCaptor.forClass(AdminPartyroomListFilter.class);
@@ -185,13 +185,13 @@ class AdminPartyroomQueryControllerTest extends AbstractAdminWebMvcTest {
 
         mockMvc.perform(get("/api/v1/admin/partyrooms/7"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.partyroomId").value(7))
-                .andExpect(jsonPath("$.title").value("room title"))
-                .andExpect(jsonPath("$.introduction").value("intro text"))
-                .andExpect(jsonPath("$.status").value("ACTIVE"))
-                .andExpect(jsonPath("$.hostUserAccountId").value(42))
-                .andExpect(jsonPath("$.playbackTimeLimit").value(30))
-                .andExpect(jsonPath("$.playback.activated").value(false));
+                .andExpect(jsonPath("$.data.partyroomId").value(7))
+                .andExpect(jsonPath("$.data.title").value("room title"))
+                .andExpect(jsonPath("$.data.introduction").value("intro text"))
+                .andExpect(jsonPath("$.data.status").value("ACTIVE"))
+                .andExpect(jsonPath("$.data.hostUserAccountId").value(42))
+                .andExpect(jsonPath("$.data.playbackTimeLimit").value(30))
+                .andExpect(jsonPath("$.data.playback.activated").value(false));
     }
 
     @Test

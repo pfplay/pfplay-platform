@@ -4,6 +4,7 @@ import com.pfplaybackend.api.administration.adapter.in.web.payload.response.Admi
 import com.pfplaybackend.api.administration.adapter.in.web.payload.response.AdminPartyroomListItemResponse;
 import com.pfplaybackend.api.administration.application.dto.AdminPartyroomListFilter;
 import com.pfplaybackend.api.administration.application.service.AdminPartyroomQueryService;
+import com.pfplaybackend.api.common.ApiCommonResponse;
 import com.pfplaybackend.api.common.exception.http.BadRequestException;
 import com.pfplaybackend.api.party.domain.enums.PartyroomStatus;
 import com.pfplaybackend.api.party.domain.enums.StageType;
@@ -50,7 +51,7 @@ public class AdminPartyroomQueryController {
     @Operation(summary = "B-1 룸 목록 (페이징/필터/정렬)")
     @PreAuthorize("@adminAuth.isAdmin()")
     @GetMapping
-    public ResponseEntity<Page<AdminPartyroomListItemResponse>> list(
+    public ResponseEntity<ApiCommonResponse<Page<AdminPartyroomListItemResponse>>> list(
             @RequestParam(required = false) PartyroomStatus status,
             @RequestParam(required = false) StageType stageType,
             @RequestParam(required = false) @DateTimeFormat(iso = ISO.DATE_TIME) LocalDateTime createdFrom,
@@ -63,9 +64,9 @@ public class AdminPartyroomQueryController {
                 ? PageRequest.of(pageable.getPageNumber(), MAX_PAGE_SIZE, pageable.getSort())
                 : pageable;
         try {
-            return ResponseEntity.ok(queryService.list(
+            return ResponseEntity.ok(ApiCommonResponse.success(queryService.list(
                     new AdminPartyroomListFilter(status, stageType, createdFrom, createdTo, host),
-                    bounded));
+                    bounded)));
         } catch (IllegalArgumentException e) {
             // AdminPartyroomQueryRepositoryImpl.applySort throws IAE for unsupported sort fields.
             // Translate locally to 400 instead of letting it propagate to the generic 500 handler.
@@ -76,7 +77,7 @@ public class AdminPartyroomQueryController {
     @Operation(summary = "B-2 룸 상세")
     @PreAuthorize("@adminAuth.isAdmin()")
     @GetMapping("/{partyroomId}")
-    public ResponseEntity<AdminPartyroomDetailResponse> detail(@PathVariable Long partyroomId) {
-        return ResponseEntity.ok(queryService.detail(new PartyroomId(partyroomId)));
+    public ResponseEntity<ApiCommonResponse<AdminPartyroomDetailResponse>> detail(@PathVariable Long partyroomId) {
+        return ResponseEntity.ok(ApiCommonResponse.success(queryService.detail(new PartyroomId(partyroomId))));
     }
 }
