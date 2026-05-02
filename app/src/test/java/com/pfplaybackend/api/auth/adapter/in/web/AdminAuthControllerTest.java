@@ -22,7 +22,7 @@ import org.springframework.http.MediaType;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -56,7 +56,7 @@ class AdminAuthControllerTest {
     void login_success_admin_only() throws Exception {
         when(adminLoginService.login(any())).thenReturn(new AdminAuthResult(
                 "admin-jwt", null, AdminRole.SUPER_ADMIN,
-                900_000L, 0L, LocalDateTime.now(),
+                900_000L, 0L, OffsetDateTime.now(),
                 false));
 
         mockMvc.perform(post("/api/v1/auth/admin/login")
@@ -75,7 +75,7 @@ class AdminAuthControllerTest {
     void login_success_with_member_writes_both_cookies() throws Exception {
         when(adminLoginService.login(any())).thenReturn(new AdminAuthResult(
                 "admin-jwt", "shared-jwt", AdminRole.ADMIN,
-                900_000L, 86_400_000L, LocalDateTime.now(),
+                900_000L, 86_400_000L, OffsetDateTime.now(),
                 false));
 
         mockMvc.perform(post("/api/v1/auth/admin/login")
@@ -92,7 +92,7 @@ class AdminAuthControllerTest {
     void login_mustChangePasswordTrue_exposesFlagInResponse() throws Exception {
         when(adminLoginService.login(any())).thenReturn(new AdminAuthResult(
                 "admin-jwt", "shared-jwt", AdminRole.ADMIN,
-                900_000L, 86_400_000L, LocalDateTime.now(),
+                900_000L, 86_400_000L, OffsetDateTime.now(),
                 true));
 
         mockMvc.perform(post("/api/v1/auth/admin/login")
@@ -107,7 +107,7 @@ class AdminAuthControllerTest {
     void login_mustChangePasswordFalse_exposesFlagInResponse() throws Exception {
         when(adminLoginService.login(any())).thenReturn(new AdminAuthResult(
                 "admin-jwt", "shared-jwt", AdminRole.ADMIN,
-                900_000L, 86_400_000L, LocalDateTime.now(),
+                900_000L, 86_400_000L, OffsetDateTime.now(),
                 false));
 
         mockMvc.perform(post("/api/v1/auth/admin/login")

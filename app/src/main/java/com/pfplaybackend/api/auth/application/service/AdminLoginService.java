@@ -26,7 +26,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -126,7 +126,7 @@ public class AdminLoginService {
                 adm.getRole(),
                 jwtProperties.getAdminAccessTokenExpirationMs(),
                 jwtProperties.getSharedSessionTokenExpirationMs(),
-                LocalDateTime.now(clock),
+                OffsetDateTime.now(clock),
                 ua.isMustChangePassword()
         );
     }

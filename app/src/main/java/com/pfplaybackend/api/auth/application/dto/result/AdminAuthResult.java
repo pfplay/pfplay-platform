@@ -2,7 +2,7 @@ package com.pfplaybackend.api.auth.application.dto.result;
 
 import com.pfplaybackend.api.administration.domain.value.AdminRole;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 public record AdminAuthResult(
         String adminAccessToken,
@@ -10,6 +10,6 @@ public record AdminAuthResult(
         AdminRole role,
         long adminAccessTokenTtlMs,
         long sharedSessionTokenTtlMs,
-        LocalDateTime issuedAt,
+        OffsetDateTime issuedAt,
         boolean mustChangePassword
 ) {}
