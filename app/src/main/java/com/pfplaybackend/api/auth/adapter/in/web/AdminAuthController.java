@@ -18,6 +18,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -51,6 +52,13 @@ public class AdminAuthController {
         adminCookieWriter.write(response, result.adminAccessToken());
         if (result.sharedSessionToken() != null) {
             sharedSessionCookieWriter.write(response, result.sharedSessionToken());
+        }
+
+        // A2 — login matcher가 CSRF *검증*에서 면제되어 있어 토큰 *발급* timing이 spec 수준에서 불확실.
+        // deferred 토큰을 명시적으로 materialize → CookieCsrfTokenRepository가 Set-Cookie XSRF-TOKEN 발행.
+        CsrfToken csrfToken = (CsrfToken) httpRequest.getAttribute(CsrfToken.class.getName());
+        if (csrfToken != null) {
+            csrfToken.getToken();
         }
 
         return ResponseEntity.ok(ApiCommonResponse.success(AdminLoginResponse.builder()
