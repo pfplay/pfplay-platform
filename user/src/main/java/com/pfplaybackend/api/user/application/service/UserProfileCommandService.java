@@ -37,6 +37,21 @@ public class UserProfileCommandService {
                 .build();
     }
 
+    public ProfileData createProfileDataForSuperAdmin(UserId userId) {
+        AvatarBodyDto avatarBodyResource = userAvatarQueryService.getDefaultAvatarBody();
+        return ProfileData.builder()
+                .userId(userId)
+                .nickname(new Nickname("Super Admin"))
+                .avatarCompositionType(AvatarCompositionType.BODY_WITH_FACE)
+                .faceSourceType(FaceSourceType.INTERNAL_IMAGE)
+                .avatarBodyUri(userAvatarQueryService.getDefaultAvatarBodyUri())
+                .avatarFaceUri(userAvatarQueryService.getDefaultAvatarFaceUri())
+                .avatarIconUri(userAvatarQueryService.getDefaultAvatarIconUri())
+                .combinePositionX(avatarBodyResource.getCombinePositionX())
+                .combinePositionY(avatarBodyResource.getCombinePositionY())
+                .build();
+    }
+
     private String generateGuestNickname() {
         return "Guest_" + UUID.randomUUID().toString().replace("-", "").substring(0, 6);
     }

@@ -32,12 +32,18 @@ public class ApplicationReadyEventListener {
         //    Idempotent: no-op when placeholder already replaced.
         superAdminSeedService.finalizeSuperAdminCredentials();
 
-        // 2) Initialize main stage with the V5-seeded super-admin as host.
+        // 2) Attach default profile + avatar to the super-admin Member row.
+        //    V5 seed inserts member_id=1 with profile_id=NULL; without this step,
+        //    cross-BC queries that path-project m.profileData.* drop admin-hosted
+        //    rows via implicit INNER JOIN. Idempotent.
+        superAdminSeedService.finalizeSuperAdminProfile();
+
+        // 3) Initialize main stage with the V5-seeded super-admin as host.
         //    The Member row (member_id=1, user_account_id=1, FM tier) is also
         //    seeded by V5, so PartyroomCommandService.initializeMainStage works.
         partyroomCommandService.initializeMainStage(SUPER_ADMIN_USER_ID);
 
-        // 3) Local-only test fixtures (temporary users for development).
+        // 4) Local-only test fixtures (temporary users for development).
         if (environment.acceptsProfiles(Profiles.of("local"))) {
             temporaryUserInitializeService.addTemporaryUsers();
         }

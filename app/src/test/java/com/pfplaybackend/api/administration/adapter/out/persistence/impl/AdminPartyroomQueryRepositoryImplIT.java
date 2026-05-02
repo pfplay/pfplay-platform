@@ -152,6 +152,35 @@ class AdminPartyroomQueryRepositoryImplIT extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("host의 profile 미보유 — partyroom row가 누락되지 않고 nickname=null로 반환")
+    void host_without_profile_is_not_excluded() {
+        long noProfileUid = 7099L;
+        userAccountRepository.save(
+                UserAccountData.createForLocalWithMandatoryChange(
+                        new UserId(noProfileUid), "no-profile@example.com", "h"));
+        // Member without profile attached — mirrors the V5-seeded super-admin
+        // pre-finalizeSuperAdminProfile state.
+        memberRepository.save(MemberData.createForUserAccount(noProfileUid));
+
+        seedRoom(noProfileUid, "no-profile-room", PartyroomStatus.ACTIVE);
+        seedRoom(aliceUid, "alice-room", PartyroomStatus.ACTIVE);
+
+        Page<AdminPartyroomListRow> result = queryRepository.findAdminList(
+                new AdminPartyroomListFilter(null, null, null, null, null),
+                PageRequest.of(0, 20)
+        );
+
+        assertThat(result.getTotalElements()).isEqualTo(2);
+        assertThat(result.getContent()).hasSize(2);
+        AdminPartyroomListRow noProfileRow = result.getContent().stream()
+                .filter(r -> r.hostUserAccountId().equals(noProfileUid))
+                .findFirst()
+                .orElseThrow();
+        assertThat(noProfileRow.title()).isEqualTo("no-profile-room");
+        assertThat(noProfileRow.hostNickname()).isNull();
+    }
+
+    @Test
     @DisplayName("페이징 — page 0 size 1 → 컨텐츠 1개, totalElements=2")
     void paging() {
         seedRoom(aliceUid, "room-1", PartyroomStatus.ACTIVE);

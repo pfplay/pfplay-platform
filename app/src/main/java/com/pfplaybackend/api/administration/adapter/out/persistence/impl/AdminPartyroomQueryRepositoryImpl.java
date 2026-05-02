@@ -8,6 +8,7 @@ import com.pfplaybackend.api.party.domain.entity.data.QPartyroomData;
 import com.pfplaybackend.api.party.domain.entity.data.QPartyroomPlaybackData;
 import com.pfplaybackend.api.party.domain.enums.PartyroomStatus;
 import com.pfplaybackend.api.user.domain.entity.data.QMemberData;
+import com.pfplaybackend.api.user.domain.entity.data.QProfileData;
 import com.pfplaybackend.api.user.domain.entity.data.QUserAccountData;
 import com.pfplaybackend.api.user.domain.value.Nickname;
 import com.querydsl.core.BooleanBuilder;
@@ -65,11 +66,18 @@ public class AdminPartyroomQueryRepositoryImpl implements AdminPartyroomQueryRep
         QPartyroomData p = QPartyroomData.partyroomData;
         QUserAccountData ua = QUserAccountData.userAccountData;
         QMemberData m = QMemberData.memberData;
+        QProfileData profile = QProfileData.profileData;
         QDjData dj = QDjData.djData;
         QPartyroomPlaybackData pb = QPartyroomPlaybackData.partyroomPlaybackData;
 
+        // Path-projecting m.profileData.bio.nickname forces an implicit INNER JOIN
+        // on profile, which silently excludes any partyroom whose host has
+        // member.profile_id=NULL (e.g., super-admin pre-PA-7 fix). We declare the
+        // join explicitly as LEFT so a missing profile yields a null nickname
+        // rather than dropping the row. Reading the projection through `profile.*`
+        // (rather than `m.profileData.*`) keeps the path bound to that LEFT JOIN.
         StringExpression nicknameLikeExpr = Expressions.stringTemplate(
-                "cast({0} as string)", m.profileData.bio.nickname);
+                "cast({0} as string)", profile.bio.nickname);
 
         JPQLQuery<Long> djCountSubquery = JPAExpressions
                 .select(dj.count())
@@ -84,7 +92,7 @@ public class AdminPartyroomQueryRepositoryImpl implements AdminPartyroomQueryRep
                         p.title,
                         p.stageType,
                         ua.userId.uid,
-                        m.profileData.bio.nickname,
+                        profile.bio.nickname,
                         p.crewCount,
                         djCountSubquery,
                         pb.isActivated,
@@ -96,6 +104,7 @@ public class AdminPartyroomQueryRepositoryImpl implements AdminPartyroomQueryRep
                 .from(p)
                 .leftJoin(ua).on(ua.userId.uid.eq(p.hostId.uid))
                 .leftJoin(m).on(m.userAccountId.eq(ua.userId.uid))
+                .leftJoin(m.profileData, profile)
                 .leftJoin(pb).on(pb.partyroomId.id.eq(p.id))
                 .where(where);
 
@@ -106,6 +115,7 @@ public class AdminPartyroomQueryRepositoryImpl implements AdminPartyroomQueryRep
                 .from(p)
                 .leftJoin(ua).on(ua.userId.uid.eq(p.hostId.uid))
                 .leftJoin(m).on(m.userAccountId.eq(ua.userId.uid))
+                .leftJoin(m.profileData, profile)
                 .where(where)
                 .fetchOne();
 
@@ -115,7 +125,7 @@ public class AdminPartyroomQueryRepositoryImpl implements AdminPartyroomQueryRep
                 .fetch();
 
         List<AdminPartyroomListRow> content = tuples.stream()
-                .map(t -> mapRow(t, p, ua, m, pb, djCountSubquery))
+                .map(t -> mapRow(t, p, ua, profile, pb, djCountSubquery))
                 .toList();
 
         return new PageImpl<>(content, pageable, total == null ? 0L : total);
@@ -124,10 +134,10 @@ public class AdminPartyroomQueryRepositoryImpl implements AdminPartyroomQueryRep
     private AdminPartyroomListRow mapRow(Tuple t,
                                          QPartyroomData p,
                                          QUserAccountData ua,
-                                         QMemberData m,
+                                         QProfileData profile,
                                          QPartyroomPlaybackData pb,
                                          JPQLQuery<Long> djCountSubquery) {
-        Nickname nickname = t.get(m.profileData.bio.nickname);
+        Nickname nickname = t.get(profile.bio.nickname);
         Long djCount = t.get(djCountSubquery);
         Integer crewCount = t.get(p.crewCount);
         return new AdminPartyroomListRow(
