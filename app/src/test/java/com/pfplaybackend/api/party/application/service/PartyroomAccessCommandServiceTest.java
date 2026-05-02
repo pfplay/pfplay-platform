@@ -6,6 +6,8 @@ import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.enums.AuthorityTier;
 import com.pfplaybackend.api.party.application.dto.partyroom.ActivePartyroomDto;
 import com.pfplaybackend.api.party.application.port.out.PlaybackControlPort;
+import com.pfplaybackend.api.party.application.port.out.UserProfileQueryPort;
+import com.pfplaybackend.api.user.application.dto.shared.ProfileSettingDto;
 import com.pfplaybackend.api.party.domain.entity.data.CrewData;
 import com.pfplaybackend.api.party.domain.entity.data.PartyroomData;
 import com.pfplaybackend.api.party.domain.entity.data.PartyroomPlaybackData;
@@ -50,6 +52,7 @@ class PartyroomAccessCommandServiceTest {
     @Mock private PartyroomAggregateService partyroomAggregateService;
     @Mock private PartyroomQueryService partyroomQueryService;
     @Mock private PlaybackControlPort playbackControlPort;
+    @Mock private UserProfileQueryPort userProfileQueryPort;
     @Mock private Clock clock;
     @Mock private PlatformTransactionManager transactionManager;
 
@@ -70,6 +73,18 @@ class PartyroomAccessCommandServiceTest {
         AuthContext authContext = mock(AuthContext.class);
         lenient().when(authContext.getUserId()).thenReturn(userId);
         ThreadLocalContext.setContext(authContext);
+
+        // assertHasProfile 가드는 모든 tryEnter/enterByHost 진입에서 호출되므로
+        // happy-path 테스트는 어떤 userId든 profile 보유 상태로 stub (다양한 테스트가 다른 userId를 사용).
+        lenient().when(userProfileQueryPort.getUsersProfileSetting(any()))
+                .thenAnswer(inv -> {
+                    java.util.List<UserId> ids = inv.getArgument(0);
+                    java.util.Map<UserId, ProfileSettingDto> result = new java.util.HashMap<>();
+                    for (UserId id : ids) {
+                        result.put(id, mock(ProfileSettingDto.class));
+                    }
+                    return result;
+                });
 
         // @PostConstruct does not run with @InjectMocks — manually wire the TransactionTemplate
         // by calling initTxTemplates via reflection or leaving requiresNewReadOnlyTx null.

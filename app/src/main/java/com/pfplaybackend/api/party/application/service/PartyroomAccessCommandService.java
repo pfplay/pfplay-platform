@@ -6,6 +6,7 @@ import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.exception.ExceptionCreator;
 import com.pfplaybackend.api.party.application.dto.partyroom.ActivePartyroomDto;
 import com.pfplaybackend.api.party.application.port.out.PlaybackControlPort;
+import com.pfplaybackend.api.party.application.port.out.UserProfileQueryPort;
 import com.pfplaybackend.api.party.domain.entity.data.CrewData;
 import com.pfplaybackend.api.party.domain.entity.data.PartyroomData;
 import com.pfplaybackend.api.party.domain.entity.data.PartyroomPlaybackData;
@@ -46,6 +47,7 @@ public class PartyroomAccessCommandService {
     private final PartyroomAggregateService partyroomAggregateService;
     private final PartyroomQueryService partyroomQueryService;
     private final PlaybackControlPort playbackControlPort;
+    private final UserProfileQueryPort userProfileQueryPort;
     private final Clock clock;
     private final PlatformTransactionManager transactionManager;
     private TransactionTemplate requiresNewReadOnlyTx;
@@ -62,6 +64,8 @@ public class PartyroomAccessCommandService {
         AuthContext authContext = ThreadLocalContext.getAuthContext();
         UserId userId = authContext.getUserId();
         log.info("[tryEnter] START - userId={}, targetPartyroomId={}", userId, partyroomId.getId());
+
+        assertHasProfile(userId);
 
         PartyroomData partyroom = partyroomQueryService.getPartyroomById(partyroomId);
 
@@ -175,8 +179,23 @@ public class PartyroomAccessCommandService {
 
     @Transactional
     public void enterByHost(UserId hostId, PartyroomData partyroom) {
+        assertHasProfile(hostId);
         CrewData crew = CrewData.create(partyroom.getPartyroomId(), hostId, GradeType.HOST, null, LocalDateTime.now(clock));
         aggregatePort.saveCrew(crew);
+    }
+
+    /**
+     * 도메인 invariant: 프로필(아바타 설정)이 등록된 사용자만 partyroom의 active crew가 될 수 있다.
+     * 프로필 미보유 사용자(super-admin/시스템 사용자 등)가 crew로 등록되면 customer 응답 빌드 시
+     * ProfileSettingDto null lookup → NPE를 일으킨다 (PA-7 회귀 패턴 차단). enterByHost와 tryEnter
+     * 양쪽에서 호출하여 어떤 진입 경로가 추가되더라도 invariant가 코드 레벨에서 강제되도록 한다.
+     */
+    private void assertHasProfile(UserId userId) {
+        java.util.Map<UserId, com.pfplaybackend.api.user.application.dto.shared.ProfileSettingDto> profiles =
+                userProfileQueryPort.getUsersProfileSetting(java.util.List.of(userId));
+        if (!profiles.containsKey(userId)) {
+            throw ExceptionCreator.create(CrewException.PROFILE_REQUIRED);
+        }
     }
 
     @Transactional
