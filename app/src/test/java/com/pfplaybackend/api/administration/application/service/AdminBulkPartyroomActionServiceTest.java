@@ -75,10 +75,13 @@ class AdminBulkPartyroomActionServiceTest {
         assertThat(resp.results()).hasSize(3);
         assertThat(resp.results().get(0).success()).isTrue();
         assertThat(resp.results().get(0).error()).isNull();
+        assertThat(resp.results().get(0).errorCode()).isNull();
 
         assertThat(resp.results().get(1).success()).isFalse();
         assertThat(resp.results().get(1).partyroomId()).isEqualTo(20L);
         assertThat(resp.results().get(1).error()).isNotBlank();
+        // 14c §7.1 매트릭스의 errorCode (예: PRT-???)가 per-item에도 노출 (A5)
+        assertThat(resp.results().get(1).errorCode()).isNotBlank();
 
         assertThat(resp.results().get(2).success()).isTrue();
         verify(txUnit, times(3)).executeOne(any(), any(), any(), any());

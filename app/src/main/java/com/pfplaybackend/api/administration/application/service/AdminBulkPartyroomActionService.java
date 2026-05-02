@@ -35,12 +35,20 @@ public class AdminBulkPartyroomActionService {
         for (Long pid : req.partyroomIds()) {
             try {
                 txUnit.executeOne(new PartyroomId(pid), req.action(), req.reason(), administratorId);
-                results.add(new BulkPartyroomActionResponse.BulkActionResult(pid, true, null));
+                results.add(new BulkPartyroomActionResponse.BulkActionResult(pid, true, null, null));
             } catch (Exception e) {
-                String errMsg = (e instanceof AbstractHTTPException he) ? he.getMessage() : "INTERNAL_ERROR";
-                results.add(new BulkPartyroomActionResponse.BulkActionResult(pid, false, errMsg));
-                log.warn("[bulk-action] failed partyroomId={}, action={}, error={}",
-                        pid, req.action(), errMsg);
+                String errMsg;
+                String errCode;
+                if (e instanceof AbstractHTTPException he) {
+                    errMsg = he.getMessage();
+                    errCode = he.getErrorCode();  // 14c §7.1 매트릭스 (PRT-001 등)
+                } else {
+                    errMsg = "INTERNAL_ERROR";
+                    errCode = null;
+                }
+                results.add(new BulkPartyroomActionResponse.BulkActionResult(pid, false, errMsg, errCode));
+                log.warn("[bulk-action] failed partyroomId={}, action={}, errorCode={}, error={}",
+                        pid, req.action(), errCode, errMsg);
                 if (!skipErrors) break;
             }
         }
