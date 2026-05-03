@@ -6,6 +6,8 @@ import com.pfplaybackend.api.common.entity.BaseEntity;
 import com.pfplaybackend.api.common.exception.ExceptionCreator;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import java.time.*;
 
 @Entity
@@ -14,8 +16,8 @@ import java.time.*;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class SystemAnnouncementData extends BaseEntity {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY) private Long id;
-    @Enumerated(EnumType.STRING) @Column(nullable = false, length = 32) private AnnouncementType type;
-    @Enumerated(EnumType.STRING) @Column(nullable = false, length = 16) private AnnouncementSeverity severity;
+    @Enumerated(EnumType.STRING) @JdbcTypeCode(SqlTypes.VARCHAR) @Column(nullable = false, length = 32) private AnnouncementType type;
+    @Enumerated(EnumType.STRING) @JdbcTypeCode(SqlTypes.VARCHAR) @Column(nullable = false, length = 16) private AnnouncementSeverity severity;
     @Column(name = "title_ko", nullable = false, length = 200) private String titleKo;
     @Column(name = "title_en", nullable = false, length = 200) private String titleEn;
     @Column(name = "message_ko", nullable = false, length = 2000) private String messageKo;
