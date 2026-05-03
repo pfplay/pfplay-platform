@@ -101,7 +101,7 @@ class AuthControllerTest {
         when(oAuthUrlService.validateAndConsumeState(eq("valid-state"), any(OAuthProvider.class), anyString()))
                 .thenReturn(true);
         when(authService.processOAuthLogin(any(OAuthLoginCommand.class)))
-                .thenReturn(new AuthResult("access-token", "Cookie", 3600L, LocalDateTime.now()));
+                .thenReturn(new AuthResult("access-token", "Cookie", 3600L, LocalDateTime.now(), true));
 
         // when & then
         mockMvc.perform(post("/api/v1/auth/oauth/callback")
@@ -110,9 +110,39 @@ class AuthControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.tokenType").value("Cookie"));
+                .andExpect(jsonPath("$.data.tokenType").value("Cookie"))
+                .andExpect(jsonPath("$.data.isNewUser").value(true));
 
         verify(sharedSessionCookieWriter).write(any(), eq("access-token"));
+    }
+
+    @Test
+    @DisplayName("oauthCallback — 기존 사용자 재로그인 시 isNewUser=false (Amplitude L4)")
+    void oauthCallbackReturningUserExposesIsNewUserFalse() throws Exception {
+        // given — same call shape but service signals returning user
+        String codeVerifier = "a".repeat(43);
+        String body = """
+                {
+                    "provider": "google",
+                    "code": "auth-code-123",
+                    "codeVerifier": "%s",
+                    "state": "valid-state"
+                }
+                """.formatted(codeVerifier);
+
+        when(oAuthUrlService.validateAndConsumeState(eq("valid-state"), any(OAuthProvider.class), anyString()))
+                .thenReturn(true);
+        when(authService.processOAuthLogin(any(OAuthLoginCommand.class)))
+                .thenReturn(new AuthResult("access-token", "Cookie", 3600L, LocalDateTime.now(), false));
+
+        // when & then
+        mockMvc.perform(post("/api/v1/auth/oauth/callback")
+                        .with(jwt())
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.isNewUser").value(false));
     }
 
     @Test
@@ -155,7 +185,7 @@ class AuthControllerTest {
                 """.formatted(codeVerifier);
 
         when(authService.processOAuthLogin(any(OAuthLoginCommand.class)))
-                .thenReturn(new AuthResult("access-token", "Cookie", 3600L, LocalDateTime.now()));
+                .thenReturn(new AuthResult("access-token", "Cookie", 3600L, LocalDateTime.now(), false));
 
         // when & then
         mockMvc.perform(post("/api/v1/auth/oauth/callback")

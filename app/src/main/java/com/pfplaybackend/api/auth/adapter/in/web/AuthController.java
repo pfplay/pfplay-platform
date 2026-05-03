@@ -86,6 +86,7 @@ public class AuthController {
                 .tokenType(authResult.tokenType())
                 .expiresIn(authResult.expiresIn())
                 .issuedAt(authResult.issuedAt())
+                .isNewUser(authResult.isNewUser())
                 .build();
 
         return ResponseEntity.ok(ApiCommonResponse.success(loginResponse));

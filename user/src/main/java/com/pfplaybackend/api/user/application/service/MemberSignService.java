@@ -5,6 +5,7 @@ import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.user.adapter.out.persistence.MemberRepository;
 import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
 import com.pfplaybackend.api.user.application.dto.command.SignMemberCommand;
+import com.pfplaybackend.api.user.application.dto.result.MemberSignResult;
 import com.pfplaybackend.api.user.application.port.out.OAuth2RedirectPort;
 import com.pfplaybackend.api.user.application.port.out.PlaylistSetupPort;
 import com.pfplaybackend.api.user.domain.entity.data.MemberData;
@@ -46,17 +47,42 @@ public class MemberSignService {
      * <p>When a new Member is created, profile / default-playlist / event
      * side-effects fire (matches pre-V4 behavior). Activity-row initialization
      * is deferred to Task 11 (see {@link #initializeNewMember} TODO).
+     *
+     * <p>Backward-compat shim — callers that don't need the {@code isNewUser}
+     * flag stay on this method. New callers (Amplitude L4 OAuth callback)
+     * should use {@link #getMemberOrCreateWithStatus}.
      */
     @Transactional
     public MemberData getMemberOrCreate(String email, ProviderType providerType) {
-        UserAccountData userAccount = userAccountRepository
-                .findByEmailAndProviderType(email, providerType)
-                .orElseGet(() -> userAccountRepository.save(
-                        UserAccountData.createForSocial(new UserId(), email, providerType)));
+        return getMemberOrCreateWithStatus(email, providerType).member();
+    }
+
+    /**
+     * Same flow as {@link #getMemberOrCreate} but additionally reports whether
+     * the {@code UserAccount} row was newly INSERTed during this call.
+     *
+     * <p>Used by the OAuth callback (Amplitude L4) so the client's
+     * {@code User Signed Up} event can fire only on actual sign-up rather than
+     * relying on a localStorage UID heuristic that breaks across incognito,
+     * cache-clear, and multi-device scenarios.
+     *
+     * <p>{@code isNewUser=true} iff no {@code UserAccount} existed for the
+     * {@code (email, providerType)} pair before this call — i.e. a fresh
+     * provider identity. The "UA exists, Member missing" recovery path is
+     * {@code isNewUser=false}: it's a returning user whose Member row was
+     * regenerated.
+     */
+    @Transactional
+    public MemberSignResult getMemberOrCreateWithStatus(String email, ProviderType providerType) {
+        var existing = userAccountRepository.findByEmailAndProviderType(email, providerType);
+        boolean isNewUser = existing.isEmpty();
+
+        UserAccountData userAccount = existing.orElseGet(() -> userAccountRepository.save(
+                UserAccountData.createForSocial(new UserId(), email, providerType)));
 
         userAccount.recordLogin();
 
-        return getOrCreateMemberFor(userAccount);
+        return new MemberSignResult(getOrCreateMemberFor(userAccount), isNewUser);
     }
 
     /**

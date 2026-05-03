@@ -196,6 +196,73 @@ class PartyroomAccessCommandServiceTest {
     }
 
     @Test
+    @DisplayName("exit — 이미 inactive인 crew에 대한 후속 DELETE는 예외 없이 no-op 반환 (Amplitude L2 mobile pagehide 멱등성)")
+    void exitOnAlreadyInactiveCrewShouldBeIdempotentNoOp() {
+        // given — crew row가 존재하지만 이미 isActive=false (이전 exit 호출로 deactivate됨)
+        CrewData inactiveCrew = CrewData.builder()
+                .id(42L)
+                .userId(userId)
+                .gradeType(GradeType.LISTENER)
+                .isActive(false)
+                .build();
+
+        PartyroomData partyroomData = PartyroomData.builder()
+                .id(1L)
+                .partyroomId(partyroomId)
+                .status(PartyroomStatus.ACTIVE)
+                .build();
+
+        when(partyroomQueryService.getPartyroomById(partyroomId)).thenReturn(partyroomData);
+        when(aggregatePort.findCrew(partyroomId, userId)).thenReturn(Optional.of(inactiveCrew));
+        // 멱등 toggle: 이미 inactive → UPDATE WHERE is_active=true는 0 row 영향
+        when(aggregatePort.deactivateCrew(eq(partyroomId), eq(userId), any(LocalDateTime.class)))
+                .thenReturn(0);
+
+        // when — 후속 DELETE /crews/me 호출 (mobile pagehide + visibilitychange 등 다중 fire 시나리오)
+        partyroomAccessCommandService.exit(partyroomId);
+
+        // then — 예외 없이 정상 반환 + EXIT event 미발행 + DJ queue 처리도 skip (이미 종료된 effect를 또 일으키면 안 됨)
+        verifyNoInteractions(eventPublisher);
+        verify(aggregatePort, never()).findDj(any(), any());
+        verify(aggregatePort, never()).findPlaybackState(any());
+        verify(partyroomAggregateService, never()).removeDjFromQueue(any(), any());
+        verify(playbackControlPort, never()).skipPlayback(any());
+    }
+
+    @Test
+    @DisplayName("exit — 첫 호출은 deactivate 1 → EXIT 이벤트 발행 (멱등성 분기와 대비되는 baseline)")
+    void exitFirstCallShouldDeactivateAndPublishEvent() {
+        // given — 정상 active crew
+        CrewData activeCrew = CrewData.builder()
+                .id(42L)
+                .userId(userId)
+                .gradeType(GradeType.LISTENER)
+                .isActive(true)
+                .build();
+
+        PartyroomData partyroomData = PartyroomData.builder()
+                .id(1L)
+                .partyroomId(partyroomId)
+                .status(PartyroomStatus.ACTIVE)
+                .build();
+
+        PartyroomPlaybackData playbackState = PartyroomPlaybackData.createFor(partyroomId);
+
+        when(partyroomQueryService.getPartyroomById(partyroomId)).thenReturn(partyroomData);
+        when(aggregatePort.findCrew(partyroomId, userId)).thenReturn(Optional.of(activeCrew));
+        when(aggregatePort.deactivateCrew(eq(partyroomId), eq(userId), any(LocalDateTime.class)))
+                .thenReturn(1);
+        when(aggregatePort.findDj(eq(partyroomId), any(CrewId.class))).thenReturn(Optional.empty());
+        when(aggregatePort.findPlaybackState(partyroomId)).thenReturn(playbackState);
+
+        // when
+        partyroomAccessCommandService.exit(partyroomId);
+
+        // then — EXIT 이벤트 1회 발행
+        verify(eventPublisher, times(1)).publishEvent(any(CrewAccessedEvent.class));
+    }
+
+    @Test
     @DisplayName("tryEnter INSERT race 패배자는 winner를 별 트랜잭션에서 조회하고 ENTER 이벤트를 발행하지 않는다")
     void tryEnterConcurrentInsertLoserShouldNotPublishEnter() {
         // given

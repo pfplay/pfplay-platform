@@ -3,6 +3,7 @@ package com.pfplaybackend.api.party.application.service;
 import com.pfplaybackend.api.common.ThreadLocalContext;
 import com.pfplaybackend.api.common.aspect.context.AuthContext;
 import com.pfplaybackend.api.common.domain.value.UserId;
+import com.pfplaybackend.api.party.application.port.out.AddedTrackInfo;
 import com.pfplaybackend.api.party.application.port.out.PlaylistCommandPort;
 import com.pfplaybackend.api.party.application.port.out.UserActivityPort;
 import com.pfplaybackend.api.party.domain.entity.data.PlaybackAggregationData;
@@ -27,6 +28,7 @@ import org.springframework.context.ApplicationEventPublisher;
 
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -59,7 +61,7 @@ class PlaybackReactionPostProcessCommandServiceTest {
     }
 
     @Test
-    @DisplayName("grab 상태 변경 시 grabTrack이 호출된다")
+    @DisplayName("grab 상태 변경 시 grabTrack이 호출되고 AddedTrackInfo가 반환된다")
     void postProcessGrabStatusChangedCallsGrabTrack() {
         // given
         ReactionPostProcessResult dto = new ReactionPostProcessResult(
@@ -70,12 +72,35 @@ class PlaybackReactionPostProcessCommandServiceTest {
         when(playback.getLinkId()).thenReturn("link-123");
         when(playbackQueryService.getPlaybackById(playbackId)).thenReturn(playback);
 
+        AddedTrackInfo addedTrack = new AddedTrackInfo(555L, 67L);
+        when(playlistCommandPort.grabTrack(userId, "link-123")).thenReturn(addedTrack);
+
         // when
-        service.postProcess(dto, ReactionType.GRAB, partyroomId, playbackId, crewId);
+        AddedTrackInfo result = service.postProcess(dto, ReactionType.GRAB, partyroomId, playbackId, crewId);
 
         // then
+        assertThat(result).isEqualTo(addedTrack);
         verify(playlistCommandPort).grabTrack(userId, "link-123");
         verify(eventPublisher).publishEvent(any(ReactionMotionChangedEvent.class));
+    }
+
+    @Test
+    @DisplayName("grab 상태 변경이 없으면 AddedTrackInfo로 null이 반환된다")
+    void postProcessGrabStatusUnchangedReturnsNull() {
+        // given
+        ReactionPostProcessResult dto = new ReactionPostProcessResult(
+                false, false, false, false, null, 0, MotionType.NONE);
+
+        PlaybackData playback = mock(PlaybackData.class);
+        lenient().when(playback.getUserId()).thenReturn(new UserId(2L));
+        when(playbackQueryService.getPlaybackById(playbackId)).thenReturn(playback);
+
+        // when
+        AddedTrackInfo result = service.postProcess(dto, ReactionType.LIKE, partyroomId, playbackId, crewId);
+
+        // then
+        assertThat(result).isNull();
+        verify(playlistCommandPort, never()).grabTrack(any(), any());
     }
 
     @Test

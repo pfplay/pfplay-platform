@@ -3,6 +3,7 @@ package com.pfplaybackend.api.party.application.service;
 import com.pfplaybackend.api.common.ThreadLocalContext;
 import com.pfplaybackend.api.common.aspect.context.AuthContext;
 import com.pfplaybackend.api.common.domain.value.UserId;
+import com.pfplaybackend.api.party.application.port.out.AddedTrackInfo;
 import com.pfplaybackend.api.party.application.port.out.PlaylistCommandPort;
 import com.pfplaybackend.api.party.application.port.out.UserActivityPort;
 import com.pfplaybackend.api.party.domain.entity.data.PlaybackAggregationData;
@@ -28,11 +29,15 @@ public class PlaybackReactionPostProcessCommandService {
     private final PlaylistCommandPort playlistCommandPort;
     private final UserActivityPort userActivityPort;
 
-    public void postProcess(ReactionPostProcessResult postProcessDto, ReactionType reactionType, PartyroomId partyroomId, PlaybackId playbackId, CrewId crewId) {
+    /**
+     * @return AddedTrackInfo when this call materialised a new GRABLIST entry, otherwise null.
+     */
+    public AddedTrackInfo postProcess(ReactionPostProcessResult postProcessDto, ReactionType reactionType, PartyroomId partyroomId, PlaybackId playbackId, CrewId crewId) {
         AuthContext authContext = ThreadLocalContext.getAuthContext();
         PlaybackData playback = playbackQueryService.getPlaybackById(playbackId);
+        AddedTrackInfo addedTrack = null;
         if(postProcessDto.grabStatusChanged()) {
-            grabTrack(authContext.getUserId(), playback);
+            addedTrack = grabTrack(authContext.getUserId(), playback);
         }
         if(postProcessDto.djActivityScoreChanged()) {
             updateDjActivityScore(playback.getUserId(), postProcessDto.deltaScore());
@@ -42,6 +47,7 @@ public class PlaybackReactionPostProcessCommandService {
             publishAggregationChangedEvent(partyroomId, aggregation);
         }
         publishMotionChangedEvent(partyroomId, reactionType, postProcessDto.determinedMotionType(), crewId);
+        return addedTrack;
     }
 
     public void publishMotionChangedEvent(PartyroomId partyroomId, ReactionType reactionType, MotionType motionType, CrewId crewId) {
@@ -57,8 +63,8 @@ public class PlaybackReactionPostProcessCommandService {
                 partyroomId, aggregation.getLikeCount(), aggregation.getDislikeCount(), aggregation.getGrabCount()));
     }
 
-    public void grabTrack(UserId userId, PlaybackData playback) {
+    public AddedTrackInfo grabTrack(UserId userId, PlaybackData playback) {
         // TODO 이미 동일한 LinkId를 보유하고 있다면 예외 발생
-        playlistCommandPort.grabTrack(userId, playback.getLinkId());
+        return playlistCommandPort.grabTrack(userId, playback.getLinkId());
     }
 }
