@@ -1,5 +1,7 @@
 package com.pfplaybackend.api.administration.domain.value;
 
+import com.fasterxml.jackson.annotation.JsonValue;
+
 import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
@@ -34,6 +36,18 @@ public final class JsonMetadata {
         return new JsonMetadata(data);
     }
 
+    /**
+     * Underlying map exposed as the wrapper's serialized form.
+     *
+     * <p>{@code @JsonValue} tells Jackson to render the {@code JsonMetadata} instance as
+     * the returned map (its keys/values appear directly in the response object) rather
+     * than introspecting bean-style getters. Without this, the record-style accessor
+     * {@code data()} is invisible to Jackson's default property discovery — only
+     * {@code isEmpty()} is picked up via the {@code is*} pattern, leaking
+     * {@code {"empty": false}} into responses while the actual metadata stays hidden.
+     * Spec: {@code admin-backend-asks.md} A7.
+     */
+    @JsonValue
     public Map<String, Object> data() {
         return data;
     }

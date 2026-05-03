@@ -203,7 +203,8 @@ public class AdminPartyroomQueryService {
                 d.getId(),
                 d.getActionType(),
                 d.getAdministratorId(),
-                d.getOccurredAt()
+                d.getOccurredAt(),
+                d.getMetadata()
         );
     }
 

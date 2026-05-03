@@ -1,6 +1,7 @@
 package com.pfplaybackend.api.administration.adapter.in.web.payload.response;
 
 import com.pfplaybackend.api.administration.domain.enums.PartyroomAdminActionType;
+import com.pfplaybackend.api.administration.domain.value.JsonMetadata;
 import com.pfplaybackend.api.party.domain.enums.DisplayFlag;
 import com.pfplaybackend.api.party.domain.enums.GradeType;
 import com.pfplaybackend.api.party.domain.enums.PartyroomStatus;
@@ -89,6 +90,7 @@ public record AdminPartyroomDetailResponse(
             Long actionId,
             PartyroomAdminActionType actionType,
             Long administratorId,
-            LocalDateTime occurredAt
+            LocalDateTime occurredAt,
+            JsonMetadata metadata
     ) {}
 }
