@@ -91,6 +91,7 @@ vercel:
     api-token: ${VERCEL_API_TOKEN:}
     team-id: ${VERCEL_TEAM_ID:}
     base-url: https://api.vercel.com
+    maintenance-key: ${VERCEL_EDGE_CONFIG_KEY:maintenance}
 
 # 🔐 커스텀 앱 설정
 app:

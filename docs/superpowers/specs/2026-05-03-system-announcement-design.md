@@ -494,21 +494,40 @@ public void on(AnnouncementPublishedEvent event) {
 
 ## 7. Vercel Edge Config + 환경별 Secret 매트릭스
 
-### 7.1 Edge Config 스키마
+### 7.1 Edge Config 스키마 — 환경별 key 분리 (단일 인스턴스 안)
+
+Vercel Hobby plan 은 account 당 Edge Config 인스턴스 1개 제한. 단일 인스턴스 안에서 환경별 다른 key 로 격리:
 
 ```json
 {
-  "maintenance": null | {
-    "phase": "PLANNED" | "ACTIVE",
-    "startAt": "2026-05-04T03:00:00+09:00",
-    "endAt":   "2026-05-04T04:00:00+09:00",
-    "messageKo": "...",
-    "messageEn": "..."
-  }
+  "maintenance": null | { ...prod... },                      // prod backend write / Production frontend read
+  "maintenance_preview": null | { ...stg... },               // stg backend write / Preview frontend read
+  "maintenance_development": null | { ...dev... }            // dev backend write / Development frontend read
 }
 ```
 
-`null` = 점검 모드 아님 (frontend 정상 부팅).
+각 key 의 value 형태 (동일 schema):
+
+```json
+{
+  "phase": "PLANNED" | "ACTIVE",
+  "startAt": "2026-05-04T03:00:00+09:00",
+  "endAt":   "2026-05-04T04:00:00+09:00",
+  "messageKo": "...",
+  "messageEn": "..."
+}
+```
+
+`null` 또는 key 부재 = 점검 모드 아님 (frontend 정상 부팅). Vercel Edge Config Items API 의 `operation: "upsert"` 가 key 부재 시 자동 생성 — 사전 등록 불필요.
+
+**환경 ↔ key 매핑** (frontend 의 `process.env.VERCEL_ENV` 와 정확히 일치):
+
+| 환경 | backend env `VERCEL_EDGE_CONFIG_KEY` | frontend `VERCEL_ENV` | Edge Config key |
+|---|---|---|---|
+| prod | `maintenance` (또는 미설정 default) | `production` | `maintenance` |
+| stg | `maintenance_preview` | `preview` | `maintenance_preview` |
+| dev | `maintenance_development` | `development` | `maintenance_development` |
+| 로컬 (`next dev`) | — | undefined → fallback | skip |
 
 ### 7.2 backend 가 Edge Config 를 write 하는 시점
 
@@ -524,23 +543,23 @@ public void on(AnnouncementPublishedEvent event) {
 
 배포 인프라는 **GCE VM + IAP + DOT_ENV append** (Cloud Run 아님). 정정된 사실 ↔ `project_system_announcement_design.md` Token 주입 행 참조.
 
-| 환경 | 액션 |
+| 환경 | 액션 (4 키: ID/TOKEN/TEAM_ID/KEY) |
 |---|---|
-| `.env.example` (tracked) | `VERCEL_EDGE_CONFIG_ID` + `VERCEL_API_TOKEN` placeholder 추가 (✅ 이미 회복됨 — `ea2e3b47` 커밋) |
-| `.env.local` (사용자 PC) | 사용자가 직접 두 키 추가 |
-| `.env.dev` (self-hosted runner 머신 `/home/eisen/PFPlay/pfplay-platform/.env.dev`) | 사용자가 직접 두 키 추가 |
-| `.env.stg` (위 동일 경로) | 사용자가 직접 두 키 추가 |
-| GH Secret `DOT_ENV` (prod) | 사용자가 GH Settings UI 에서 본문에 두 줄 append |
-| `application.yml` | `vercel.edge-config.id: ${VERCEL_EDGE_CONFIG_ID:}` / `vercel.api-token: ${VERCEL_API_TOKEN:}` placeholder 추가 (코드 작업) |
-| `docker-compose.*.yml` | 변경 없음 — 모든 4개 (`local`/`dev`/`stg`/`prod`) compose 파일이 `env_file: .env.{env}` 디렉티브로 키 무관 통째 주입 중. 신규 키 자동 전파 |
+| `.env.example` (tracked) | 4 placeholder 추가 (✅ ID/TOKEN ea2e3b47 회복, KEY 후속 commit) |
+| `.env.local` (사용자 PC) | `VERCEL_EDGE_CONFIG_ID` / `VERCEL_API_TOKEN` / (선택)`VERCEL_TEAM_ID`. KEY 는 default `maintenance` 또는 `maintenance_development` |
+| `.env.dev` (self-hosted runner 머신) | 위 + `VERCEL_EDGE_CONFIG_KEY=maintenance_development` |
+| `.env.stg` (위 동일 경로) | 위 + `VERCEL_EDGE_CONFIG_KEY=maintenance_preview` |
+| GH Secret `DOT_ENV` (prod) | 위 + `VERCEL_EDGE_CONFIG_KEY=maintenance` (또는 미포함 → default) |
+| `application.yml` | `vercel.edge-config.{id, api-token, team-id, base-url, maintenance-key}` placeholder 추가 (코드 작업) |
+| `docker-compose.*.yml` | 변경 없음 — `env_file: .env.{env}` 디렉티브로 키 무관 통째 주입 중. 신규 키 자동 전파 |
 | GH Workflow YAML | 변경 없음 (DOT_ENV 본문 append 만) |
 
 (Team account 인 경우 `VERCEL_TEAM_ID` 도 동일 매트릭스로 추가 — 본 PR 작업자가 Team 여부 확인 후 결정)
 
 ### 7.4 토큰 발급 절차 (사용자 액션)
 
-1. **Edge Config 생성** — Vercel Dashboard → Storage → Create Database → Edge Config → 이름 `pfplay-maintenance` → 생성 후 ID(`ecfg_...`) 복사 → `VERCEL_EDGE_CONFIG_ID`
-2. **pfplay-web 프로젝트와 Connect** — Edge Config 화면 → Projects 탭 → Connect Project → `pfplay-web` 선택 → 모든 환경 선택. `EDGE_CONFIG` 연결 문자열이 frontend 에 자동 주입됨
+1. **Edge Config 인스턴스 1개 생성** — Vercel Dashboard → Storage → Create Database → Edge Config → 이름 `pfplay-maintenance` → 생성 후 ID(`ecfg_...`) 복사 → `VERCEL_EDGE_CONFIG_ID`. (Hobby plan 1개 제한 — 환경 격리는 §7.1 의 환경별 key 분리로 해결)
+2. **pfplay-web 프로젝트와 Connect** — Edge Config 화면 → Projects 탭 → Connect Project → `pfplay-web` 선택 → **Production / Preview / Development 모두 체크**. `EDGE_CONFIG` 연결 문자열이 세 환경에 자동 주입 (frontend 가 `process.env.VERCEL_ENV` 로 환경 분기 + 다른 key read)
 3. **API 토큰 발급** — Account Settings → Tokens → Create Token → scope/expiration 결정 → `VERCEL_API_TOKEN`
 4. (Team) `VERCEL_TEAM_ID` — Team Settings → General
 

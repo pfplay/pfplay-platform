@@ -48,7 +48,7 @@ public class VercelEdgeConfigAdapter implements EdgeConfigPort {
         // a key. Use a LinkedHashMap so the JSON serializer emits "value": null properly.
         Map<String, Object> item = new LinkedHashMap<>();
         item.put("operation", "upsert");
-        item.put("key", "maintenance");
+        item.put("key", properties.getMaintenanceKey());
         item.put("value", value);
         Map<String, Object> body = Map.of("items", List.of(item));
 
