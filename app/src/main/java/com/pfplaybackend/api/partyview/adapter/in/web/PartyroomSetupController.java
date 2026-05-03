@@ -34,6 +34,6 @@ public class PartyroomSetupController {
             @Parameter(description = "파티룸 ID") @PathVariable Long partyroomId) {
         PartyroomSetupResult result = partyroomSetupQueryService.getSetupInfo(new PartyroomId(partyroomId));
         return ResponseEntity.ok().body(
-                ApiCommonResponse.success(QueryPartyroomSetupResponse.from(result.crews(), result.display())));
+                ApiCommonResponse.success(QueryPartyroomSetupResponse.from(result.stageType(), result.crews(), result.display())));
     }
 }
