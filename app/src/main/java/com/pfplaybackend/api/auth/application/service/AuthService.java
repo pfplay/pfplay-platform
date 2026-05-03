@@ -12,8 +12,8 @@ import com.pfplaybackend.api.common.config.security.jwt.properties.JwtProperties
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.exception.AuthenticationException;
 import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
+import com.pfplaybackend.api.user.application.dto.result.MemberSignResult;
 import com.pfplaybackend.api.user.application.service.MemberSignService;
-import com.pfplaybackend.api.user.domain.entity.data.MemberData;
 import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -57,7 +57,9 @@ public class AuthService {
             );
 
             ProviderType providerType = ProviderType.valueOf(provider.name());
-            MemberData member = memberSignService.getMemberOrCreate(userProfile.email(), providerType);
+            MemberSignResult signResult =
+                    memberSignService.getMemberOrCreateWithStatus(userProfile.email(), providerType);
+            var member = signResult.member();
 
             UserAccountData userAccount = userAccountRepository
                     .findByUserId(new UserId(member.getUserAccountId()))
@@ -78,7 +80,12 @@ public class AuthService {
                     member.getAuthorityTier()
             ));
 
-            return new AuthResult(token, "Cookie", jwtProperties.getSharedSessionTokenExpirationMs(), LocalDateTime.now(clock));
+            return new AuthResult(
+                    token,
+                    "Cookie",
+                    jwtProperties.getSharedSessionTokenExpirationMs(),
+                    LocalDateTime.now(clock),
+                    signResult.isNewUser());
 
         } catch (Exception e) {
             log.error("OAuth login failed: {}", e.getMessage(), e);

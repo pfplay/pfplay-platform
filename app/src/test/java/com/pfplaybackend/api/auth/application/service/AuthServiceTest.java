@@ -14,6 +14,7 @@ import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.enums.AuthorityTier;
 import com.pfplaybackend.api.common.exception.AuthenticationException;
 import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
+import com.pfplaybackend.api.user.application.dto.result.MemberSignResult;
 import com.pfplaybackend.api.user.application.service.MemberSignService;
 import com.pfplaybackend.api.user.domain.entity.data.MemberData;
 import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
@@ -79,8 +80,8 @@ class AuthServiceTest {
         MemberData member = mock(MemberData.class);
         when(member.getUserAccountId()).thenReturn(1L);
         when(member.getAuthorityTier()).thenReturn(AuthorityTier.FM);
-        when(memberSignService.getMemberOrCreate("test@gmail.com", ProviderType.GOOGLE))
-                .thenReturn(member);
+        when(memberSignService.getMemberOrCreateWithStatus("test@gmail.com", ProviderType.GOOGLE))
+                .thenReturn(new MemberSignResult(member, false));
 
         UserAccountData userAccount = mock(UserAccountData.class);
         when(userAccount.getEmail()).thenReturn("test@gmail.com");
@@ -100,6 +101,45 @@ class AuthServiceTest {
         assertThat(result.tokenType()).isEqualTo("Cookie");
         assertThat(result.expiresIn()).isEqualTo(3600L);
         assertThat(result.issuedAt()).isNotNull();
+        // Returning user — MemberSignResult.isNewUser=false above propagates here.
+        assertThat(result.isNewUser()).isFalse();
+    }
+
+    @Test
+    @DisplayName("OAuth 로그인 — 신규 UserAccount INSERT 시 isNewUser=true가 응답으로 전파된다 (Amplitude L4)")
+    void processOAuthLoginNewUserPropagatesIsNewUserTrue() {
+        // given — same setup as success test but MemberSignService reports a brand new UA was created
+        OAuthLoginCommand command = new OAuthLoginCommand("google", "auth-code", "verifier");
+
+        OAuthTokenDto tokenResponse = new OAuthTokenDto("access-token", "Bearer", 3600, null, "email");
+        when(oAuthClientService.exchangeCodeForToken(OAuthProvider.GOOGLE, "auth-code", "verifier"))
+                .thenReturn(tokenResponse);
+
+        OAuthUserProfileDto userProfile = new OAuthUserProfileDto("google-id", "newbie@gmail.com", "Newbie", null);
+        when(oAuthClientService.getUserProfile(OAuthProvider.GOOGLE, "access-token"))
+                .thenReturn(userProfile);
+
+        MemberData member = mock(MemberData.class);
+        when(member.getUserAccountId()).thenReturn(42L);
+        when(member.getAuthorityTier()).thenReturn(AuthorityTier.FM);
+        when(memberSignService.getMemberOrCreateWithStatus("newbie@gmail.com", ProviderType.GOOGLE))
+                .thenReturn(new MemberSignResult(member, true));
+
+        UserAccountData userAccount = mock(UserAccountData.class);
+        when(userAccount.getEmail()).thenReturn("newbie@gmail.com");
+        when(userAccount.getUserId()).thenReturn(new UserId(42L));
+        when(userAccount.getProviderType()).thenReturn(ProviderType.GOOGLE);
+        when(userAccountRepository.findByUserId(any(UserId.class)))
+                .thenReturn(Optional.of(userAccount));
+
+        when(jwtService.mintSharedSessionToken(any())).thenReturn("jwt-token");
+        when(jwtProperties.getSharedSessionTokenExpirationMs()).thenReturn(3600L);
+
+        // when
+        AuthResult result = authService.processOAuthLogin(command);
+
+        // then
+        assertThat(result.isNewUser()).isTrue();
     }
 
     @Test
@@ -118,8 +158,8 @@ class AuthServiceTest {
 
         MemberData member = mock(MemberData.class);
         when(member.getUserAccountId()).thenReturn(99L);
-        when(memberSignService.getMemberOrCreate("test@gmail.com", ProviderType.GOOGLE))
-                .thenReturn(member);
+        when(memberSignService.getMemberOrCreateWithStatus("test@gmail.com", ProviderType.GOOGLE))
+                .thenReturn(new MemberSignResult(member, false));
 
         when(userAccountRepository.findByUserId(any(UserId.class)))
                 .thenReturn(Optional.empty());
@@ -173,8 +213,8 @@ class AuthServiceTest {
         MemberData member = mock(MemberData.class);
         when(member.getUserAccountId()).thenReturn(7L);
         when(member.getAuthorityTier()).thenReturn(AuthorityTier.FM);
-        when(memberSignService.getMemberOrCreate("test@gmail.com", ProviderType.GOOGLE))
-                .thenReturn(member);
+        when(memberSignService.getMemberOrCreateWithStatus("test@gmail.com", ProviderType.GOOGLE))
+                .thenReturn(new MemberSignResult(member, false));
 
         UserAccountData userAccount = mock(UserAccountData.class);
         when(userAccount.getEmail()).thenReturn("test@gmail.com");
@@ -227,8 +267,8 @@ class AuthServiceTest {
 
         MemberData member = mock(MemberData.class);
         when(member.getUserAccountId()).thenReturn(99L);
-        when(memberSignService.getMemberOrCreate("test@gmail.com", ProviderType.GOOGLE))
-                .thenReturn(member);
+        when(memberSignService.getMemberOrCreateWithStatus("test@gmail.com", ProviderType.GOOGLE))
+                .thenReturn(new MemberSignResult(member, false));
 
         when(userAccountRepository.findByUserId(any(UserId.class)))
                 .thenReturn(Optional.empty());

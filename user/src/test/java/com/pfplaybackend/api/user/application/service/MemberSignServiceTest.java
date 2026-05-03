@@ -5,6 +5,7 @@ import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.user.adapter.out.persistence.MemberRepository;
 import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
 import com.pfplaybackend.api.user.application.dto.command.SignMemberCommand;
+import com.pfplaybackend.api.user.application.dto.result.MemberSignResult;
 import com.pfplaybackend.api.user.application.port.out.OAuth2RedirectPort;
 import com.pfplaybackend.api.user.application.port.out.PlaylistSetupPort;
 import com.pfplaybackend.api.user.domain.entity.data.MemberData;
@@ -214,6 +215,74 @@ class MemberSignServiceTest {
         assertThat(adminAccount.getLastLoginAt()).isNull();
         // mustChangePassword stays true; no flag mutation in this method
         assertThat(adminAccount.isMustChangePassword()).isTrue();
+    }
+
+    @Test
+    @DisplayName("getMemberOrCreateWithStatus — UserAccount 미존재 시 isNewUser=true (Amplitude L4)")
+    void getMemberOrCreateWithStatusReturnsTrueWhenUserAccountMissing() {
+        // given
+        when(userAccountRepository.findByEmailAndProviderType(EMAIL, ProviderType.GOOGLE))
+                .thenReturn(Optional.empty());
+        when(userAccountRepository.save(any(UserAccountData.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(memberRepository.findByUserAccountId(any(Long.class)))
+                .thenReturn(Optional.empty());
+        when(memberRepository.save(any(MemberData.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(userProfileCommandService.createProfileDataForMember(any(UserId.class)))
+                .thenReturn(mock(ProfileData.class));
+
+        // when
+        MemberSignResult result = memberSignService.getMemberOrCreateWithStatus(EMAIL, ProviderType.GOOGLE);
+
+        // then
+        assertThat(result.isNewUser()).isTrue();
+        assertThat(result.member()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("getMemberOrCreateWithStatus — 기존 UserAccount + 기존 Member 시 isNewUser=false (Amplitude L4)")
+    void getMemberOrCreateWithStatusReturnsFalseWhenBothPresent() {
+        // given
+        UserAccountData existingAccount = UserAccountData.createForSocial(
+                new UserId(123L), EMAIL, ProviderType.GOOGLE);
+        MemberData existingMember = mock(MemberData.class);
+
+        when(userAccountRepository.findByEmailAndProviderType(EMAIL, ProviderType.GOOGLE))
+                .thenReturn(Optional.of(existingAccount));
+        when(memberRepository.findByUserAccountId(123L))
+                .thenReturn(Optional.of(existingMember));
+
+        // when
+        MemberSignResult result = memberSignService.getMemberOrCreateWithStatus(EMAIL, ProviderType.GOOGLE);
+
+        // then
+        assertThat(result.isNewUser()).isFalse();
+        assertThat(result.member()).isSameAs(existingMember);
+    }
+
+    @Test
+    @DisplayName("getMemberOrCreateWithStatus — UserAccount는 있고 Member만 복구되는 경우 isNewUser=false (returning user from analytics 관점)")
+    void getMemberOrCreateWithStatusReturnsFalseOnMemberRecovery() {
+        // given — UA exists (returning user), but Member row was lost; recovery is NOT a sign-up
+        UserAccountData existingAccount = UserAccountData.createForSocial(
+                new UserId(456L), EMAIL, ProviderType.GOOGLE);
+
+        when(userAccountRepository.findByEmailAndProviderType(EMAIL, ProviderType.GOOGLE))
+                .thenReturn(Optional.of(existingAccount));
+        when(memberRepository.findByUserAccountId(456L))
+                .thenReturn(Optional.empty());
+        when(memberRepository.save(any(MemberData.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(userProfileCommandService.createProfileDataForMember(any(UserId.class)))
+                .thenReturn(mock(ProfileData.class));
+
+        // when
+        MemberSignResult result = memberSignService.getMemberOrCreateWithStatus(EMAIL, ProviderType.GOOGLE);
+
+        // then — Member was newly saved, but UserAccount was not, so isNewUser=false
+        assertThat(result.isNewUser()).isFalse();
+        verify(memberRepository).save(any(MemberData.class));
     }
 
     @Test
