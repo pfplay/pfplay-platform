@@ -31,6 +31,8 @@ spring:
     properties:
       hibernate:
         format_sql: true
+        type:
+          preferred_enum_jdbc_type: VARCHAR
 
   sql:
     init:
@@ -202,6 +204,8 @@ spring:
     properties:
       hibernate:
         format_sql: false
+        type:
+          preferred_enum_jdbc_type: VARCHAR
 
   sql:
     init:
@@ -252,6 +256,8 @@ spring:
     properties:
       hibernate:
         format_sql: false
+        type:
+          preferred_enum_jdbc_type: VARCHAR
 
   sql:
     init:
@@ -305,6 +311,8 @@ spring:
     properties:
       hibernate:
         format_sql: false
+        type:
+          preferred_enum_jdbc_type: VARCHAR
 
   sql:
     init:
