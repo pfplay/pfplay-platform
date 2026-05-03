@@ -4,6 +4,7 @@ import com.pfplaybackend.api.admin.application.service.AdminDemoService;
 import com.pfplaybackend.api.admin.application.service.AdminPartyroomService;
 import com.pfplaybackend.api.admin.application.service.AdminUserService;
 import com.pfplaybackend.api.admin.application.service.ChatSimulationService;
+import com.pfplaybackend.api.administration.adapter.in.web.AdminAnnouncementController;
 import com.pfplaybackend.api.administration.adapter.in.web.AdminAvatarCommandController;
 import com.pfplaybackend.api.administration.adapter.in.web.AdminAvatarQueryController;
 import com.pfplaybackend.api.administration.adapter.in.web.AdminCrewPenaltyCommandController;
@@ -30,6 +31,8 @@ import com.pfplaybackend.api.administration.application.service.AdminReportComma
 import com.pfplaybackend.api.administration.application.service.AdminReportQueryService;
 import com.pfplaybackend.api.administration.application.service.AdministratorManagementService;
 import com.pfplaybackend.api.administration.application.service.AdminPasswordService;
+import com.pfplaybackend.api.administration.application.service.SystemAnnouncementCommandService;
+import com.pfplaybackend.api.administration.adapter.out.persistence.SystemAnnouncementRepository;
 import com.pfplaybackend.api.common.config.security.authorization.AdminAuthorizationSpEL;
 import com.pfplaybackend.api.common.config.security.jwt.AdminCookieWriter;
 import com.pfplaybackend.api.common.config.security.jwt.JwtService;
@@ -60,7 +63,8 @@ import org.springframework.test.web.servlet.MockMvc;
         AdminMemberTierCommandController.class,
         AdminMemberWithdrawCommandController.class,
         AdminReportQueryController.class,
-        AdminReportCommandController.class
+        AdminReportCommandController.class,
+        AdminAnnouncementController.class
 })
 @Import({
         AbstractAdminWebMvcTest.SharedMethodSecurityConfig.class,
@@ -97,4 +101,6 @@ public abstract class AbstractAdminWebMvcTest {
     @MockBean protected AvatarAdminCatalogQueryUseCase avatarAdminCatalogQueryUseCase;
     @MockBean protected AdminReportQueryService adminReportQueryService;
     @MockBean protected AdminReportCommandService adminReportCommandService;
+    @MockBean protected SystemAnnouncementCommandService systemAnnouncementCommandService;
+    @MockBean protected SystemAnnouncementRepository systemAnnouncementRepository;
 }

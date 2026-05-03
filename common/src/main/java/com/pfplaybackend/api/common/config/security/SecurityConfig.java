@@ -102,6 +102,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/auth/oauth/callback", "/api/v1/auth/oauth/url", "/api/v1/auth/logout",
                                 "/api/v1/auth/admin/login",
                                 "/api/v1/users/members/sign/**", "/api/v1/users/guests/sign/**", "/api/v1/partyrooms/link/**").permitAll()
+                        // V14 시스템 공지 §4.4 — anonymous public status endpoint (10초 cache).
+                        .requestMatchers("/api/v1/system/status").permitAll()
                         .requestMatchers("/actuator/health").permitAll()
                         .requestMatchers("/ws/**").permitAll()
                         .requestMatchers("/spec/**", "/swagger-ui/**", "/v3/api-docs/**").permitAll()

@@ -85,6 +85,13 @@ service-api:
     api-key: ${PYTUBE_API_KEY:pfplay_streaming}
     api-secret: ${PYTUBE_API_SECRET}
 
+vercel:
+  edge-config:
+    id: ${VERCEL_EDGE_CONFIG_ID:}
+    api-token: ${VERCEL_API_TOKEN:}
+    team-id: ${VERCEL_TEAM_ID:}
+    base-url: https://api.vercel.com
+
 # 🔐 커스텀 앱 설정
 app:
   oauth2:
