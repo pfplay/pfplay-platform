@@ -9,8 +9,13 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 
+import java.util.Collection;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -85,6 +90,27 @@ class AdminCsrfIntegrationTest extends AbstractIntegrationTest {
                         .header(CSRF_HEADER, "invalid-token-value")
                         .contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void getOnAdminPath_emitsFreshCsrfCookieAlongsideDeletion() throws Exception {
+        // A6 regression: the response from any authenticated admin GET must include a
+        // freshly-generated XSRF-TOKEN Set-Cookie header. CsrfAuthenticationStrategy may
+        // emit a deletion cookie (Max-Age=0) as part of token rotation; without the
+        // EagerCsrfTokenRequestAttributeHandler fix, no replacement is emitted and the
+        // browser is left token-less, blocking subsequent mutations with 403.
+        MvcResult result = mockMvc.perform(get(ADMIN_PROBE)
+                        .cookie(new Cookie(CSRF_COOKIE, "previous-token-value")))
+                .andReturn();
+
+        Collection<String> setCookies = result.getResponse().getHeaders("Set-Cookie");
+        boolean hasFreshToken = setCookies.stream()
+                .filter(c -> c.startsWith(CSRF_COOKIE + "="))
+                .anyMatch(c -> !c.contains("Max-Age=0") && !c.startsWith(CSRF_COOKIE + "=;"));
+        assertThat(hasFreshToken)
+                .as("response Set-Cookie headers: %s", setCookies)
+                .isTrue();
     }
 
     @Test

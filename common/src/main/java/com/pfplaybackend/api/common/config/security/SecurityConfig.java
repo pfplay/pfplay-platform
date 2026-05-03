@@ -3,6 +3,7 @@ package com.pfplaybackend.api.common.config.security;
 import com.pfplaybackend.api.common.config.security.cors.properties.CorsProperties;
 import com.pfplaybackend.api.common.config.security.csrf.AdminCsrfRequestMatcher;
 import com.pfplaybackend.api.common.config.security.csrf.AdminCsrfTokenRepositoryFactory;
+import com.pfplaybackend.api.common.config.security.csrf.EagerCsrfTokenRequestAttributeHandler;
 import com.pfplaybackend.api.common.config.security.csrf.properties.AdminCsrfProperties;
 import com.pfplaybackend.api.common.config.security.jwt.AdminCookieWriter;
 import com.pfplaybackend.api.common.config.security.jwt.AdminTokenRenewalFilter;
@@ -60,7 +61,11 @@ public class SecurityConfig {
                         return;
                     }
                     CookieCsrfTokenRepository repo = adminCsrfTokenRepositoryFactory.build();
-                    CsrfTokenRequestAttributeHandler handler = new CsrfTokenRequestAttributeHandler();
+                    // Eager handler resolves the deferred token at handle() time so the
+                    // post-rotation Set-Cookie is emitted while the response is still
+                    // uncommitted. Without this, mutations after login hit 403 because
+                    // the browser sees only the deletion cookie. Spec: admin-backend-asks.md A6.
+                    CsrfTokenRequestAttributeHandler handler = new EagerCsrfTokenRequestAttributeHandler();
                     csrf
                             .csrfTokenRepository(repo)
                             .csrfTokenRequestHandler(handler)
