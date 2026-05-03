@@ -5,6 +5,6 @@ import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.playlist.application.dto.PlaybackTrackDto;
 
 public interface PlaylistCommandPort {
-    void grabTrack(UserId userId, String linkId);
+    AddedTrackInfo grabTrack(UserId userId, String linkId);
     PlaybackTrackDto getFirstTrack(PlaylistId playlistId);
 }

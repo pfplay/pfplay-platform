@@ -3,6 +3,7 @@ package com.pfplaybackend.api.playlist.application.service;
 import com.pfplaybackend.api.common.domain.value.PlaylistId;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.exception.ExceptionCreator;
+import com.pfplaybackend.api.playlist.application.dto.GrabbedTrackDto;
 import com.pfplaybackend.api.playlist.application.dto.command.AddTrackCommand;
 import com.pfplaybackend.api.playlist.domain.entity.data.PlaylistData;
 import com.pfplaybackend.api.playlist.domain.entity.data.TrackData;
@@ -23,7 +24,7 @@ public class GrabTrackService {
     private final TrackCommandService trackCommandService;
 
     @Transactional
-    public void grabTrack(UserId userId, String linkId) {
+    public GrabbedTrackDto grabTrack(UserId userId, String linkId) {
         TrackData targetTrackData = aggregatePort.findFirstTrackByLink(linkId);
         if (targetTrackData == null) throw ExceptionCreator.create(TrackException.NOT_FOUND_TRACK);
 
@@ -38,6 +39,7 @@ public class GrabTrackService {
                 targetTrackData.getDuration().toDisplayString(),
                 targetTrackData.getThumbnailImage()
         );
-        trackCommandService.addTrackInPlaylist(playlistData.getId(), command);
+        Long trackId = trackCommandService.addTrackInPlaylist(playlistData.getId(), command);
+        return new GrabbedTrackDto(trackId, playlistData.getId());
     }
 }

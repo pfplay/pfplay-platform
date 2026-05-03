@@ -5,6 +5,7 @@ import com.pfplaybackend.api.common.domain.value.PlaylistId;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.exception.http.ConflictException;
 import com.pfplaybackend.api.common.exception.http.NotFoundException;
+import com.pfplaybackend.api.playlist.application.dto.GrabbedTrackDto;
 import com.pfplaybackend.api.playlist.application.dto.command.AddTrackCommand;
 import com.pfplaybackend.api.playlist.domain.entity.data.PlaylistData;
 import com.pfplaybackend.api.playlist.domain.entity.data.TrackData;
@@ -56,7 +57,7 @@ class GrabTrackServiceTest {
     }
 
     @Test
-    @DisplayName("grabTrack — 정상 그랩 시 트랙이 GRABLIST에 추가된다")
+    @DisplayName("grabTrack — 정상 그랩 시 트랙이 GRABLIST에 추가되고 GrabbedTrackDto가 반환된다")
     void grabTrackSuccess() {
         // given
         TrackData track = createTrackData();
@@ -65,12 +66,15 @@ class GrabTrackServiceTest {
         when(aggregatePort.findFirstTrackByLink(LINK_ID)).thenReturn(track);
         when(aggregatePort.findPlaylistByOwnerAndType(USER_ID, PlaylistType.GRABLIST)).thenReturn(grablist);
         when(aggregatePort.findTrackByPlaylistAndLink(new PlaylistId(grablist.getId()), LINK_ID)).thenReturn(Optional.empty());
+        when(trackCommandService.addTrackInPlaylist(eq(grablist.getId()), any(AddTrackCommand.class))).thenReturn(777L);
 
         // when
-        grabTrackService.grabTrack(USER_ID, LINK_ID);
+        GrabbedTrackDto result = grabTrackService.grabTrack(USER_ID, LINK_ID);
 
         // then
         verify(trackCommandService).addTrackInPlaylist(eq(grablist.getId()), any(AddTrackCommand.class));
+        assertThat(result.trackId()).isEqualTo(777L);
+        assertThat(result.playlistId()).isEqualTo(grablist.getId());
     }
 
     @Test

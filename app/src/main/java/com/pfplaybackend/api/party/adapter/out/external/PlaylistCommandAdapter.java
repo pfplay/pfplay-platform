@@ -2,7 +2,9 @@ package com.pfplaybackend.api.party.adapter.out.external;
 
 import com.pfplaybackend.api.common.domain.value.PlaylistId;
 import com.pfplaybackend.api.common.domain.value.UserId;
+import com.pfplaybackend.api.party.application.port.out.AddedTrackInfo;
 import com.pfplaybackend.api.party.application.port.out.PlaylistCommandPort;
+import com.pfplaybackend.api.playlist.application.dto.GrabbedTrackDto;
 import com.pfplaybackend.api.playlist.application.dto.PlaybackTrackDto;
 import com.pfplaybackend.api.playlist.application.service.GrabTrackService;
 import com.pfplaybackend.api.playlist.application.service.TrackCommandService;
@@ -17,8 +19,9 @@ public class PlaylistCommandAdapter implements PlaylistCommandPort {
     private final TrackCommandService trackCommandService;
 
     @Override
-    public void grabTrack(UserId userId, String linkId) {
-        grabTrackService.grabTrack(userId, linkId);
+    public AddedTrackInfo grabTrack(UserId userId, String linkId) {
+        GrabbedTrackDto grabbed = grabTrackService.grabTrack(userId, linkId);
+        return new AddedTrackInfo(grabbed.trackId(), grabbed.playlistId());
     }
 
     @Override
