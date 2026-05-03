@@ -37,7 +37,7 @@ import static org.mockito.Mockito.verify;
  * publish → AFTER_COMMIT TransactionalEventListener → STOMP broadcast chain.
  *
  * <p>Approach: {@code @SpyBean SimpMessagingTemplate} captures the
- * {@code convertAndSend("/topic/system/announcements", payload)} call emitted by
+ * {@code convertAndSend("/sub/system/announcements", payload)} call emitted by
  * {@link AnnouncementBroadcaster#on(com.pfplaybackend.api.administration.domain.event.AnnouncementPublishedEvent)}.
  * This proves:
  * <ol>
@@ -59,7 +59,7 @@ import static org.mockito.Mockito.verify;
  */
 class AnnouncementBroadcasterIT extends AbstractIntegrationTest {
 
-    private static final String TOPIC = "/topic/system/announcements";
+    private static final String TOPIC = "/sub/system/announcements";
     private static final Long ADMIN_USER_ID = 99710L;
     private static final String ADMIN_EMAIL = "broadcaster-it@x";
 
@@ -95,7 +95,7 @@ class AnnouncementBroadcasterIT extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("publish EVENT → AFTER_COMMIT listener → /topic/system/announcements 로 ANNOUNCEMENT_PUBLISHED payload broadcast")
+    @DisplayName("publish EVENT → AFTER_COMMIT listener → /sub/system/announcements 로 ANNOUNCEMENT_PUBLISHED payload broadcast")
     void publish_event_broadcasts_after_commit() {
         // when — publish in its own transaction (TransactionTemplate so listener fires on commit)
         Long announcementId = transactionTemplate.execute(status ->

@@ -22,7 +22,10 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class AnnouncementBroadcaster {
 
-    private static final String TOPIC = "/topic/system/announcements";
+    // 기존 realtime/WebSocketConfig 가 enableSimpleBroker("/sub") 만 등록하므로
+    // 새 토픽도 /sub prefix 를 따른다 (partyroom 토픽 컨벤션과 일치).
+    // /topic prefix 는 broker 에 미등록 → silently drop 됨.
+    private static final String TOPIC = "/sub/system/announcements";
 
     private final SimpMessagingTemplate messagingTemplate;
     private final EdgeConfigPort edgeConfigPort;
