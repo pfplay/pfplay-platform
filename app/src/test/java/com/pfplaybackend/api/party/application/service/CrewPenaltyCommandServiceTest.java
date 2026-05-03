@@ -5,6 +5,7 @@ import com.pfplaybackend.api.common.aspect.context.AuthContext;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.exception.http.ForbiddenException;
 import com.pfplaybackend.api.common.exception.http.NotFoundException;
+import com.pfplaybackend.api.party.domain.exception.PenaltyException;
 import com.pfplaybackend.api.party.adapter.out.persistence.CrewPenaltyHistoryRepository;
 import com.pfplaybackend.api.party.application.dto.command.PunishPenaltyCommand;
 import com.pfplaybackend.api.party.application.port.out.ChatPenaltyCachePort;
@@ -12,7 +13,9 @@ import com.pfplaybackend.api.party.domain.entity.data.CrewData;
 import com.pfplaybackend.api.party.domain.entity.data.PartyroomData;
 import com.pfplaybackend.api.party.domain.entity.data.history.CrewPenaltyHistoryData;
 import com.pfplaybackend.api.party.domain.enums.GradeType;
+import com.pfplaybackend.api.party.domain.enums.PartyroomStatus;
 import com.pfplaybackend.api.party.domain.enums.PenaltyType;
+import com.pfplaybackend.api.party.domain.enums.PunisherType;
 import com.pfplaybackend.api.party.domain.enums.StageType;
 import com.pfplaybackend.api.party.domain.event.CrewPenalizedEvent;
 import com.pfplaybackend.api.party.domain.port.PartyroomAggregatePort;
@@ -25,6 +28,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -76,7 +80,7 @@ class CrewPenaltyCommandServiceTest {
                 .id(1L).hostId(userId).stageType(StageType.GENERAL)
                 .title("Room").introduction("Intro")
                 .linkDomain(LinkDomain.of("link")).playbackTimeLimit(PlaybackTimeLimit.ofMinutes(5))
-                .noticeContent("").isTerminated(false).build();
+                .noticeContent("").status(PartyroomStatus.ACTIVE).build();
     }
 
     // ========== addPenalty ==========
@@ -139,7 +143,9 @@ class CrewPenaltyCommandServiceTest {
         assertThat(penaltyId).isEqualTo(77L);
         verify(partyroomAccessCommandService).expel(partyroom, punishedCrew, true);
         verify(eventPublisher).publishEvent(any(CrewPenalizedEvent.class));
-        verify(crewPenaltyHistoryRepository).save(any(CrewPenaltyHistoryData.class));
+        ArgumentCaptor<CrewPenaltyHistoryData> captor = ArgumentCaptor.forClass(CrewPenaltyHistoryData.class);
+        verify(crewPenaltyHistoryRepository).save(captor.capture());
+        assertThat(captor.getValue().getPunisherType()).isEqualTo(PunisherType.CREW);
     }
 
     @Test
@@ -232,5 +238,37 @@ class CrewPenaltyCommandServiceTest {
         // when & then
         assertThatThrownBy(() -> crewPenaltyCommandService.releaseCrewPenalty(partyroomId, 99L))
                 .isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("releaseCrewPenalty — admin이 부과한 페널티(punisher_type=ADMIN)는 거부된다 (PNT-003)")
+    void releaseCrewPenaltyAdminAppliedBlocked() {
+        // given
+        PartyroomId partyroomId = new PartyroomId(1L);
+        when(partyroomQueryService.getPartyroomById(partyroomId)).thenReturn(createPartyroom());
+
+        CrewData releaserCrew = CrewData.builder()
+                .id(10L).partyroomId(partyroomId).userId(userId).gradeType(GradeType.HOST).isActive(true).build();
+        when(partyroomQueryService.getCrewOrThrow(partyroomId, userId)).thenReturn(releaserCrew);
+
+        CrewPenaltyHistoryData adminAppliedHistory = CrewPenaltyHistoryData.builder()
+                .id(999L).partyroomId(partyroomId).punishedCrewId(new CrewId(20L))
+                .punisherCrewId(null)
+                .punisherType(PunisherType.ADMIN)
+                .penaltyType(PenaltyType.PERMANENT_EXPULSION)
+                .penaltyReason("Admin action").released(false).build();
+        when(crewPenaltyHistoryRepository.findByIdAndPartyroomIdAndReleasedIsFalse(999L, partyroomId))
+                .thenReturn(Optional.of(adminAppliedHistory));
+
+        // when & then
+        assertThatThrownBy(() -> crewPenaltyCommandService.releaseCrewPenalty(partyroomId, 999L))
+                .isInstanceOf(ForbiddenException.class)
+                .hasMessageContaining(PenaltyException.ADMIN_APPLIED_PENALTY_REQUIRES_ADMIN_RELEASE.getMessage());
+
+        // No release happens — crew not unbanned, history not saved
+        verify(aggregatePort, never()).findCrewById(any());
+        verify(aggregatePort, never()).saveCrew(any());
+        verify(crewPenaltyHistoryRepository, never()).save(any());
+        assertThat(adminAppliedHistory.isReleased()).isFalse();
     }
 }

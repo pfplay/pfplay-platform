@@ -34,7 +34,7 @@ public class CreateAdminPartyroomResponse {
                 .linkDomain(partyroom.getLinkDomain().getValue())
                 .playbackTimeLimit(partyroom.getPlaybackTimeLimit().getMinutes())
                 .stageType(partyroom.getStageType().name())
-                .isActive(!partyroom.isTerminated())
+                .isActive(partyroom.isActive())
                 .createdAt(partyroom.getCreatedAt())
                 .build();
     }

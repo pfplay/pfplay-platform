@@ -7,6 +7,8 @@ import com.pfplaybackend.api.party.application.dto.partyroom.ActivePartyroomDto;
 import com.pfplaybackend.api.party.application.dto.partyroom.PartyroomWithCrewDto;
 import com.pfplaybackend.api.party.application.dto.playback.PlaybackDto;
 import com.pfplaybackend.api.party.domain.entity.data.*;
+import com.pfplaybackend.api.party.domain.enums.DisplayFlag;
+import com.pfplaybackend.api.party.domain.enums.PartyroomStatus;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import com.querydsl.core.Tuple;
 import com.querydsl.core.types.ConstructorExpression;
@@ -107,7 +109,11 @@ public class PartyroomRepositoryImpl implements PartyroomRepositoryCustom {
                 )
                 .leftJoin(qPlaybackData)
                 .on(qPlaybackData.id.eq(qPlayback.currentPlaybackId.id))
-                .where(qPartyroomData.isTerminated.eq(false))
+                // PA-3: HIDDEN 룸은 customer list에서 제외 (진입은 link 직접 접근으로 가능 — Specification에 displayFlag 검사 없음)
+                .where(
+                        qPartyroomData.status.ne(PartyroomStatus.TERMINATED),
+                        qPartyroomData.displayFlag.ne(DisplayFlag.HIDDEN)
+                )
                 .orderBy(qPartyroomData.id.asc(), qCrewData.gradeType.asc())
                 .fetch();
 
@@ -165,7 +171,10 @@ public class PartyroomRepositoryImpl implements PartyroomRepositoryCustom {
 
         return queryFactory.select(qPartyroomData)
                 .from(qPartyroomData)
-                .where(qPartyroomData.updatedAt.before(LocalDateTime.now(clock).minusDays(days)))
+                .where(
+                        qPartyroomData.updatedAt.before(LocalDateTime.now(clock).minusDays(days)),
+                        qPartyroomData.status.ne(PartyroomStatus.TERMINATED)
+                )
                 .fetch();
     }
 }

@@ -7,10 +7,16 @@ import com.pfplaybackend.api.auth.application.service.AuthService;
 import com.pfplaybackend.api.auth.application.service.LogoutService;
 import com.pfplaybackend.api.auth.application.service.OAuthUrlService;
 import com.pfplaybackend.api.auth.domain.enums.OAuthProvider;
-import com.pfplaybackend.api.common.config.security.jwt.CookieUtil;
+import com.pfplaybackend.api.common.config.security.jwt.AdminCookieWriter;
+import com.pfplaybackend.api.common.config.security.jwt.AdminTokenRenewalFilter;
+import com.pfplaybackend.api.common.config.security.jwt.JwtService;
+import com.pfplaybackend.api.common.config.security.jwt.SharedSessionCookieWriter;
+import com.pfplaybackend.api.common.config.security.jwt.properties.JwtProperties;
+import com.pfplaybackend.api.common.config.security.web.AdminOriginGuardFilter;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
@@ -28,14 +34,20 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(AuthController.class)
+@AutoConfigureMockMvc(addFilters = false)
 class AuthControllerTest {
 
     @Autowired MockMvc mockMvc;
     @MockBean OAuthUrlService oAuthUrlService;
     @MockBean AuthService authService;
     @MockBean LogoutService logoutService;
-    @MockBean CookieUtil cookieUtil;
+    @MockBean SharedSessionCookieWriter sharedSessionCookieWriter;
+    @MockBean AdminCookieWriter adminCookieWriter;
+    @MockBean JwtService jwtService;
+    @MockBean JwtProperties jwtProperties;
     @MockBean JwtDecoder jwtDecoder;
+    @MockBean AdminTokenRenewalFilter adminTokenRenewalFilter;
+    @MockBean AdminOriginGuardFilter adminOriginGuardFilter;
 
     @Test
     @DisplayName("generateOAuthUrl — 200 OK + URL 반환")
@@ -100,7 +112,7 @@ class AuthControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.tokenType").value("Cookie"));
 
-        verify(cookieUtil).addAccessTokenCookie(any(), eq("access-token"));
+        verify(sharedSessionCookieWriter).write(any(), eq("access-token"));
     }
 
     @Test

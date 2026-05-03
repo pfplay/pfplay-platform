@@ -3,7 +3,7 @@ package com.pfplaybackend.api.user.domain.service;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.user.domain.entity.data.ActivityData;
 import com.pfplaybackend.api.user.domain.enums.ActivityType;
-import com.pfplaybackend.api.user.domain.enums.ObtainmentType;
+import com.pfplaybackend.api.avatar.domain.enums.ObtainmentType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

@@ -7,6 +7,7 @@ import com.pfplaybackend.api.party.adapter.out.persistence.PlaybackRepository;
 import com.pfplaybackend.api.party.domain.entity.data.PartyroomData;
 import com.pfplaybackend.api.party.domain.entity.data.PartyroomPlaybackData;
 import com.pfplaybackend.api.party.domain.entity.data.PlaybackData;
+import com.pfplaybackend.api.party.domain.enums.PartyroomStatus;
 import com.pfplaybackend.api.party.domain.enums.StageType;
 import com.pfplaybackend.api.party.domain.port.PartyroomAggregatePort;
 import com.pfplaybackend.api.party.domain.value.CrewId;
@@ -46,7 +47,7 @@ class PartyroomAccessQueryServiceTest {
                 .introduction("Intro")
                 .linkDomain(LinkDomain.of(linkDomain))
                 .playbackTimeLimit(PlaybackTimeLimit.ofMinutes(10))
-                .isTerminated(false)
+                .status(PartyroomStatus.ACTIVE)
                 .build()
                 .assignPartyroomId(new PartyroomId(42L));
         when(aggregatePort.findByLinkDomain(LinkDomain.of(linkDomain)))
@@ -80,7 +81,7 @@ class PartyroomAccessQueryServiceTest {
                 .introduction("Intro")
                 .linkDomain(LinkDomain.of(linkDomain))
                 .playbackTimeLimit(PlaybackTimeLimit.ofMinutes(10))
-                .isTerminated(false)
+                .status(PartyroomStatus.ACTIVE)
                 .build()
                 .assignPartyroomId(new PartyroomId(42L));
         when(aggregatePort.findByLinkDomain(LinkDomain.of(linkDomain)))

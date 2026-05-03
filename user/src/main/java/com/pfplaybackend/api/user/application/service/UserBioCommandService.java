@@ -2,6 +2,7 @@ package com.pfplaybackend.api.user.application.service;
 
 import com.pfplaybackend.api.common.ThreadLocalContext;
 import com.pfplaybackend.api.common.aspect.context.AuthContext;
+import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.user.adapter.out.persistence.MemberRepository;
 import com.pfplaybackend.api.user.application.dto.command.UpdateBioCommand;
 import com.pfplaybackend.api.user.domain.entity.data.MemberData;
@@ -22,9 +23,10 @@ public class UserBioCommandService {
     @Transactional
     public void updateMyBio(UpdateBioCommand updateBioCommand) {
         AuthContext authContext = ThreadLocalContext.getAuthContext();
-        MemberData memberData = memberRepository.findByUserId(authContext.getUserId()).orElseThrow();
+        UserId userId = authContext.getUserId();
+        MemberData memberData = memberRepository.findByUserAccountId(userId.getUid()).orElseThrow();
         memberData.updateProfileBio(updateBioCommand.nickName(), updateBioCommand.introduction());
         memberRepository.save(memberData);
-        eventPublisher.publishEvent(new UserProfileChangedEvent(memberData.getUserId(), ProfileChangeType.BIO));
+        eventPublisher.publishEvent(new UserProfileChangedEvent(userId, ProfileChangeType.BIO));
     }
 }

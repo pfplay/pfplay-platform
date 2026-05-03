@@ -163,13 +163,14 @@ The project follows **Hexagonal Architecture (Ports & Adapters)** with DDD princ
 - Decoupled components via message passing
 - Scalable distributed architecture
 
-**3. Gradle Multi-Module (5 modules)**
+**3. Gradle Multi-Module (6 modules)**
 - `common` — Shared Kernel + infrastructure config (JPA, Redis, JWT, Security)
 - `realtime` — WebSocket infrastructure (zero domain imports, port interfaces only)
 - `playlist` — Playlist domain (depends: `common`)
-- `user` — User domain (depends: `common`)
+- `avatar` — Avatar catalog domain (depends: `common`)
+- `user` — User domain (depends: `common`, `avatar`)
 - `app` — Auth, Party, Admin, Bootstrap (depends: all modules)
-- Dependency direction: `app → user → common → realtime`, `app → playlist → common`
+- Dependency direction: `app → user → avatar → common`, `app → playlist → common`, `app → realtime → common`
 
 **4. Distributed Systems**
 - Redis-based distributed locks
@@ -396,7 +397,12 @@ pfplay-platform/
 │       ├── adapter/                    # REST controllers, JPA repositories
 │       ├── application/                # Use cases, DTOs
 │       └── domain/                     # Entities, services, value objects
-├── user/                               # User domain (member, guest, profile, avatar)
+├── avatar/                             # Avatar catalog domain (body/face resources, lifecycle)
+│   └── src/main/java/com/pfplaybackend/api/avatar/
+│       ├── adapter/                    # JPA repositories
+│       ├── application/                # AvatarCatalogQueryUseCase port + service, DTOs
+│       └── domain/                     # Entities, VOs (AvatarBodyUri/FaceUri/IconUri), enums
+├── user/                               # User domain (member, guest, profile)
 │   └── src/main/java/com/pfplaybackend/api/user/
 │       ├── adapter/                    # REST controllers, JPA repositories
 │       ├── application/                # Use cases, ports, DTOs
@@ -408,7 +414,7 @@ pfplay-platform/
 │       ├── admin/                      # Administrative tools
 │       └── bootstrap/                  # Cross-module adapters
 ├── build.gradle                        # Root Gradle config
-├── settings.gradle                     # Multi-module settings (5 modules)
+├── settings.gradle                     # Multi-module settings (6 modules)
 ├── docs/                               # Design documents (ADRs, context map, naming)
 ├── Dockerfile                          # Container image
 └── README.md                           # This file

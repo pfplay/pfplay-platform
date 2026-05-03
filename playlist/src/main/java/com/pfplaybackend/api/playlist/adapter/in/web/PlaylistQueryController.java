@@ -24,7 +24,7 @@ public class PlaylistQueryController {
     @Operation(summary = "플레이리스트 목록 조회", description = "현재 로그인한 회원의 전체 플레이리스트 목록을 조회합니다.")
     @SecurityRequirement(name = "cookieAuth")
     @GetMapping()
-    @PreAuthorize("hasRole('ROLE_MEMBER')")
+    @PreAuthorize("hasRole('MEMBER')")
     public ResponseEntity<ApiCommonResponse<QueryPlaylistResponse>> getPlaylists() {
         return ResponseEntity.ok().body(ApiCommonResponse.success(
                 QueryPlaylistResponse.builder()

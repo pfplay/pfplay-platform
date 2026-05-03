@@ -39,12 +39,5 @@ public class PlaybackAggregationData extends BaseEntity {
         return new PlaybackAggregationData(playbackId);
     }
 
-    // ── Business Methods ──
 
-    public PlaybackAggregationData updateAggregation(int deltaLikeCount, int deltaDislikeCount, int deltaGrabCount) {
-        this.likeCount += deltaLikeCount;
-        this.dislikeCount += deltaDislikeCount;
-        this.grabCount += deltaGrabCount;
-        return this;
-    }
 }

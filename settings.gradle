@@ -1,5 +1,5 @@
 rootProject.name = 'pfplay'
-include 'common', 'realtime', 'playlist', 'user', 'app'
+include 'common', 'realtime', 'playlist', 'user', 'avatar', 'app'
 
 buildCache {
 	local {

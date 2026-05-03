@@ -13,7 +13,7 @@ import com.pfplaybackend.api.auth.application.service.OAuthUrlService;
 import com.pfplaybackend.api.auth.domain.enums.OAuthProvider;
 import com.pfplaybackend.api.auth.domain.exception.AuthException;
 import com.pfplaybackend.api.common.ApiCommonResponse;
-import com.pfplaybackend.api.common.config.security.jwt.CookieUtil;
+import com.pfplaybackend.api.common.config.security.jwt.SharedSessionCookieWriter;
 import com.pfplaybackend.api.common.config.swagger.ApiErrorCodes;
 import com.pfplaybackend.api.common.exception.ExceptionCreator;
 import io.swagger.v3.oas.annotations.Operation;
@@ -41,7 +41,7 @@ public class AuthController {
     private final OAuthUrlService oAuthUrlService;
     private final AuthService authService;
     private final LogoutService logoutService;
-    private final CookieUtil cookieUtil;
+    private final SharedSessionCookieWriter sharedSessionCookieWriter;
 
     @Operation(summary = "OAuth 인증 URL 생성", description = "지정된 OAuth 제공자(Google, Twitter)의 인증 URL을 생성합니다. 프론트엔드에서 이 URL로 사용자를 리다이렉트하여 OAuth 인증을 시작합니다.")
     @ApiErrorCodes({AuthException.class})
@@ -69,7 +69,6 @@ public class AuthController {
 
         OAuthProvider provider = resolveProvider(request.getProvider());
 
-        // State 검증
         if (request.getState() != null) {
             boolean stateValid = oAuthUrlService.validateAndConsumeState(
                     request.getState(), provider, request.getCodeVerifier());
@@ -78,12 +77,10 @@ public class AuthController {
             }
         }
 
-        // OAuth 로그인 처리
         OAuthLoginCommand command = new OAuthLoginCommand(request.getProvider(), request.getCode(), request.getCodeVerifier());
         AuthResult authResult = authService.processOAuthLogin(command);
 
-        // JWT 토큰을 HttpOnly 쿠키로 저장
-        cookieUtil.addAccessTokenCookie(response, authResult.accessToken());
+        sharedSessionCookieWriter.write(response, authResult.accessToken());
 
         LoginOAuthResponse loginResponse = LoginOAuthResponse.builder()
                 .tokenType(authResult.tokenType())
@@ -104,8 +101,7 @@ public class AuthController {
             log.warn("Failed to exit active partyroom during logout: {}", e.getMessage());
         }
 
-        cookieUtil.deleteAccessTokenCookie(response);
-        cookieUtil.deleteRefreshTokenCookie(response);
+        sharedSessionCookieWriter.clear(response);
 
         return ResponseEntity.noContent().build();
     }

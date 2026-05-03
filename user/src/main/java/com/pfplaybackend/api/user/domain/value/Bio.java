@@ -31,4 +31,8 @@ public class Bio {
         this.nickname = new Nickname(nickname);
         this.introduction = introduction;
     }
+
+    public void updateNickname(String nickname) {
+        this.nickname = new Nickname(nickname);
+    }
 }

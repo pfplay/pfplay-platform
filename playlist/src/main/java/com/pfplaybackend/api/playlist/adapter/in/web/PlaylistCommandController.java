@@ -33,7 +33,7 @@ public class PlaylistCommandController {
     @ApiResponse(responseCode = "201", description = "플레이리스트 생성 성공")
     @SecurityRequirement(name = "cookieAuth")
     @PostMapping()
-    @PreAuthorize("hasRole('ROLE_MEMBER')")
+    @PreAuthorize("hasRole('MEMBER')")
     public ResponseEntity<ApiCommonResponse<CreatePlaylistResponse>> create(@RequestBody @Valid CreatePlaylistRequest request) {
         PlaylistData playlist = playlistCommandService.createPlaylist(request.getName());
         return ResponseEntity
@@ -45,7 +45,7 @@ public class PlaylistCommandController {
     @ApiResponse(responseCode = "204", description = "플레이리스트 삭제 성공")
     @SecurityRequirement(name = "cookieAuth")
     @DeleteMapping()
-    @PreAuthorize("hasRole('ROLE_MEMBER')")
+    @PreAuthorize("hasRole('MEMBER')")
     public ResponseEntity<Void> deletePlaylist(@Valid @RequestBody DeletePlaylistsRequest request) {
         playlistCommandService.deletePlaylist(request.getPlaylistIds());
         return ResponseEntity.noContent().build();
@@ -56,7 +56,7 @@ public class PlaylistCommandController {
     @SecurityRequirement(name = "cookieAuth")
     @ApiErrorCodes({PlaylistException.class})
     @PatchMapping("{playlistId}")
-    @PreAuthorize("hasRole('ROLE_MEMBER')")
+    @PreAuthorize("hasRole('MEMBER')")
     public ResponseEntity<Void> modifyPlaylistName(
             @Parameter(description = "변경할 플레이리스트 ID") @PathVariable Long playlistId,
             @Valid @RequestBody UpdatePlaylistNameRequest request) {

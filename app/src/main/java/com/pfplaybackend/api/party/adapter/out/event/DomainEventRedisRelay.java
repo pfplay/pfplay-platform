@@ -101,4 +101,28 @@ public class DomainEventRedisRelay {
                 new PartyroomClosedMessage(event.getPartyroomId(), MessageTopic.PARTYROOM_CLOSED,
                         UUID.randomUUID().toString(), System.currentTimeMillis()));
     }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void on(PartyroomTerminatedEvent event) {
+        messagePublisher.publish(MessageTopic.ROOM_TERMINATED.topic(),
+                new RoomTerminatedMessage(event.getPartyroomId(), MessageTopic.ROOM_TERMINATED,
+                        UUID.randomUUID().toString(), System.currentTimeMillis(),
+                        event.getAdministratorId(), event.getReason()));
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void on(PartyroomSuspendedEvent event) {
+        messagePublisher.publish(MessageTopic.ROOM_SUSPENDED.topic(),
+                new RoomSuspendedMessage(event.getPartyroomId(), MessageTopic.ROOM_SUSPENDED,
+                        UUID.randomUUID().toString(), System.currentTimeMillis(),
+                        event.getAdministratorId(), event.getReason()));
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void on(PartyroomRestoredEvent event) {
+        messagePublisher.publish(MessageTopic.ROOM_RESTORED.topic(),
+                new RoomRestoredMessage(event.getPartyroomId(), MessageTopic.ROOM_RESTORED,
+                        UUID.randomUUID().toString(), System.currentTimeMillis(),
+                        event.getAdministratorId()));
+    }
 }

@@ -6,13 +6,16 @@ import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.enums.AuthorityTier;
 import com.pfplaybackend.api.user.domain.entity.data.MemberData;
 import com.pfplaybackend.api.user.domain.entity.data.ProfileData;
-import com.pfplaybackend.api.user.domain.value.AvatarBodyUri;
-import com.pfplaybackend.api.user.domain.value.AvatarFaceUri;
-import com.pfplaybackend.api.user.domain.value.AvatarIconUri;
+import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
+import com.pfplaybackend.api.avatar.domain.value.AvatarBodyUri;
+import com.pfplaybackend.api.avatar.domain.value.AvatarFaceUri;
+import com.pfplaybackend.api.avatar.domain.value.AvatarIconUri;
 import com.pfplaybackend.api.user.domain.value.AvatarSetting;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
+
+import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -36,7 +39,7 @@ class AdminUserControllerTest extends AbstractAdminWebMvcTest {
 
         // when & then
         mockMvc.perform(post("/api/v1/admin/users/virtual")
-                        .with(jwt().authorities(() -> "FM"))
+                        .with(jwt().authorities(() -> "ROLE_ADMIN"))
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
@@ -67,7 +70,7 @@ class AdminUserControllerTest extends AbstractAdminWebMvcTest {
 
         // when & then
         mockMvc.perform(get("/api/v1/admin/users/virtual/1")
-                        .with(jwt().authorities(() -> "FM")))
+                        .with(jwt().authorities(() -> "ROLE_ADMIN")))
                 .andExpect(status().isOk());
     }
 
@@ -76,7 +79,7 @@ class AdminUserControllerTest extends AbstractAdminWebMvcTest {
     void deleteVirtualMemberWithFmAuthorityReturns204() throws Exception {
         // when & then
         mockMvc.perform(delete("/api/v1/admin/users/virtual/1")
-                        .with(jwt().authorities(() -> "FM"))
+                        .with(jwt().authorities(() -> "ROLE_ADMIN"))
                         .with(csrf()))
                 .andExpect(status().isNoContent());
     }
@@ -85,14 +88,22 @@ class AdminUserControllerTest extends AbstractAdminWebMvcTest {
         MemberData member = mock(MemberData.class);
         ProfileData profileData = mock(ProfileData.class);
         AvatarSetting avatarSetting = mock(AvatarSetting.class);
+        UserAccountData userAccount = mock(UserAccountData.class);
 
-        when(member.getUserId()).thenReturn(new UserId(1L));
-        when(member.getEmail()).thenReturn("test@pfplay.system");
-        when(member.getProviderType()).thenReturn(ProviderType.ADMIN);
+        // Member no longer carries identity (UserId/email/providerType moved to
+        // UserAccount in Task 5/7). The controller resolves the bound account
+        // via UserAccountRepository for response shaping.
+        when(member.getUserAccountId()).thenReturn(1L);
+        when(member.getMemberId()).thenReturn(1L);
         when(member.getAuthorityTier()).thenReturn(AuthorityTier.FM);
         when(member.getProfileData()).thenReturn(profileData);
         when(member.getCreatedAt()).thenReturn(null);
         when(member.getUpdatedAt()).thenReturn(null);
+
+        when(userAccount.getUserId()).thenReturn(new UserId(1L));
+        when(userAccount.getEmail()).thenReturn("test@pfplay.system");
+        when(userAccount.getProviderType()).thenReturn(ProviderType.LOCAL);
+        when(userAccountRepository.findById(any(UserId.class))).thenReturn(Optional.of(userAccount));
 
         when(profileData.getNicknameValue()).thenReturn("TestUser");
         when(profileData.getIntroduction()).thenReturn("");

@@ -2,6 +2,7 @@ package com.pfplaybackend.api.party.adapter.in.web;
 
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.party.domain.entity.data.PartyroomData;
+import com.pfplaybackend.api.party.domain.enums.PartyroomStatus;
 import com.pfplaybackend.api.party.domain.enums.StageType;
 import com.pfplaybackend.api.party.domain.value.LinkDomain;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
@@ -37,7 +38,7 @@ class PartyroomCommandControllerTest extends AbstractPartyCommandWebMvcTest {
                 .title("Test Room").introduction("Welcome")
                 .linkDomain(LinkDomain.of("test-link"))
                 .playbackTimeLimit(PlaybackTimeLimit.ofMinutes(10))
-                .isTerminated(false).build();
+                .status(PartyroomStatus.ACTIVE).build();
         when(partyroomCommandService.createGeneralPartyRoom(any())).thenReturn(partyroom);
 
         // when & then

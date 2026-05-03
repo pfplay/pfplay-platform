@@ -13,12 +13,17 @@ public record MyInfoResult(
         @Schema(example = "true") boolean profileUpdated,
         @Schema(example = "2025-01-15") LocalDate registrationDate
 ) {
-    public static MyInfoResult from(UserAccountData user) {
+    /**
+     * Build a {@link MyInfoResult} from the user account row plus tier /
+     * profile-updated flags resolved separately. Tier and profileUpdated
+     * moved to {@code MemberData}/{@code GuestData} in the V4 IAM refactor.
+     */
+    public static MyInfoResult from(UserAccountData user, AuthorityTier tier, boolean profileUpdated) {
         return new MyInfoResult(
                 user.getUserId().getUid().toString(),
                 user.getEmail(),
-                user.getAuthorityTier(),
-                user.isProfileUpdated(),
+                tier,
+                profileUpdated,
                 user.getCreatedAt().toLocalDate()
         );
     }

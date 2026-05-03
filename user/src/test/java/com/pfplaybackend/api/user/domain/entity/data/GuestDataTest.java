@@ -1,65 +1,38 @@
 package com.pfplaybackend.api.user.domain.entity.data;
 
-import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.enums.AuthorityTier;
-import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-
 import static org.assertj.core.api.Assertions.assertThat;
 
 class GuestDataTest {
 
     @Test
-    @DisplayName("create — GT 권한으로 생성된다")
-    void createSetsGuestAuthority() {
-        // when
-        GuestData guest = GuestData.create();
+    void createForUserAccount_defaultsToGtTierAndCapturesAgent() {
+        var guest = GuestData.createForUserAccount(99L, "Firefox/MacOS");
 
-        // then
+        assertThat(guest.getUserAccountId()).isEqualTo(99L);
         assertThat(guest.getAuthorityTier()).isEqualTo(AuthorityTier.GT);
-        assertThat(guest.getUserId()).isNotNull();
+        assertThat(guest.getAgent()).isEqualTo("Firefox/MacOS");
         assertThat(guest.isProfileUpdated()).isFalse();
+        assertThat(guest.getGuestId()).isNull(); // assigned on persist
     }
 
     @Test
-    @DisplayName("createWithFixedUserId — 지정된 UserId로 생성된다")
-    void createWithFixedUserIdSetsGivenUserIdAndAgent() {
-        // given
-        UserId fixedId = new UserId(999L);
+    void createForUserAccount_acceptsNullAgent() {
+        var guest = GuestData.createForUserAccount(99L, null);
 
-        // when
-        GuestData guest = GuestData.createWithFixedUserId(fixedId, "test-agent");
-
-        // then
-        assertThat(guest.getUserId()).isEqualTo(fixedId);
-        assertThat(guest.getAgent()).isEqualTo("test-agent");
+        assertThat(guest.getAgent()).isNull();
         assertThat(guest.getAuthorityTier()).isEqualTo(AuthorityTier.GT);
     }
 
     @Test
-    @DisplayName("initiateProfile — 프로필이 설정되고 isProfileUpdated가 true가 된다")
-    void initiateProfileSetsProfileAndFlag() {
-        // given
-        GuestData guest = GuestData.create();
-        ProfileData profile = ProfileData.builder()
-                .userId(guest.getUserId())
-                .build();
+    void initiateProfile_setsProfileAndMarksUpdated() {
+        var guest = GuestData.createForUserAccount(99L, "Firefox");
+        var profile = ProfileData.builder().build();
 
-        // when
         guest.initiateProfile(profile);
 
-        // then
-        assertThat(guest.getProfileData()).isEqualTo(profile);
+        assertThat(guest.getProfileData()).isSameAs(profile);
         assertThat(guest.isProfileUpdated()).isTrue();
-    }
-
-    @Test
-    @DisplayName("isGuest — true를 반환한다")
-    void isGuestReturnsTrue() {
-        // when
-        GuestData guest = GuestData.create();
-
-        // then
-        assertThat(guest.isGuest()).isTrue();
     }
 }

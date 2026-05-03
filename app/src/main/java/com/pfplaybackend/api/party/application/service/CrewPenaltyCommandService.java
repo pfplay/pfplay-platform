@@ -11,6 +11,7 @@ import com.pfplaybackend.api.party.domain.entity.data.PartyroomData;
 import com.pfplaybackend.api.party.domain.entity.data.history.CrewPenaltyHistoryData;
 import com.pfplaybackend.api.party.domain.enums.GradeType;
 import com.pfplaybackend.api.party.domain.enums.PenaltyType;
+import com.pfplaybackend.api.party.domain.enums.PunisherType;
 import com.pfplaybackend.api.party.domain.event.CrewPenalizedEvent;
 import com.pfplaybackend.api.party.domain.exception.GradeException;
 import com.pfplaybackend.api.party.domain.exception.PenaltyException;
@@ -63,13 +64,16 @@ public class CrewPenaltyCommandService {
         }
 
         eventPublisher.publishEvent(new CrewPenalizedEvent(
-                partyroomId, new CrewId(punisherCrew.getId()), punishedCrewId, command.detail(), command.penaltyType()));
+                partyroomId, new CrewId(punisherCrew.getId()), punishedCrewId,
+                punishedCrew.getUserId().getUid(),                                  // PR 12a — punishedUserAccountId
+                command.detail(), command.penaltyType()));
 
         if(PenaltyType.PERMANENT_EXPULSION.equals(penaltyType)) {
             CrewPenaltyHistoryData crewPenaltyHistoryData = CrewPenaltyHistoryData.builder()
                     .partyroomId(partyroomId)
                     .punishedCrewId(punishedCrewId)
                     .punisherCrewId(new CrewId(punisherCrew.getId()))
+                    .punisherType(PunisherType.CREW)            // [PR 9] V8 컬럼 명시화
                     .penaltyReason(command.detail())
                     .penaltyDate(LocalDateTime.now(clock))
                     .penaltyType(command.penaltyType())
@@ -94,6 +98,11 @@ public class CrewPenaltyCommandService {
 
         CrewPenaltyHistoryData historyData = crewPenaltyHistoryRepository.findByIdAndPartyroomIdAndReleasedIsFalse(penaltyId, partyroomId)
                 .orElseThrow(() -> ExceptionCreator.create(PenaltyException.PENALTY_HISTORY_NOT_FOUND));
+
+        // [PR 9] admin-applied 페널티는 admin endpoint를 통해서만 release 가능 (spec §4.3)
+        if (historyData.getPunisherType() == PunisherType.ADMIN) {
+            throw ExceptionCreator.create(PenaltyException.ADMIN_APPLIED_PENALTY_REQUIRES_ADMIN_RELEASE);
+        }
 
         // 1. Release ban on crew
         CrewData crew = aggregatePort.findCrewById(historyData.getPunishedCrewId().getId())

@@ -88,7 +88,6 @@ class PartyroomSetupQueryServiceTest {
                 .thumbnailImage("thumb.jpg").endTime(999L).build();
 
         PlaybackAggregationData aggregation = PlaybackAggregationData.createFor(playbackId);
-        aggregation.updateAggregation(5, 1, 2);
 
         when(partyroomQueryService.getActiveCrews(partyroomId)).thenReturn(List.of(crew1, djCrew));
         when(userProfileQueryPort.getUsersProfileSetting(any()))

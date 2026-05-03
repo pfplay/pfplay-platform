@@ -16,6 +16,7 @@ import com.pfplaybackend.api.party.application.port.out.PartyroomQueryPort;
 import com.pfplaybackend.api.party.application.port.out.UserProfileQueryPort;
 import com.pfplaybackend.api.party.domain.entity.data.*;
 import com.pfplaybackend.api.party.domain.enums.GradeType;
+import com.pfplaybackend.api.party.domain.enums.PartyroomStatus;
 import com.pfplaybackend.api.party.domain.enums.QueueStatus;
 import com.pfplaybackend.api.party.domain.enums.StageType;
 import com.pfplaybackend.api.party.domain.port.PartyroomAggregatePort;
@@ -106,7 +107,7 @@ class PartyroomQueryServiceTest {
                 .linkDomain(LinkDomain.of("test-room"))
                 .playbackTimeLimit(PlaybackTimeLimit.ofMinutes(5))
                 .stageType(StageType.GENERAL)
-                .isTerminated(false)
+                .status(PartyroomStatus.ACTIVE)
                 .build();
         when(aggregatePort.findPartyroomById(partyroomId.getId())).thenReturn(Optional.of(partyroom));
 
@@ -181,7 +182,7 @@ class PartyroomQueryServiceTest {
                 .linkDomain(LinkDomain.of("test-room"))
                 .playbackTimeLimit(PlaybackTimeLimit.ofMinutes(5))
                 .stageType(StageType.GENERAL)
-                .isTerminated(false)
+                .status(PartyroomStatus.ACTIVE)
                 .build();
         PartyroomPlaybackData playbackState = PartyroomPlaybackData.createFor(partyroomId);
 
@@ -208,7 +209,7 @@ class PartyroomQueryServiceTest {
                 .linkDomain(LinkDomain.of("test-room"))
                 .playbackTimeLimit(PlaybackTimeLimit.ofMinutes(5))
                 .stageType(StageType.GENERAL)
-                .isTerminated(false)
+                .status(PartyroomStatus.ACTIVE)
                 .build();
         PartyroomPlaybackData playbackState = PartyroomPlaybackData.createFor(partyroomId);
         DjQueueData djQueue = DjQueueData.createFor(partyroomId);
@@ -241,7 +242,7 @@ class PartyroomQueryServiceTest {
                 .linkDomain(LinkDomain.of("test-room"))
                 .playbackTimeLimit(PlaybackTimeLimit.ofMinutes(5))
                 .stageType(StageType.GENERAL)
-                .isTerminated(false)
+                .status(PartyroomStatus.ACTIVE)
                 .build();
     }
 
