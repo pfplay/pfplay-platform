@@ -1,6 +1,10 @@
 package com.pfplaybackend.api.common.config.security;
 
 import com.pfplaybackend.api.common.AbstractIntegrationTest;
+import com.pfplaybackend.api.common.config.security.enums.AccessLevel;
+import com.pfplaybackend.api.common.config.security.jwt.JwtService;
+import com.pfplaybackend.api.common.config.security.jwt.dto.TokenClaimsRequest;
+import com.pfplaybackend.api.common.config.security.jwt.properties.JwtProperties;
 import jakarta.servlet.http.Cookie;
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.Test;
@@ -12,6 +16,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 import java.util.Collection;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
@@ -38,6 +43,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class AdminCsrfIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired private MockMvc mockMvc;
+    @Autowired private JwtService jwtService;
+    @Autowired private JwtProperties jwtProperties;
+
+    private static final String ADMIN_USER_ACCOUNT_ID = "1000000000000000001";
 
     private static final String ADMIN_PROBE = "/api/v1/admin/__test_probe__";
     private static final String LOGIN = "/api/v1/auth/admin/login";
@@ -111,6 +120,54 @@ class AdminCsrfIntegrationTest extends AbstractIntegrationTest {
         assertThat(hasFreshToken)
                 .as("response Set-Cookie headers: %s", setCookies)
                 .isTrue();
+    }
+
+    /**
+     * Regression guard for the OAuth2-bearer CSRF skip trap.
+     *
+     * <p>Spring Security's {@code OAuth2ResourceServerConfigurer.registerDefaultCsrfOverride()}
+     * unconditionally calls {@code csrf.ignoringRequestMatchers(BearerTokenRequestMatcher)}.
+     * That hardcoded "bearer = csrf-safe" assumption is correct for {@code Authorization:
+     * Bearer} headers (CORS prevents cross-origin attackers from forging them) but FALSE
+     * for cookie-based bearer tokens — cookies are auto-attached cross-origin.
+     *
+     * <p>{@code CsrfConfigurer.getRequireCsrfProtectionMatcher()} wraps any custom matcher
+     * the moment {@code ignoredCsrfProtectionMatchers} is non-empty:
+     * <pre>And(adminMatcher, Not(Or(BearerTokenRequestMatcher)))</pre>
+     * Our {@link com.pfplaybackend.api.common.config.security.jwt.CookieBearerTokenResolver}
+     * reads the token from the {@code AdminAccessToken} cookie, so authenticated admin
+     * requests match the BearerTokenRequestMatcher → AND short-circuits to false → CSRF
+     * gate is bypassed entirely. Mutation endpoints become reachable without an
+     * X-XSRF-TOKEN header.
+     *
+     * <p>{@code SecurityConfig.filterChain} pins our raw {@code AdminCsrfRequestMatcher}
+     * back onto the CsrfFilter via {@code ObjectPostProcessor} after CsrfConfigurer wraps
+     * it. This test asserts that pin holds: a mutation request authenticated only by the
+     * admin cookie (no XSRF header, no XSRF cookie) must be rejected at the CSRF gate.
+     *
+     * <p>If anyone removes the {@code setRequireCsrfProtectionMatcher(adminMatcher)} call
+     * in the post-processor, the request will reach the dispatcher (404 for
+     * {@code __test_probe__}) and this test will catch it.
+     */
+    @Test
+    void authenticatedAdminPost_withoutCsrf_returns403() throws Exception {
+        String adminToken = jwtService.mintAdminAccessToken(adminClaims());
+        Cookie adminCookie = new Cookie(jwtProperties.getCookie().getAdmin().getName(), adminToken);
+        adminCookie.setPath("/");
+
+        mockMvc.perform(post(ADMIN_PROBE)
+                        .cookie(adminCookie)
+                        // intentionally NO csrf() post-processor, NO XSRF-TOKEN cookie, NO X-XSRF-TOKEN header
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isForbidden());
+    }
+
+    private TokenClaimsRequest adminClaims() {
+        return new TokenClaimsRequest(
+                ADMIN_USER_ACCOUNT_ID,
+                "admin@pfplay.xyz",
+                List.of(AccessLevel.ROLE_ADMIN),
+                /* authorityTier */ null);
     }
 
     @Test

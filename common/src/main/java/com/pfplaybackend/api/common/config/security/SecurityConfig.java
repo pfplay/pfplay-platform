@@ -66,13 +66,21 @@ public class SecurityConfig {
                     // uncommitted. Without this, mutations after login hit 403 because
                     // the browser sees only the deletion cookie. Spec: admin-backend-asks.md A6.
                     CsrfTokenRequestAttributeHandler handler = new EagerCsrfTokenRequestAttributeHandler();
+                    AdminCsrfRequestMatcher adminMatcher = new AdminCsrfRequestMatcher();
                     csrf
                             .csrfTokenRepository(repo)
                             .csrfTokenRequestHandler(handler)
-                            .requireCsrfProtectionMatcher(new AdminCsrfRequestMatcher())
+                            .requireCsrfProtectionMatcher(adminMatcher)
                             .withObjectPostProcessor(new ObjectPostProcessor<CsrfFilter>() {
                                 @Override
                                 public <O extends CsrfFilter> O postProcess(O filter) {
+                                    // OAuth2ResourceServerConfigurer.init()이 csrf.ignoringRequestMatchers(BearerTokenRequestMatcher)를
+                                    // 강제 호출하여 CsrfConfigurer.getRequireCsrfProtectionMatcher()가 우리 matcher를
+                                    // And(ours, Not(Or(BearerTokenRequestMatcher))) 로 wrapping한다. 우리는 cookie-based
+                                    // bearer auth라 모든 인증된 admin 요청이 BearerTokenRequestMatcher에 매칭되어 CSRF
+                                    // 검증이 통째로 skip되는 보안 결함이 됨. post-processor에서 wrapping을 풀고 우리
+                                    // matcher를 직접 박는다 (admin-backend-asks.md A6 후속 fix).
+                                    filter.setRequireCsrfProtectionMatcher(adminMatcher);
                                     filter.setAccessDeniedHandler((req, res, ex) -> {
                                         res.setStatus(HttpServletResponse.SC_FORBIDDEN);
                                         res.setContentType(MediaType.APPLICATION_JSON_VALUE);
