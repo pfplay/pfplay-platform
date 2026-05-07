@@ -50,7 +50,7 @@ public class AdminPartyroomController {
     })
     @SecurityRequirement(name = "cookieAuth")
     @PostMapping
-    @PreAuthorize("hasAuthority('FM')")
+    @PreAuthorize("@adminAuth.canSuspendPartyroom()")
     public ResponseEntity<CreateAdminPartyroomResponse> createPartyroom(
             @Valid @RequestBody AdminCreatePartyroomRequest request) {
 
@@ -88,7 +88,7 @@ public class AdminPartyroomController {
     })
     @SecurityRequirement(name = "cookieAuth")
     @PostMapping("/bulk-preview")
-    @PreAuthorize("hasAuthority('FM')")
+    @PreAuthorize("@adminAuth.canSuspendPartyroom()")
     public ResponseEntity<CreateBulkPreviewEnvironmentResponse> createBulkPreviewEnvironment(
             @Valid @RequestBody CreateBulkPreviewEnvironmentRequest request) {
 

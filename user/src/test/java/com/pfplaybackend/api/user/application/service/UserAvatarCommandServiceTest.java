@@ -5,19 +5,20 @@ import com.pfplaybackend.api.common.aspect.context.AuthContext;
 import com.pfplaybackend.api.common.domain.enums.AvatarCompositionType;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.exception.http.ForbiddenException;
+import com.pfplaybackend.api.user.adapter.out.persistence.ActivityRepository;
 import com.pfplaybackend.api.user.adapter.out.persistence.MemberRepository;
 import com.pfplaybackend.api.user.application.dto.command.SetAvatarCommand;
-import com.pfplaybackend.api.user.application.dto.shared.AvatarBodyDto;
-import com.pfplaybackend.api.user.application.dto.shared.AvatarIconDto;
+import com.pfplaybackend.api.avatar.application.dto.AvatarBodyDto;
+import com.pfplaybackend.api.avatar.application.dto.AvatarIconDto;
 import com.pfplaybackend.api.user.domain.entity.data.ActivityData;
 import com.pfplaybackend.api.user.domain.entity.data.MemberData;
 import com.pfplaybackend.api.user.domain.enums.ActivityType;
 import com.pfplaybackend.api.user.domain.enums.FaceSourceType;
-import com.pfplaybackend.api.user.domain.enums.ObtainmentType;
+import com.pfplaybackend.api.avatar.domain.enums.ObtainmentType;
 import com.pfplaybackend.api.user.domain.event.UserProfileChangedEvent;
-import com.pfplaybackend.api.user.domain.value.AvatarBodyUri;
-import com.pfplaybackend.api.user.domain.value.AvatarFaceUri;
-import com.pfplaybackend.api.user.domain.value.AvatarIconUri;
+import com.pfplaybackend.api.avatar.domain.value.AvatarBodyUri;
+import com.pfplaybackend.api.avatar.domain.value.AvatarFaceUri;
+import com.pfplaybackend.api.avatar.domain.value.AvatarIconUri;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -28,12 +29,12 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 
-import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -46,6 +47,7 @@ class UserAvatarCommandServiceTest {
     private static final String BODY1 = "Body1";
 
     @Mock MemberRepository memberRepository;
+    @Mock ActivityRepository activityRepository;
     @Mock AvatarResourceQueryService avatarResourceQueryService;
     @Mock ApplicationEventPublisher eventPublisher;
     @InjectMocks UserAvatarCommandService userAvatarCommandService;
@@ -76,7 +78,7 @@ class UserAvatarCommandServiceTest {
                 null);
 
         MemberData member = mock(MemberData.class);
-        when(memberRepository.findByUserId(userId)).thenReturn(Optional.of(member));
+        when(memberRepository.findByUserAccountId(userId.getUid())).thenReturn(Optional.of(member));
 
         AvatarBodyDto bodyDto = AvatarBodyDto.builder()
                 .id(1L).name(BODY1).resourceUri(BODY_01)
@@ -112,7 +114,7 @@ class UserAvatarCommandServiceTest {
                         new SetAvatarCommand.AvatarTransformSpec(1.0, 2.0, 0.5)));
 
         MemberData member = mock(MemberData.class);
-        when(memberRepository.findByUserId(userId)).thenReturn(Optional.of(member));
+        when(memberRepository.findByUserAccountId(userId.getUid())).thenReturn(Optional.of(member));
 
         AvatarBodyDto bodyDto = AvatarBodyDto.builder()
                 .id(1L).name(BODY1).resourceUri(BODY_01)
@@ -148,8 +150,9 @@ class UserAvatarCommandServiceTest {
 
         ActivityData djActivity = ActivityData.create(userId, ActivityType.DJ_PNT, 100);
         MemberData member = mock(MemberData.class);
-        when(member.getActivityDataMap()).thenReturn(Map.of(ActivityType.DJ_PNT, djActivity));
-        when(memberRepository.findByUserId(userId)).thenReturn(Optional.of(member));
+        when(memberRepository.findByUserAccountId(userId.getUid())).thenReturn(Optional.of(member));
+        when(activityRepository.findByUserIdAndActivityType(userId, ActivityType.DJ_PNT))
+                .thenReturn(Optional.of(djActivity));
 
         AvatarBodyDto bodyDto = AvatarBodyDto.builder()
                 .id(2L).name("Premium").resourceUri(PREMIUM_BODY)
@@ -181,8 +184,9 @@ class UserAvatarCommandServiceTest {
 
         ActivityData djActivity = ActivityData.create(userId, ActivityType.DJ_PNT, 10);
         MemberData member = mock(MemberData.class);
-        when(member.getActivityDataMap()).thenReturn(Map.of(ActivityType.DJ_PNT, djActivity));
-        when(memberRepository.findByUserId(userId)).thenReturn(Optional.of(member));
+        when(memberRepository.findByUserAccountId(userId.getUid())).thenReturn(Optional.of(member));
+        when(activityRepository.findByUserIdAndActivityType(userId, ActivityType.DJ_PNT))
+                .thenReturn(Optional.of(djActivity));
 
         AvatarBodyDto bodyDto = AvatarBodyDto.builder()
                 .id(2L).name("Premium").resourceUri(PREMIUM_BODY)

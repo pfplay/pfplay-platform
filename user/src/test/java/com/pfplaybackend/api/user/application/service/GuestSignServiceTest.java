@@ -1,8 +1,10 @@
 package com.pfplaybackend.api.user.application.service;
 
 import com.pfplaybackend.api.user.adapter.out.persistence.GuestRepository;
+import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
 import com.pfplaybackend.api.user.domain.entity.data.GuestData;
 import com.pfplaybackend.api.user.domain.entity.data.ProfileData;
+import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -17,6 +19,7 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class GuestSignServiceTest {
 
+    @Mock UserAccountRepository userAccountRepository;
     @Mock GuestRepository guestRepository;
     @Mock UserProfileCommandService userProfileCommandService;
     @InjectMocks GuestSignService guestSignService;
@@ -34,7 +37,8 @@ class GuestSignServiceTest {
 
         // then
         assertThat(result).isNotNull();
-        assertThat(result.isGuest()).isTrue();
+        assertThat(result.getUserAccountId()).isNotNull();
+        verify(userAccountRepository).save(any(UserAccountData.class));
         verify(userProfileCommandService).createProfileDataForGuest(any());
         verify(guestRepository).save(any(GuestData.class));
     }

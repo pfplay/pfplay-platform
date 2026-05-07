@@ -1,17 +1,11 @@
 package com.pfplaybackend.api.user.application.service;
 
-import com.pfplaybackend.api.user.adapter.out.persistence.AvatarBodyResourceRepository;
-import com.pfplaybackend.api.user.adapter.out.persistence.AvatarFaceResourceRepository;
-import com.pfplaybackend.api.user.adapter.out.persistence.AvatarIconResourceRepository;
-import com.pfplaybackend.api.user.application.dto.shared.AvatarBodyDto;
-import com.pfplaybackend.api.user.application.dto.shared.AvatarFaceDto;
-import com.pfplaybackend.api.user.application.dto.shared.AvatarIconDto;
-import com.pfplaybackend.api.user.domain.entity.data.AvatarBodyResourceData;
-import com.pfplaybackend.api.user.domain.entity.data.AvatarFaceResourceData;
-import com.pfplaybackend.api.user.domain.entity.data.AvatarIconResourceData;
-import com.pfplaybackend.api.user.domain.enums.PairType;
-import com.pfplaybackend.api.user.domain.value.AvatarBodyUri;
-import com.pfplaybackend.api.user.domain.value.AvatarFaceUri;
+import com.pfplaybackend.api.avatar.application.dto.AvatarBodyDto;
+import com.pfplaybackend.api.avatar.application.dto.AvatarFaceDto;
+import com.pfplaybackend.api.avatar.application.dto.AvatarIconDto;
+import com.pfplaybackend.api.avatar.application.port.in.AvatarCatalogQueryUseCase;
+import com.pfplaybackend.api.avatar.domain.value.AvatarBodyUri;
+import com.pfplaybackend.api.avatar.domain.value.AvatarFaceUri;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -21,63 +15,41 @@ import java.util.List;
 @RequiredArgsConstructor
 public class AvatarResourceQueryService {
 
-    private final AvatarBodyResourceRepository avatarBodyResourceRepository;
-    private final AvatarFaceResourceRepository avatarFaceResourceRepository;
-    private final AvatarIconResourceRepository avatarIconResourceRepository;
+    private final AvatarCatalogQueryUseCase avatarCatalogQueryUseCase;
 
-    public AvatarBodyResourceData getDefaultSettingResourceAvatarBody() {
-        return avatarBodyResourceRepository.getDefaultSettingResource().orElseThrow();
+    public AvatarBodyDto getDefaultSettingResourceAvatarBody() {
+        return avatarCatalogQueryUseCase.findDefaultBody();
     }
 
     public List<AvatarFaceDto> findAllAvatarFaces() {
-        return avatarFaceResourceRepository.findAll().stream().map(avatarResourceData ->
-                new AvatarFaceDto(
-                        avatarResourceData.getId(),
-                        avatarResourceData.getName(),
-                        avatarResourceData.getResourceUri(),
-                        true
-                )).toList();
+        return avatarCatalogQueryUseCase.findPublishedFaces();
     }
 
     public List<AvatarBodyDto> findAllAvatarBodies() {
-        return avatarBodyResourceRepository.findAllAvatarResources().orElseThrow()
-                .stream()
-                .map(AvatarBodyDto::create
-                ).toList();
+        return avatarCatalogQueryUseCase.findPublishedBodies();
     }
 
     public AvatarBodyDto findAvatarBodyByUri(AvatarBodyUri uri) {
-        AvatarBodyResourceData avatarBodyResourceData = avatarBodyResourceRepository.findOneAvatarResourceByResourceUri(uri.getValue());
-        return AvatarBodyDto.create(avatarBodyResourceData);
+        return avatarCatalogQueryUseCase.findBodyByUri(uri.getValue()).orElse(null);
     }
 
     public AvatarIconDto findPairAvatarIconByFaceUri(AvatarFaceUri uri) {
-        AvatarFaceResourceData avatarFaceResourceData = avatarFaceResourceRepository.findOneAvatarResourceByResourceUri(uri.getValue());
-        String avatarFaceName = avatarFaceResourceData.getName();
-        String iconName = "ava_icon_" + avatarFaceName.split("_", 2)[1];
-        AvatarIconResourceData avatarIconResourceData = avatarIconResourceRepository.findByNameAndPairType(iconName, PairType.FACE);
-        return new AvatarIconDto(
-                avatarIconResourceData.getId(),
-                avatarIconResourceData.getName(),
-                avatarIconResourceData.getResourceUri(),
-                true
-        );
+        AvatarFaceDto face = avatarCatalogQueryUseCase.findFaceByUri(uri.getValue())
+                .orElseThrow();
+        String iconUri = avatarCatalogQueryUseCase.findFaceIconUriByName(face.name());
+        String iconName = "ava_icon_" + face.name().split("_", 2)[1];
+        return new AvatarIconDto(0L, iconName, iconUri, true);
     }
 
     public AvatarIconDto findPairAvatarIconByBodyUri(AvatarBodyUri uri) {
-        AvatarBodyResourceData avatarBodyResourceData = avatarBodyResourceRepository.findOneAvatarResourceByResourceUri(uri.getValue());
-        String avatarBodyName = avatarBodyResourceData.getName();
-        String iconName = "ava_icon_" + avatarBodyName.split("_", 2)[1];
-        AvatarIconResourceData avatarIconResourceData = avatarIconResourceRepository.findByNameAndPairType(iconName, PairType.BODY);
-        return new AvatarIconDto(
-                avatarIconResourceData.getId(),
-                avatarIconResourceData.getName(),
-                avatarIconResourceData.getResourceUri(),
-                true
-        );
+        AvatarBodyDto body = avatarCatalogQueryUseCase.findBodyByUri(uri.getValue())
+                .orElseThrow();
+        String iconUri = avatarCatalogQueryUseCase.findBodyIconUriByName(body.getName());
+        String iconName = "ava_icon_" + body.getName().split("_", 2)[1];
+        return new AvatarIconDto(0L, iconName, iconUri, true);
     }
 
     public boolean isBasicFaceUri(AvatarFaceUri avatarFaceUri) {
-        return avatarFaceResourceRepository.findByResourceUri(avatarFaceUri.getValue()).isPresent();
+        return avatarCatalogQueryUseCase.isBasicFaceUri(avatarFaceUri.getValue());
     }
 }

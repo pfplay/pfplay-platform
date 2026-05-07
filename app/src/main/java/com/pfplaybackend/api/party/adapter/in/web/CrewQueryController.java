@@ -29,7 +29,7 @@ public class CrewQueryController {
     @SecurityRequirement(name = "cookieAuth")
     @ApiErrorCodes({CrewException.class})
     @GetMapping("/{crewId}/profile/summary")
-    @PreAuthorize("hasAnyRole('ROLE_GUEST', 'ROLE_MEMBER')")
+    @PreAuthorize("hasAnyRole('GUEST', 'MEMBER')")
     public ResponseEntity<ApiCommonResponse<CrewProfileSummaryResult>> getOtherProfileSummary(
             @Parameter(description = "크루 ID") @PathVariable Long crewId) {
         return ResponseEntity.ok().body(ApiCommonResponse.success(partyroomQueryService.getProfileSummaryByCrewId(crewId)));

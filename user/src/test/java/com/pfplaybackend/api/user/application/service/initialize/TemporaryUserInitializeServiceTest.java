@@ -4,14 +4,13 @@ import com.pfplaybackend.api.common.config.security.jwt.JwtService;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.user.adapter.out.persistence.GuestRepository;
 import com.pfplaybackend.api.user.adapter.out.persistence.MemberRepository;
+import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
 import com.pfplaybackend.api.user.application.port.out.PlaylistSetupPort;
 import com.pfplaybackend.api.user.application.service.UserActivityCommandService;
 import com.pfplaybackend.api.user.application.service.UserProfileCommandService;
-import com.pfplaybackend.api.user.domain.entity.data.ActivityData;
 import com.pfplaybackend.api.user.domain.entity.data.GuestData;
 import com.pfplaybackend.api.user.domain.entity.data.MemberData;
 import com.pfplaybackend.api.user.domain.entity.data.ProfileData;
-import com.pfplaybackend.api.user.domain.enums.ActivityType;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -19,14 +18,13 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.util.Map;
-
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class TemporaryUserInitializeServiceTest {
 
+    @Mock UserAccountRepository userAccountRepository;
     @Mock GuestRepository guestRepository;
     @Mock MemberRepository memberRepository;
     @Mock UserProfileCommandService userProfileCommandService;
@@ -50,6 +48,8 @@ class TemporaryUserInitializeServiceTest {
         // then
         verify(guestRepository).save(any(GuestData.class));
         verify(userProfileCommandService).createProfileDataForGuest(any(UserId.class));
+        // Guests do NOT get ActivityData rows in the V4 model.
+        verify(userActivityCommandService, never()).createUserActivities(any(UserId.class));
     }
 
     @Test
@@ -58,9 +58,7 @@ class TemporaryUserInitializeServiceTest {
         // given
         UserId userId = new UserId(1000000000000002L);
         ProfileData profile = mock(ProfileData.class);
-        Map<ActivityType, ActivityData> activityMap = Map.of();
         when(userProfileCommandService.createProfileDataForMember(any(UserId.class))).thenReturn(profile);
-        when(userActivityCommandService.createUserActivities(any(UserId.class))).thenReturn(activityMap);
         when(memberRepository.save(any(MemberData.class))).thenAnswer(inv -> inv.getArgument(0));
 
         // when
@@ -68,6 +66,7 @@ class TemporaryUserInitializeServiceTest {
 
         // then
         verify(memberRepository).save(any(MemberData.class));
+        verify(userActivityCommandService).createUserActivities(any(UserId.class));
         verify(playlistSetupPort).createDefaultPlaylist(any(UserId.class));
     }
 

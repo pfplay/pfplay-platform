@@ -2,12 +2,14 @@ package com.pfplaybackend.api.user.adapter.in.web;
 
 import com.pfplaybackend.api.common.ApiCommonResponse;
 import com.pfplaybackend.api.common.config.security.enums.AccessLevel;
-import com.pfplaybackend.api.common.config.security.jwt.CookieUtil;
 import com.pfplaybackend.api.common.config.security.jwt.JwtService;
+import com.pfplaybackend.api.common.config.security.jwt.SharedSessionCookieWriter;
 import com.pfplaybackend.api.common.config.security.jwt.dto.TokenClaimsRequest;
 import com.pfplaybackend.api.common.domain.value.UserId;
+import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
 import com.pfplaybackend.api.user.application.service.initialize.TemporaryUserInitializeService;
 import com.pfplaybackend.api.user.domain.entity.data.MemberData;
+import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletResponse;
@@ -23,8 +25,9 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/users")
 public class EasyUserManagementController {
 
-    private final CookieUtil cookieUtil;
+    private final SharedSessionCookieWriter sharedSessionCookieWriter;
     private final JwtService jwtService;
+    private final UserAccountRepository userAccountRepository;
 
     private final TemporaryUserInitializeService temporaryUserInitializeService;
 
@@ -33,10 +36,11 @@ public class EasyUserManagementController {
     public ResponseEntity<ApiCommonResponse<Void>> createAssociateMember(HttpServletResponse response) {
         UserId userId = new UserId();
         MemberData member = temporaryUserInitializeService.addAssociateMember(userId, userId.getUid().toString().substring(0,12) + "@gmail.com");
-        cookieUtil.addAccessTokenCookie(response, jwtService.generateNonExpiringAccessToken(new TokenClaimsRequest(
-                member.getUserId().getUid().toString(),
-                member.getEmail(),
-                AccessLevel.ROLE_MEMBER,
+        UserAccountData userAccount = loadUserAccount(member);
+        sharedSessionCookieWriter.write(response, jwtService.mintSharedSessionToken(new TokenClaimsRequest(
+                userAccount.getUserId().getUid().toString(),
+                userAccount.getEmail(),
+                java.util.List.of(AccessLevel.ROLE_MEMBER),
                 member.getAuthorityTier()
         )));
 
@@ -50,14 +54,24 @@ public class EasyUserManagementController {
         UserId userId = new UserId();
         MemberData member = temporaryUserInitializeService.upgradeMember(
                 temporaryUserInitializeService.addAssociateMember(userId, userId.getUid().toString().substring(0,12) + "@gmail.com"));
-        cookieUtil.addAccessTokenCookie(response, jwtService.generateNonExpiringAccessToken(new TokenClaimsRequest(
-                member.getUserId().getUid().toString(),
-                member.getEmail(),
-                AccessLevel.ROLE_MEMBER,
+        UserAccountData userAccount = loadUserAccount(member);
+        sharedSessionCookieWriter.write(response, jwtService.mintSharedSessionToken(new TokenClaimsRequest(
+                userAccount.getUserId().getUid().toString(),
+                userAccount.getEmail(),
+                java.util.List.of(AccessLevel.ROLE_MEMBER),
                 member.getAuthorityTier()
         )));
 
         return ResponseEntity.ok()
                 .body(ApiCommonResponse.ok());
+    }
+
+    /**
+     * Look up the {@link UserAccountData} bound to a {@link MemberData}. Email
+     * and userId moved to UserAccount in the V4 IAM refactor, so the
+     * controller fetches the account directly to populate token claims.
+     */
+    private UserAccountData loadUserAccount(MemberData member) {
+        return userAccountRepository.findById(new UserId(member.getUserAccountId())).orElseThrow();
     }
 }

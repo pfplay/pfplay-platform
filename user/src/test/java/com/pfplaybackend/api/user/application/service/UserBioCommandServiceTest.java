@@ -50,7 +50,7 @@ class UserBioCommandServiceTest {
     void updateMyBioSuccess() {
         // given
         MemberData member = mock(MemberData.class);
-        when(memberRepository.findByUserId(userId)).thenReturn(Optional.of(member));
+        when(memberRepository.findByUserAccountId(userId.getUid())).thenReturn(Optional.of(member));
         UpdateBioCommand command = new UpdateBioCommand("NewNick", "Hello World");
 
         // when
@@ -66,7 +66,7 @@ class UserBioCommandServiceTest {
     @DisplayName("updateMyBio — 회원을 찾을 수 없으면 NoSuchElementException이 발생한다")
     void updateMyBioMemberNotFound() {
         // given
-        when(memberRepository.findByUserId(userId)).thenReturn(Optional.empty());
+        when(memberRepository.findByUserAccountId(userId.getUid())).thenReturn(Optional.empty());
         UpdateBioCommand command = new UpdateBioCommand("Nick", "Bio");
 
         // when & then

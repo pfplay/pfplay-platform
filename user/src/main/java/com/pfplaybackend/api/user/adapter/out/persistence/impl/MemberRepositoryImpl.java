@@ -1,9 +1,7 @@
 package com.pfplaybackend.api.user.adapter.out.persistence.impl;
 
-import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.user.adapter.out.persistence.custom.MemberRepositoryCustom;
 import com.pfplaybackend.api.user.domain.entity.data.MemberData;
-import com.pfplaybackend.api.user.domain.entity.data.QActivityData;
 import com.pfplaybackend.api.user.domain.entity.data.QMemberData;
 import com.pfplaybackend.api.user.domain.entity.data.QProfileData;
 import com.querydsl.jpa.impl.JPAQueryFactory;
@@ -17,17 +15,15 @@ public class MemberRepositoryImpl implements MemberRepositoryCustom {
     private final JPAQueryFactory queryFactory;
 
     @Override
-    public Optional<MemberData> findByUserId(UserId userId) {
+    public Optional<MemberData> findByUserAccountId(Long userAccountId) {
         QMemberData qMemberData = QMemberData.memberData;
         QProfileData qProfileData = QProfileData.profileData;
-        QActivityData qActivityData = QActivityData.activityData;
 
         MemberData memberData = queryFactory
                 .select(qMemberData)
                 .from(qMemberData)
                 .leftJoin(qMemberData.profileData, qProfileData).fetchJoin()
-                .leftJoin(qMemberData.activityDataMap, qActivityData).fetchJoin()
-                .where(qMemberData.userId.eq(userId))
+                .where(qMemberData.userAccountId.eq(userAccountId))
                 .fetchOne();
 
         return Optional.ofNullable(memberData);

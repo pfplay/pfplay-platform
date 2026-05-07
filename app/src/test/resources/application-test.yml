@@ -92,3 +92,12 @@ app:
       connection: 5000
       read: 5000
       write: 5000
+
+  security:
+    admin-csrf:
+      enabled: true
+      cookie-name: XSRF-TOKEN
+      header-name: X-XSRF-TOKEN
+      cookie-domain: localhost
+      same-site: Lax
+      secure: false

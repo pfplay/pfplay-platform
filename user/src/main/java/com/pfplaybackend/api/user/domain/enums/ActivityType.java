@@ -1,5 +1,7 @@
 package com.pfplaybackend.api.user.domain.enums;
 
+import com.pfplaybackend.api.avatar.domain.enums.ObtainmentType;
+
 public enum ActivityType {
     DJ_PNT,
     REF_LINK,

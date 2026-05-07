@@ -28,7 +28,7 @@ public class UserBioCommandController {
     @ApiResponse(responseCode = "204", description = "자기소개 수정 성공")
     @SecurityRequirement(name = "cookieAuth")
     @PutMapping("/me/profile/bio")
-    @PreAuthorize("hasRole('ROLE_MEMBER')")
+    @PreAuthorize("hasRole('MEMBER')")
     public ResponseEntity<Void> setMyBio(@Valid @RequestBody UpdateMyBioRequest request) {
         UpdateBioCommand updateBioCommand = new UpdateBioCommand(request.getNickname(), request.getIntroduction());
         userBioService.updateMyBio(updateBioCommand);

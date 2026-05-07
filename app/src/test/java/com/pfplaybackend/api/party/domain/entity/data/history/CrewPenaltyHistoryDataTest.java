@@ -1,6 +1,7 @@
 package com.pfplaybackend.api.party.domain.entity.data.history;
 
 import com.pfplaybackend.api.party.domain.enums.PenaltyType;
+import com.pfplaybackend.api.party.domain.enums.PunisherType;
 import com.pfplaybackend.api.party.domain.value.CrewId;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import org.junit.jupiter.api.DisplayName;
@@ -58,5 +59,27 @@ class CrewPenaltyHistoryDataTest {
         // then
         assertThat(penalty.isReleased()).isTrue();
         assertThat(penalty.getReleasedByCrewId()).isEqualTo(newReleaserId);
+    }
+
+    @Test
+    @DisplayName("releaseByAdmin: released=true + releasedByCrewId=null + releaseDate set")
+    void releaseByAdmin_marks_admin_release() {
+        LocalDateTime now = LocalDateTime.of(2026, 4, 28, 12, 0);
+        CrewPenaltyHistoryData history = CrewPenaltyHistoryData.builder()
+                .partyroomId(new PartyroomId(1L))
+                .punishedCrewId(new CrewId(10L))
+                .punisherCrewId(null)
+                .punisherType(PunisherType.ADMIN)
+                .penaltyType(PenaltyType.PERMANENT_EXPULSION)
+                .penaltyReason("admin reason")
+                .penaltyDate(LocalDateTime.of(2026, 4, 28, 11, 0))
+                .released(false)
+                .build();
+
+        history.releaseByAdmin(now);
+
+        assertThat(history.isReleased()).isTrue();
+        assertThat(history.getReleasedByCrewId()).isNull();
+        assertThat(history.getReleaseDate()).isEqualTo(now);
     }
 }

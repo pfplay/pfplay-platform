@@ -16,13 +16,18 @@ public class QueryMyInfoResponse {
     private boolean profileUpdated;
     private LocalDate registrationDate;
 
-    public static QueryMyInfoResponse from(UserAccountData user) {
+    /**
+     * Build a {@link QueryMyInfoResponse} from the user account row plus tier
+     * / profile-updated flags resolved separately. Both moved to
+     * {@code MemberData}/{@code GuestData} in the V4 IAM refactor.
+     */
+    public static QueryMyInfoResponse from(UserAccountData user, AuthorityTier tier, boolean profileUpdated) {
         return QueryMyInfoResponse.builder()
                 .uid(user.getUserId().getUid().toString())
                 .email(user.getEmail())
-                .profileUpdated(user.isProfileUpdated())
+                .profileUpdated(profileUpdated)
                 .registrationDate(user.getCreatedAt().toLocalDate())
-                .authorityTier(user.getAuthorityTier())
+                .authorityTier(tier)
                 .build();
     }
 }

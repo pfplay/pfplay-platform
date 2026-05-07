@@ -1,94 +1,91 @@
 package com.pfplaybackend.api.user.domain.entity.data;
 
-import com.pfplaybackend.api.common.config.security.enums.ProviderType;
 import com.pfplaybackend.api.common.domain.annotation.AggregateRoot;
-import com.pfplaybackend.api.common.domain.value.UserId;
+import com.pfplaybackend.api.common.entity.BaseEntity;
 import com.pfplaybackend.api.common.enums.AuthorityTier;
-import com.pfplaybackend.api.user.domain.enums.ActivityType;
 import com.pfplaybackend.api.user.domain.enums.FaceSourceType;
-import com.pfplaybackend.api.user.domain.value.*;
-import jakarta.persistence.*;
+import com.pfplaybackend.api.user.domain.event.MemberTierChangedEvent;
+import com.pfplaybackend.api.user.domain.value.ActivitySummary;
+import com.pfplaybackend.api.avatar.domain.value.AvatarBodyUri;
+import com.pfplaybackend.api.avatar.domain.value.AvatarFaceUri;
+import com.pfplaybackend.api.avatar.domain.value.AvatarIconUri;
+import com.pfplaybackend.api.user.domain.value.ProfileSummary;
+import com.pfplaybackend.api.user.domain.value.WalletAddress;
+import jakarta.persistence.CascadeType;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.OneToOne;
+import jakarta.persistence.Table;
+import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import org.hibernate.annotations.DynamicInsert;
 import org.hibernate.annotations.DynamicUpdate;
 
-import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
 
 @AggregateRoot
-@DynamicUpdate
-@DynamicInsert
-@Table(
-        name = "MEMBER",
-        uniqueConstraints = {
-                @UniqueConstraint(name = "unique_user_email", columnNames = {"email"})
-        }
-)
-@Getter
 @Entity
-@DiscriminatorValue("MEMBER")
-public class MemberData extends UserAccountData {
+@Table(name = "member")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@DynamicInsert
+@DynamicUpdate
+public class MemberData extends BaseEntity {
 
-    @Column(nullable = false)
-    private String email;
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "member_id")
+    private Long memberId;
 
-    @Column(nullable = false)
-    private ProviderType providerType;
+    @Column(name = "user_account_id", nullable = false)
+    private Long userAccountId;
 
-    @OneToMany(mappedBy = "userId", fetch = FetchType.LAZY, cascade = CascadeType.ALL)
-    @MapKey(name = "activityType")
-    @MapKeyEnumerated(EnumType.STRING)
-    private Map<ActivityType, ActivityData> activityDataMap;
+    @Column(name = "authority_tier", nullable = false, length = 8)
+    @Enumerated(EnumType.STRING)
+    private AuthorityTier authorityTier;
 
-    protected MemberData() {}
+    @OneToOne(cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @JoinColumn(name = "profile_id")
+    private ProfileData profileData;
 
-    @Builder
-    public MemberData(UserId userId, AuthorityTier authorityTier, String email, ProviderType providerType, ProfileData profileData, boolean isProfileUpdated, Map<ActivityType, ActivityData> activityDataMap,
-                      LocalDateTime createdAt, LocalDateTime updatedAt) {
-        super(userId, authorityTier, profileData, isProfileUpdated, createdAt, updatedAt);
-        this.email = email;
-        this.providerType = providerType;
-        this.activityDataMap = activityDataMap;
+    @Column(name = "is_profile_updated", nullable = false)
+    private boolean isProfileUpdated;
+
+    // ActivityData is no longer owned by Member as a JPA association.
+    // Application services query it directly via ActivityRepository.findByUserAccountId(...).
+    // Rationale: Member's PK is now memberId (AUTO_INCREMENT), but user_activity.user_id
+    // joins on the legacy UserId value (== user_account.user_id == member.user_account_id).
+    // Sharper aggregate boundary; eliminates the cross-PK reconciliation footgun.
+    // See plan §"activityDataMap mapping decision" for full rationale.
+
+    @Builder(access = AccessLevel.PRIVATE)
+    private MemberData(Long userAccountId, AuthorityTier authorityTier,
+                       ProfileData profileData, boolean isProfileUpdated) {
+        this.userAccountId = userAccountId;
+        this.authorityTier = authorityTier;
+        this.profileData = profileData;
+        this.isProfileUpdated = isProfileUpdated;
     }
 
-    public static MemberData create(String email, ProviderType providerType) {
+    public static MemberData createForUserAccount(Long userAccountId) {
         return MemberData.builder()
-                .userId(new UserId())
-                .email(email)
+                .userAccountId(userAccountId)
                 .authorityTier(AuthorityTier.AM)
-                .providerType(providerType)
                 .isProfileUpdated(false)
                 .build();
-    }
-
-    public static MemberData createWithFixedUserId(UserId userId, String email, ProviderType providerType) {
-        return MemberData.builder()
-                .userId(userId)
-                .email(email)
-                .authorityTier(AuthorityTier.AM)
-                .providerType(providerType)
-                .isProfileUpdated(false)
-                .build();
-    }
-
-    @Override
-    public boolean isGuest() {
-        return false;
-    }
-
-    @Override
-    public String getEmail() {
-        return this.email;
     }
 
     public void initializeProfile(ProfileData profileData) {
         this.profileData = profileData;
-    }
-
-    public void initializeActivityMap(Map<ActivityType, ActivityData> activityDataMap) {
-        this.activityDataMap = activityDataMap;
     }
 
     public void updateProfileBio(String nickName, String introduction) {
@@ -96,22 +93,21 @@ public class MemberData extends UserAccountData {
         this.isProfileUpdated = true;
     }
 
-    public void updateAvatarBody(AvatarBodyUri bodyUri, int combinePositionX, int combinePositionY) {
-        this.profileData.updateAvatarBody(bodyUri, combinePositionX, combinePositionY);
+    public void updateAvatarBody(AvatarBodyUri bodyUri, int positionX, int positionY) {
+        this.profileData.updateAvatarBody(bodyUri, positionX, positionY);
     }
 
-    public void updateAvatarFace(AvatarFaceUri avatarFaceUri) {
-        this.profileData.updateAvatarFaceSingleBody(avatarFaceUri);
+    public void updateAvatarFace(AvatarFaceUri uri) {
+        this.profileData.updateAvatarFaceSingleBody(uri);
     }
 
-    public void updateAvatarFace(AvatarFaceUri avatarFaceUri, FaceSourceType sourceType,
+    public void updateAvatarFace(AvatarFaceUri uri, FaceSourceType src,
                                  double offsetX, double offsetY, double scale) {
-        this.profileData.updateAvatarFaceWithTransform(
-                avatarFaceUri, sourceType, offsetX, offsetY, scale);
+        this.profileData.updateAvatarFaceWithTransform(uri, src, offsetX, offsetY, scale);
     }
 
-    public void updateAvatarIcon(AvatarIconUri avatarIconUri) {
-        this.profileData.updateAvatarIcon(avatarIconUri);
+    public void updateAvatarIcon(AvatarIconUri uri) {
+        this.profileData.updateAvatarIcon(uri);
     }
 
     public void updateWalletAddress(WalletAddress walletAddress) {
@@ -119,17 +115,40 @@ public class MemberData extends UserAccountData {
         this.authorityTier = AuthorityTier.FM;
     }
 
-    public void updateDjScore(int deltaScore) {
-        ActivityData djActivity = this.activityDataMap.get(ActivityType.DJ_PNT);
-        djActivity.addScore(deltaScore);
+    /**
+     * Admin-driven tier change: pure mutation + domain event registration.
+     * Service layer guards TIER_UNCHANGED before invoking. {@code byAdministratorId}
+     * is captured into the event for downstream audit trail (UAL row 2건 — TIER_CHANGED + ADMIN_ACTED_ON).
+     */
+    public void changeTier(AuthorityTier newTier, Long byAdministratorId) {
+        AuthorityTier oldTier = this.authorityTier;
+        this.authorityTier = newTier;
+        registerEvent(new MemberTierChangedEvent(
+                this.userAccountId, this.memberId, oldTier, newTier, byAdministratorId));
     }
 
-    @Override
-    public ProfileSummary getProfileSummary() {
-        List<ActivitySummary> activitySummaries = this.activityDataMap.values().stream()
-                .map(a -> new ActivitySummary(a.getActivityType(), a.getScore().getValue()))
-                .toList();
-
-        return buildProfileSummary(activitySummaries);
+    /**
+     * Build a profile summary view. Activity scores are passed in by the
+     * application service (which queries ActivityRepository directly) — this
+     * entity does not own the activity collection.
+     */
+    public ProfileSummary getProfileSummary(List<ActivitySummary> activitySummaries) {
+        var bio = this.profileData.getBio();
+        var avatar = this.profileData.getAvatarSetting();
+        return new ProfileSummary(
+                bio != null ? bio.getNicknameValue() : null,
+                bio != null ? bio.getIntroduction() : null,
+                avatar.getAvatarBodyUri().getValue(),
+                avatar.getAvatarCompositionType(),
+                avatar.getCombinePositionX(),
+                avatar.getCombinePositionY(),
+                avatar.getOffsetX(),
+                avatar.getOffsetY(),
+                avatar.getScale(),
+                avatar.getAvatarFaceUri().getValue(),
+                avatar.getAvatarIconUri().getValue(),
+                this.profileData.getWalletAddress().getValue(),
+                activitySummaries
+        );
     }
 }

@@ -3,6 +3,8 @@ package com.pfplaybackend.api.party.adapter.out.persistence;
 import com.pfplaybackend.api.common.AbstractIntegrationTest;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.party.domain.entity.data.PartyroomData;
+import com.pfplaybackend.api.party.domain.enums.DisplayFlag;
+import com.pfplaybackend.api.party.domain.enums.PartyroomStatus;
 import com.pfplaybackend.api.party.domain.enums.StageType;
 import com.pfplaybackend.api.party.domain.value.LinkDomain;
 import com.pfplaybackend.api.party.domain.value.PlaybackTimeLimit;
@@ -47,11 +49,15 @@ class PartyroomRepositoryIntegrationTest extends AbstractIntegrationTest {
         assertThat(loaded.getHostId()).isEqualTo(hostId);
         assertThat(loaded.isTerminated()).isFalse();
         assertThat(loaded.getPartyroomId()).isNotNull();
+        assertThat(loaded.getStatus()).isEqualTo(PartyroomStatus.ACTIVE);
+        assertThat(loaded.getCrewCount()).isZero();
+        assertThat(loaded.getDisplayFlag()).isEqualTo(DisplayFlag.NORMAL);
+        assertThat(loaded.getLastActivityAt()).isNull();
     }
 
     @Test
-    @DisplayName("findActiveHostRoom — 종료되지 않은 호스트의 파티룸을 조회한다")
-    void findActiveHostRoomReturnsActiveRoom() {
+    @DisplayName("findNonTerminatedHostRoom — 종료되지 않은 호스트의 파티룸을 조회한다")
+    void findNonTerminatedHostRoomReturnsActiveRoom() {
         // given
         UserId hostId = new UserId(200L);
         PartyroomData partyroom = PartyroomData.create(
@@ -62,7 +68,7 @@ class PartyroomRepositoryIntegrationTest extends AbstractIntegrationTest {
         flushAndClear();
 
         // when
-        Optional<PartyroomData> result = partyroomRepository.findActiveHostRoom(hostId);
+        Optional<PartyroomData> result = partyroomRepository.findNonTerminatedHostRoom(hostId);
 
         // then
         assertThat(result).isPresent();
@@ -71,8 +77,8 @@ class PartyroomRepositoryIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("findActiveHostRoom — 종료된 파티룸은 조회되지 않는다")
-    void findActiveHostRoomExcludesTerminated() {
+    @DisplayName("findNonTerminatedHostRoom — 종료된 파티룸은 조회되지 않는다")
+    void findNonTerminatedHostRoomExcludesTerminated() {
         // given
         UserId hostId = new UserId(300L);
         PartyroomData partyroom = PartyroomData.create(
@@ -84,7 +90,7 @@ class PartyroomRepositoryIntegrationTest extends AbstractIntegrationTest {
         flushAndClear();
 
         // when
-        Optional<PartyroomData> result = partyroomRepository.findActiveHostRoom(hostId);
+        Optional<PartyroomData> result = partyroomRepository.findNonTerminatedHostRoom(hostId);
 
         // then
         assertThat(result).isEmpty();

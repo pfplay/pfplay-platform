@@ -6,7 +6,6 @@ import lombok.RequiredArgsConstructor;
 @Getter
 @RequiredArgsConstructor
 public enum TokenClaim {
-    UID("uid"),
     EMAIL("email"),
     ACCESS_LEVEL("access_level"),
     AUTHORITY_TIER("authority_tier");

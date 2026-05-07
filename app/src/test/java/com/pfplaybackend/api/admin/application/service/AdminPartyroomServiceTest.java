@@ -10,6 +10,7 @@ import com.pfplaybackend.api.party.application.service.PartyroomAccessCommandSer
 import com.pfplaybackend.api.party.application.service.PlaybackQueryService;
 import com.pfplaybackend.api.party.domain.entity.data.PartyroomData;
 import com.pfplaybackend.api.party.domain.entity.data.PartyroomPlaybackData;
+import com.pfplaybackend.api.party.domain.enums.PartyroomStatus;
 import com.pfplaybackend.api.party.domain.enums.StageType;
 import com.pfplaybackend.api.party.domain.value.LinkDomain;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
@@ -79,7 +80,7 @@ class AdminPartyroomServiceTest {
                 .linkDomain(LinkDomain.of(linkDomain))
                 .playbackTimeLimit(PlaybackTimeLimit.ofMinutes(5))
                 .noticeContent("")
-                .isTerminated(false)
+                .status(PartyroomStatus.ACTIVE)
                 .build();
     }
 
@@ -124,7 +125,7 @@ class AdminPartyroomServiceTest {
                     .linkDomain(input.getLinkDomain())
                     .playbackTimeLimit(input.getPlaybackTimeLimit())
                     .noticeContent(input.getNoticeContent())
-                    .isTerminated(input.isTerminated())
+                    .status(input.getStatus())
                     .build();
         });
 

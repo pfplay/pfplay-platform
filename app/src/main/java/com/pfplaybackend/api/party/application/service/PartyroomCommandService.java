@@ -13,6 +13,7 @@ import com.pfplaybackend.api.party.domain.entity.data.PartyroomData;
 import com.pfplaybackend.api.party.domain.entity.data.PartyroomPlaybackData;
 import com.pfplaybackend.api.party.domain.enums.QueueStatus;
 import com.pfplaybackend.api.party.domain.enums.StageType;
+import com.pfplaybackend.api.party.domain.event.PartyroomCreatedEvent;
 import com.pfplaybackend.api.party.domain.exception.PartyroomException;
 import com.pfplaybackend.api.party.domain.policy.PartyroomCreationPolicy;
 import com.pfplaybackend.api.party.domain.port.PartyroomAggregatePort;
@@ -39,15 +40,18 @@ public class PartyroomCommandService {
 
     @Transactional
     public void createMainStage(CreatePartyroomCommand command, UserId adminId) {
-        PartyroomData createdPartyroom = createPartyroom(command, StageType.MAIN, adminId);
-        partyroomAccessCommandService.enterByHost(adminId, createdPartyroom);
+        // 도메인 invariant: 프로필 없는 사용자는 partyroom에 active crew로 등록하지 않는다.
+        // V5-seeded super-admin은 profile이 없으므로 enterByHost를 호출하면 customer GET /api/v1/partyrooms
+        // 응답 빌드 시 ProfileSettingDto null lookup → NPE. 호스트 권한은 partyroom.host_id로 충분하며
+        // 본 스테이지엔 crew row가 불필요. (PA-7)
+        createPartyroom(command, StageType.MAIN, adminId);
     }
 
     @Transactional
     public PartyroomData createGeneralPartyRoom(CreatePartyroomCommand command) {
         AuthContext authContext = ThreadLocalContext.getAuthContext();
         new PartyroomCreationPolicy().enforce(authContext.getAuthorityTier());
-        Optional<PartyroomData> optionalActive = aggregatePort.findActiveHostRoom(authContext.getUserId());
+        Optional<PartyroomData> optionalActive = aggregatePort.findNonTerminatedHostRoom(authContext.getUserId());
         if(optionalActive.isPresent()) throw ExceptionCreator.create(PartyroomException.ALREADY_HOST);
 
         String linkDomain = command.linkDomain();
@@ -70,6 +74,12 @@ public class PartyroomCommandService {
         PartyroomData saved = aggregatePort.savePartyroom(partyroom);
         aggregatePort.savePlaybackState(PartyroomPlaybackData.createFor(saved.getPartyroomId()));
         aggregatePort.saveDjQueueState(DjQueueData.createFor(saved.getPartyroomId()));
+
+        // PR 12a — UserActivityLogListener consumes this for PARTYROOM_CREATED row.
+        // spec §5.2 "service 코드 변경 0" 가정은 부정확 — Chunk 7 §12 catch-up.
+        eventPublisher.publishEvent(new PartyroomCreatedEvent(
+                saved.getPartyroomId(), hostId.getUid(), saved.getStageType()));
+
         return saved;
     }
 

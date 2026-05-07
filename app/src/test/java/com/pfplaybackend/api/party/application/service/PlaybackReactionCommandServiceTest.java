@@ -7,6 +7,7 @@ import com.pfplaybackend.api.common.enums.AuthorityTier;
 import com.pfplaybackend.api.common.exception.http.ForbiddenException;
 import com.pfplaybackend.api.party.adapter.out.persistence.PlaybackReactionHistoryRepository;
 import com.pfplaybackend.api.party.application.dto.partyroom.ActivePartyroomDto;
+import com.pfplaybackend.api.party.application.port.out.AddedTrackInfo;
 import com.pfplaybackend.api.party.domain.entity.data.CrewData;
 import com.pfplaybackend.api.party.domain.entity.data.history.PlaybackReactionHistoryData;
 import com.pfplaybackend.api.party.domain.enums.ReactionType;
@@ -62,7 +63,7 @@ class PlaybackReactionCommandServiceTest {
     }
 
     @Test
-    @DisplayName("LIKE 반응 시 정상적으로 후처리가 호출되고 결과가 반환된다")
+    @DisplayName("LIKE 반응 시 정상적으로 후처리가 호출되고 addedTrack=null로 결과가 반환된다")
     void reactToCurrentPlaybackLikeSuccess() {
         // given
         ActivePartyroomDto activePartyroom = new ActivePartyroomDto(
@@ -86,6 +87,9 @@ class PlaybackReactionCommandServiceTest {
         CrewData crew = CrewData.builder().id(5L).userId(userId).build();
         when(partyroomQueryService.getCrewByUserId(partyroomId, userId)).thenReturn(Optional.of(crew));
 
+        when(playbackReactionPostProcessCommandService.postProcess(any(), any(), any(), any(), any()))
+                .thenReturn(null);
+
         // when
         ReactionHistoryDto result = playbackReactionCommandService.reactToCurrentPlayback(partyroomId, ReactionType.LIKE);
 
@@ -93,8 +97,91 @@ class PlaybackReactionCommandServiceTest {
         assertThat(result.isLiked()).isTrue();
         assertThat(result.isDisliked()).isFalse();
         assertThat(result.isGrabbed()).isFalse();
+        assertThat(result.addedTrack()).isNull();
         verify(playbackReactionPostProcessCommandService).postProcess(
                 postProcessResult, ReactionType.LIKE, partyroomId, playbackId, new CrewId(5L));
+    }
+
+    @Test
+    @DisplayName("GRAB 반응 시 응답에 addedTrack(trackId, playlistId)이 포함된다")
+    void reactToCurrentPlaybackGrabSuccessIncludesAddedTrack() {
+        // given
+        ActivePartyroomDto activePartyroom = new ActivePartyroomDto(
+                partyroomId.getId(), false, 5L, true, playbackId, new CrewId(5L));
+        when(partyroomQueryService.getMyActivePartyroom()).thenReturn(Optional.of(activePartyroom));
+
+        PlaybackReactionHistoryData historyData = new PlaybackReactionHistoryData(userId, playbackId);
+        when(playbackReactionQueryService.findPrevHistoryData(playbackId, userId))
+                .thenReturn(Optional.empty());
+
+        ReactionState baseState = ReactionState.createBaseState();
+        ReactionState targetState = new ReactionState(true, false, true);
+        when(playbackReactionDomainService.getTargetReactionState(baseState, ReactionType.GRAB))
+                .thenReturn(targetState);
+
+        ReactionPostProcessResult postProcessResult = new ReactionPostProcessResult(true, true, true, true, null, 3, null);
+        when(playbackReactionDomainService.determinePostProcessing(baseState, targetState))
+                .thenReturn(postProcessResult);
+        when(playbackReactionHistoryRepository.save(any())).thenReturn(historyData);
+
+        CrewData crew = CrewData.builder().id(5L).userId(userId).build();
+        when(partyroomQueryService.getCrewByUserId(partyroomId, userId)).thenReturn(Optional.of(crew));
+
+        AddedTrackInfo addedTrackInfo = new AddedTrackInfo(12345L, 67L);
+        when(playbackReactionPostProcessCommandService.postProcess(
+                postProcessResult, ReactionType.GRAB, partyroomId, playbackId, new CrewId(5L)))
+                .thenReturn(addedTrackInfo);
+
+        // when
+        ReactionHistoryDto result = playbackReactionCommandService.reactToCurrentPlayback(partyroomId, ReactionType.GRAB);
+
+        // then
+        assertThat(result.isLiked()).isTrue();
+        assertThat(result.isGrabbed()).isTrue();
+        assertThat(result.addedTrack()).isNotNull();
+        assertThat(result.addedTrack().trackId()).isEqualTo(12345L);
+        assertThat(result.addedTrack().playlistId()).isEqualTo(67L);
+    }
+
+    @Test
+    @DisplayName("GRAB 토글 off (이미 grab 상태에서 다시 GRAB → un-grab) 시 addedTrack=null")
+    void reactToCurrentPlaybackGrabToggleOffReturnsNullAddedTrack() {
+        // given
+        ActivePartyroomDto activePartyroom = new ActivePartyroomDto(
+                partyroomId.getId(), false, 5L, true, playbackId, new CrewId(5L));
+        when(partyroomQueryService.getMyActivePartyroom()).thenReturn(Optional.of(activePartyroom));
+
+        PlaybackReactionHistoryData historyData = mock(PlaybackReactionHistoryData.class);
+        when(historyData.getId()).thenReturn(99L);
+        when(historyData.applyReactionState(any())).thenReturn(historyData);
+        when(playbackReactionQueryService.findPrevHistoryData(playbackId, userId))
+                .thenReturn(Optional.of(historyData));
+
+        // already-grabbed → GRAB toggle leaves grab false (per ReactionStateResolver: (true,false,true) -GRAB-> (true,false,true);
+        // we still verify the contract: when post-process reports no grab status change, addedTrack must be null.
+        ReactionState existingState = new ReactionState(true, false, true);
+        when(playbackReactionDomainService.getReactionStateByHistory(historyData)).thenReturn(existingState);
+
+        ReactionState targetState = new ReactionState(true, false, true);
+        when(playbackReactionDomainService.getTargetReactionState(existingState, ReactionType.GRAB))
+                .thenReturn(targetState);
+
+        ReactionPostProcessResult postProcessResult = new ReactionPostProcessResult(false, false, false, false, null, 0, null);
+        when(playbackReactionDomainService.determinePostProcessing(existingState, targetState))
+                .thenReturn(postProcessResult);
+        when(playbackReactionHistoryRepository.save(any())).thenReturn(historyData);
+
+        CrewData crew = CrewData.builder().id(5L).userId(userId).build();
+        when(partyroomQueryService.getCrewByUserId(partyroomId, userId)).thenReturn(Optional.of(crew));
+
+        when(playbackReactionPostProcessCommandService.postProcess(any(), any(), any(), any(), any()))
+                .thenReturn(null);
+
+        // when
+        ReactionHistoryDto result = playbackReactionCommandService.reactToCurrentPlayback(partyroomId, ReactionType.GRAB);
+
+        // then
+        assertThat(result.addedTrack()).isNull();
     }
 
     @Test

@@ -3,6 +3,9 @@ package com.pfplaybackend.api.user.domain.entity.data;
 import com.pfplaybackend.api.common.domain.enums.AvatarCompositionType;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.entity.BaseEntity;
+import com.pfplaybackend.api.avatar.domain.value.AvatarBodyUri;
+import com.pfplaybackend.api.avatar.domain.value.AvatarFaceUri;
+import com.pfplaybackend.api.avatar.domain.value.AvatarIconUri;
 import com.pfplaybackend.api.user.domain.enums.FaceSourceType;
 import com.pfplaybackend.api.user.domain.value.*;
 import jakarta.persistence.*;
@@ -95,6 +98,14 @@ public class ProfileData extends BaseEntity {
             this.bio = new Bio(new Nickname(nickname), introduction);
         } else {
             this.bio.update(nickname, introduction);
+        }
+    }
+
+    public void updateNickname(String nickname) {
+        if (this.bio == null) {
+            this.bio = new Bio(new Nickname(nickname), null);
+        } else {
+            this.bio.updateNickname(nickname);
         }
     }
 

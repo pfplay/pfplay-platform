@@ -3,9 +3,7 @@ package com.pfplaybackend.api.common.config.security.jwt;
 import com.pfplaybackend.api.common.config.security.enums.AccessLevel;
 import com.pfplaybackend.api.common.config.security.jwt.dto.TokenClaimsRequest;
 import com.pfplaybackend.api.common.config.security.jwt.enums.TokenClaim;
-import com.pfplaybackend.api.common.config.security.jwt.enums.TokenSubject;
 import com.pfplaybackend.api.common.config.security.jwt.properties.JwtProperties;
-import com.pfplaybackend.api.common.enums.AuthorityTier;
 import com.pfplaybackend.api.common.exception.AuthenticationException;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
@@ -18,9 +16,10 @@ import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
-import java.util.Calendar;
+import java.time.Clock;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @Slf4j
@@ -29,155 +28,48 @@ import java.util.Map;
 public class JwtService {
 
     private final JwtProperties jwtProperties;
-    private final java.time.Clock clock;
+    private final Clock clock;
 
-    private SecretKey getSigningKey() {
-        return Keys.hmacShaKeyFor(jwtProperties.getSecret().getBytes(StandardCharsets.UTF_8));
+    public String mintAdminAccessToken(TokenClaimsRequest claims) {
+        return mint(claims, jwtProperties.getAdminAccessTokenExpirationMs());
     }
 
-    public String generateAccessToken(TokenClaimsRequest claims) {
-        Map<String, Object> tokenClaims = buildClaims(claims);
-        return createToken(
-                tokenClaims,
-                TokenSubject.ACCESS_TOKEN_SUBJECT.getValue(),
-                jwtProperties.getExpirationMs()
-        );
+    public String mintSharedSessionToken(TokenClaimsRequest claims) {
+        return mint(claims, jwtProperties.getSharedSessionTokenExpirationMs());
     }
 
-    public String generateNonExpiringAccessToken(TokenClaimsRequest claims) {
-        Map<String, Object> tokenClaims = buildClaims(claims);
-        return createNonExpiringToken(tokenClaims, TokenSubject.ACCESS_TOKEN_SUBJECT.getValue());
-    }
-
-    private Map<String, Object> buildClaims(TokenClaimsRequest claims) {
-        Map<String, Object> tokenClaims = new HashMap<>();
-        tokenClaims.put(TokenClaim.UID.getValue(), claims.uid());
-        tokenClaims.put(TokenClaim.EMAIL.getValue(), claims.email());
-        tokenClaims.put(TokenClaim.ACCESS_LEVEL.getValue(), claims.accessLevel().toString());
-        tokenClaims.put(TokenClaim.AUTHORITY_TIER.getValue(), claims.authorityTier().toString());
-        tokenClaims.put("type", "access");
-        return tokenClaims;
-    }
-
-    private String createToken(Map<String, Object> claims, String subject, long expiration) {
+    private String mint(TokenClaimsRequest req, long ttlMs) {
         Date now = Date.from(clock.instant());
-        Date expiryDate = new Date(now.getTime() + expiration);
+        Date exp = new Date(now.getTime() + ttlMs);
+
+        Map<String, Object> custom = new HashMap<>();
+        custom.put(TokenClaim.EMAIL.getValue(), req.email());
+        custom.put(TokenClaim.ACCESS_LEVEL.getValue(),
+                req.accessLevels().stream().map(AccessLevel::name).toList());
+        if (req.authorityTier() != null) {
+            custom.put(TokenClaim.AUTHORITY_TIER.getValue(), req.authorityTier().name());
+        }
 
         return Jwts.builder()
-                .claims(claims)
-                .subject(subject)
+                .claims(custom)
+                .subject(req.subject())
                 .issuedAt(now)
-                .expiration(expiryDate)
+                .expiration(exp)
                 .signWith(getSigningKey(), Jwts.SIG.HS256)
                 .compact();
     }
 
-    private String createNonExpiringToken(Map<String, Object> claims, String subject) {
-        Calendar calendar = Calendar.getInstance();
-        calendar.set(2099, Calendar.DECEMBER, 31, 23, 59, 59);
-        Date expiryDate = calendar.getTime();
-
-        Date now = Date.from(clock.instant());
-
-        return Jwts.builder()
-                .claims(claims)
-                .subject(subject)
-                .issuedAt(now)
-                .expiration(expiryDate)
-                .signWith(getSigningKey(), Jwts.SIG.HS256)
-                .compact();
-    }
-
-    public boolean validateAccessToken(String token) {
+    public boolean validate(String token) {
         try {
-            Claims claims = extractClaims(token);
-            return "access".equals(claims.get("type", String.class));
-        } catch (Exception e) {
-            log.error("Invalid access token: {}", e.getMessage());
-            return false;
-        }
-    }
-
-    public boolean validateRefreshToken(String token) {
-        try {
-            Claims claims = extractClaims(token);
-            return "refresh".equals(claims.get("type", String.class));
-        } catch (Exception e) {
-            log.error("Invalid refresh token: {}", e.getMessage());
-            return false;
-        }
-    }
-
-    public String getUserIdFromToken(String token) {
-        Claims claims = extractClaims(token);
-        return claims.get(TokenClaim.UID.getValue(), String.class);
-    }
-
-    public String getEmailFromToken(String token) {
-        Claims claims = extractClaims(token);
-        return claims.get(TokenClaim.EMAIL.getValue(), String.class);
-    }
-
-    public String getProviderFromToken(String token) {
-        Claims claims = extractClaims(token);
-        return claims.get("provider", String.class);
-    }
-
-    public AccessLevel getAccessLevelFromToken(String token) {
-        Claims claims = extractClaims(token);
-        String accessLevel = claims.get(TokenClaim.ACCESS_LEVEL.getValue(), String.class);
-        return accessLevel != null ? AccessLevel.valueOf(accessLevel) : null;
-    }
-
-    public AuthorityTier getAuthorityTierFromToken(String token) {
-        Claims claims = extractClaims(token);
-        String authorityTier = claims.get(TokenClaim.AUTHORITY_TIER.getValue(), String.class);
-        return authorityTier != null ? AuthorityTier.valueOf(authorityTier) : null;
-    }
-
-    public Long getAccessTokenExpiration() {
-        return jwtProperties.getExpirationMs();
-    }
-
-    public boolean isTokenNearExpiry(String token) {
-        try {
-            Claims claims = extractClaims(token);
-            Date expiration = claims.getExpiration();
-            Date now = Date.from(clock.instant());
-            long timeUntilExpiry = expiration.getTime() - now.getTime();
-            return timeUntilExpiry < 600_000L;
-        } catch (Exception e) {
-            log.debug("Cannot check token expiry: {}", e.getMessage());
+            extractClaims(token);
             return true;
-        }
-    }
-
-    public Map<String, Object> getAllClaimsFromToken(String token) {
-        Claims claims = extractClaims(token);
-        return new HashMap<>(claims);
-    }
-
-    public boolean isMemberToken(String token) {
-        try {
-            AccessLevel accessLevel = getAccessLevelFromToken(token);
-            return AccessLevel.ROLE_MEMBER.equals(accessLevel);
         } catch (Exception e) {
-            log.debug("Cannot determine user type from token: {}", e.getMessage());
+            log.debug("Invalid token: {}", e.getMessage());
             return false;
         }
     }
 
-    public boolean isGuestToken(String token) {
-        try {
-            AccessLevel accessLevel = getAccessLevelFromToken(token);
-            return AccessLevel.ROLE_GUEST.equals(accessLevel);
-        } catch (Exception e) {
-            log.debug("Cannot determine user type from token: {}", e.getMessage());
-            return false;
-        }
-    }
-
-    private Claims extractClaims(String token) {
+    public Claims extractClaims(String token) {
         try {
             return Jwts.parser()
                     .verifyWith(getSigningKey())
@@ -185,14 +77,36 @@ public class JwtService {
                     .parseSignedClaims(token)
                     .getPayload();
         } catch (ExpiredJwtException e) {
-            log.error("JWT token is expired: {}", e.getMessage());
             throw new AuthenticationException("Token has expired");
         } catch (MalformedJwtException e) {
-            log.error("Invalid JWT token: {}", e.getMessage());
             throw new AuthenticationException("Invalid token format");
         } catch (Exception e) {
-            log.error("Error parsing JWT token: {}", e.getMessage());
             throw new AuthenticationException("Token validation failed");
         }
+    }
+
+    public long timeUntilExpiryMs(String token) {
+        Date exp = extractClaims(token).getExpiration();
+        return exp.getTime() - clock.millis();
+    }
+
+    public List<String> getAccessLevels(String token) {
+        Object raw = extractClaims(token).get(TokenClaim.ACCESS_LEVEL.getValue());
+        if (raw instanceof List<?> list) {
+            return list.stream().map(String::valueOf).toList();
+        }
+        return List.of();
+    }
+
+    public String getSubject(String token) {
+        return extractClaims(token).getSubject();
+    }
+
+    public String getEmail(String token) {
+        return extractClaims(token).get(TokenClaim.EMAIL.getValue(), String.class);
+    }
+
+    private SecretKey getSigningKey() {
+        return Keys.hmacShaKeyFor(jwtProperties.getSecret().getBytes(StandardCharsets.UTF_8));
     }
 }

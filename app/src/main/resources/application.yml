@@ -31,6 +31,8 @@ spring:
     properties:
       hibernate:
         format_sql: true
+        type:
+          preferred_enum_jdbc_type: VARCHAR
 
   sql:
     init:
@@ -40,6 +42,7 @@ spring:
     enabled: true
     encoding: UTF-8
     clean-disabled: true
+    out-of-order: false
 
   data:
     redis:
@@ -47,6 +50,11 @@ spring:
       port: ${REDIS_PORT:6379}
       repositories:
         enabled: false
+
+  servlet:
+    multipart:
+      max-file-size: 4MB
+      max-request-size: 8MB
 
 server:
   tomcat:
@@ -79,6 +87,14 @@ service-api:
     api-key: ${PYTUBE_API_KEY:pfplay_streaming}
     api-secret: ${PYTUBE_API_SECRET}
 
+vercel:
+  edge-config:
+    id: ${VERCEL_EDGE_CONFIG_ID:}
+    api-token: ${VERCEL_API_TOKEN:}
+    team-id: ${VERCEL_TEAM_ID:}
+    base-url: https://api.vercel.com
+    maintenance-key: ${VERCEL_EDGE_CONFIG_KEY:maintenance}
+
 # 🔐 커스텀 앱 설정
 app:
   oauth2:
@@ -108,18 +124,49 @@ app:
 
   jwt:
     secret: ${JWT_SECRET}
-    expiration-ms: 86400000 # 24시간
-    refresh-expiration-ms: 604800000 # 7일
+    admin-access-token-expiration-ms: 900000      # 15 min
+    shared-session-token-expiration-ms: 86400000  # 24h
 
     cookie:
-      access-token-name: AccessToken
-      refresh-token-name: RefreshToken
-      domain: localhost
-      path: /
-      access-token-expiry-seconds: 86400
-      refresh-token-expiry-seconds: 604800
+      admin:
+        name: AdminAccessToken
+        domain: ${ADMIN_COOKIE_DOMAIN:localhost}
+        path: /
+        secure: true
+        same-site: Strict
+        max-age-seconds: 900
+        renewal-threshold-seconds: 300
+      shared:
+        name: SharedSessionToken
+        domain: ${COOKIE_DOMAIN:localhost}
+        path: /
+        secure: true
+        same-site: None
+        max-age-seconds: 86400
+
+  ratelimit:
+    admin-login:
+      ip:
+        capacity: 10
+        window-seconds: 300
+      email:
+        capacity: 5
+        window-seconds: 900
+
+  security:
+    admin-origin-guard:
+      enabled: true
+      allowed:
+        - https://localhost:3000
+        - http://localhost:3000
+        - https://admin.pfplay.xyz
+    admin-csrf:
+      enabled: true
+      cookie-name: XSRF-TOKEN
+      header-name: X-XSRF-TOKEN
+      cookie-domain: ${ADMIN_COOKIE_DOMAIN:localhost}
+      same-site: Strict
       secure: true
-      same-site: None
 
   webclient:
     timeout:
@@ -133,6 +180,14 @@ app:
     allowed-headers: ${CORS_ALLOWED_HEADERS:*}
     allow-credentials: ${CORS_ALLOW_CREDENTIALS:true}
     max-age: ${CORS_MAX_AGE:3600}
+
+  # 아바타 카탈로그 GCS 업로드 (PR 11). 키 경로 미지정 시 ApplicationDefaultCredentials 사용.
+  avatar:
+    storage:
+      bucket: ${PFPLAY_AVATAR_BUCKET:pfplay-firebase.appspot.com}
+      service-account-path: ${PFPLAY_AVATAR_GCS_KEY_PATH:}
+      base-url-prefix: https://storage.googleapis.com
+      max-file-size-bytes: 2097152   # 2 MiB
 
 ---
 
@@ -149,6 +204,8 @@ spring:
     properties:
       hibernate:
         format_sql: false
+        type:
+          preferred_enum_jdbc_type: VARCHAR
 
   sql:
     init:
@@ -158,6 +215,7 @@ spring:
     enabled: true
     encoding: UTF-8
     clean-disabled: true
+    out-of-order: false
 
 logging:
   level:
@@ -171,9 +229,14 @@ server:
 app:
   jwt:
     cookie:
-      domain: ${COOKIE_DOMAIN}
-      secure: ${COOKIE_SECURE:true}
-      same-site: ${COOKIE_SAME_SITE:Lax}
+      admin:
+        domain: ${ADMIN_COOKIE_DOMAIN}
+        secure: ${COOKIE_SECURE:true}
+        same-site: Strict
+      shared:
+        domain: ${COOKIE_DOMAIN}
+        secure: ${COOKIE_SECURE:true}
+        same-site: ${COOKIE_SAME_SITE:Lax}
 
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS}
@@ -193,6 +256,8 @@ spring:
     properties:
       hibernate:
         format_sql: false
+        type:
+          preferred_enum_jdbc_type: VARCHAR
 
   sql:
     init:
@@ -202,6 +267,7 @@ spring:
     enabled: true
     encoding: UTF-8
     clean-disabled: true
+    out-of-order: false
 
 server:
   error:
@@ -218,9 +284,14 @@ logging:
 app:
   jwt:
     cookie:
-      domain: ${COOKIE_DOMAIN}
-      secure: true
-      same-site: Lax
+      admin:
+        domain: ${ADMIN_COOKIE_DOMAIN}
+        secure: true
+        same-site: Strict
+      shared:
+        domain: ${COOKIE_DOMAIN}
+        secure: true
+        same-site: Lax
 
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS}
@@ -240,6 +311,8 @@ spring:
     properties:
       hibernate:
         format_sql: false
+        type:
+          preferred_enum_jdbc_type: VARCHAR
 
   sql:
     init:
@@ -249,6 +322,7 @@ spring:
     enabled: true
     encoding: UTF-8
     clean-disabled: true
+    out-of-order: false
 
 server:
   error:
@@ -265,9 +339,14 @@ logging:
 app:
   jwt:
     cookie:
-      domain: ${COOKIE_DOMAIN}
-      secure: true
-      same-site: Lax
+      admin:
+        domain: ${ADMIN_COOKIE_DOMAIN}
+        secure: true
+        same-site: Strict
+      shared:
+        domain: ${COOKIE_DOMAIN}
+        secure: true
+        same-site: Lax
 
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS}
@@ -277,3 +356,24 @@ springdoc:
     enabled: false
   api-docs:
     enabled: false
+
+---
+# 🔵 로컬 개발 환경
+spring:
+  config:
+    activate:
+      on-profile: local
+
+app:
+  jwt:
+    cookie:
+      admin:
+        secure: false
+        same-site: Lax       # Strict would block cross-tab navigation from devtools
+      shared:
+        secure: false
+        same-site: Lax
+  security:
+    admin-csrf:
+      secure: false
+      same-site: Lax

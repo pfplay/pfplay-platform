@@ -32,7 +32,7 @@ public class UserAvatarCommandController {
     @ApiResponse(responseCode = "204", description = "아바타 변경 성공")
     @SecurityRequirement(name = "cookieAuth")
     @ApiErrorCodes({UserAvatarException.class})
-    @PreAuthorize("hasRole('ROLE_MEMBER')")
+    @PreAuthorize("hasRole('MEMBER')")
     @PutMapping("/me/profile/avatar")
     public ResponseEntity<Void> setMyAvatar(@Valid @RequestBody UpdateAvatarRequest request) {
         SetAvatarCommand command = toCommand(request);

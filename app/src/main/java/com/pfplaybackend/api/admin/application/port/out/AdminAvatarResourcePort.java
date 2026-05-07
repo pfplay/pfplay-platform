@@ -1,12 +1,12 @@
 package com.pfplaybackend.api.admin.application.port.out;
 
-import com.pfplaybackend.api.user.application.dto.shared.AvatarBodyDto;
-import com.pfplaybackend.api.user.application.dto.shared.AvatarIconDto;
-import com.pfplaybackend.api.user.domain.entity.data.AvatarBodyResourceData;
-import com.pfplaybackend.api.user.domain.entity.data.AvatarFaceResourceData;
-import com.pfplaybackend.api.user.domain.value.AvatarBodyUri;
-import com.pfplaybackend.api.user.domain.value.AvatarFaceUri;
-import com.pfplaybackend.api.user.domain.value.AvatarIconUri;
+import com.pfplaybackend.api.avatar.application.dto.AvatarBodyDto;
+import com.pfplaybackend.api.avatar.application.dto.AvatarIconDto;
+import com.pfplaybackend.api.avatar.domain.entity.data.AvatarBodyResourceData;
+import com.pfplaybackend.api.avatar.domain.entity.data.AvatarFaceResourceData;
+import com.pfplaybackend.api.avatar.domain.value.AvatarBodyUri;
+import com.pfplaybackend.api.avatar.domain.value.AvatarFaceUri;
+import com.pfplaybackend.api.avatar.domain.value.AvatarIconUri;
 
 import java.util.List;
 

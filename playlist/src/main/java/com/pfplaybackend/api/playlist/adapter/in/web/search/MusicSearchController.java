@@ -28,7 +28,7 @@ public class MusicSearchController {
     @Operation(summary = "음악 검색", description = "외부 플랫폼에서 음악을 검색합니다. 검색어(q)는 필수이며, 플랫폼을 선택적으로 지정할 수 있습니다. 회원만 사용할 수 있습니다.")
     @SecurityRequirement(name = "cookieAuth")
     @GetMapping()
-    @PreAuthorize("hasRole('ROLE_MEMBER')")
+    @PreAuthorize("hasRole('MEMBER')")
     public ResponseEntity<ApiCommonResponse<QueryMusicSearchResponse>> getSearchList(@ModelAttribute @Valid MusicSearchRequest request) {
         QueryMusicSearchResponse searchMusicResponse = QueryMusicSearchResponse.from(musicSearchService.getSearchList(request.getQ()));
         return ResponseEntity
