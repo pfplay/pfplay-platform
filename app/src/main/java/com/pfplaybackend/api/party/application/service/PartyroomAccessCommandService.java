@@ -99,7 +99,9 @@ public class PartyroomAccessCommandService {
                 CrewData crew = existingCrew.orElseThrow(() ->
                         ExceptionCreator.create(CrewException.INVALID_ACTIVE_ROOM));
                 crew.updateCountryCode(countryCode);
-                return aggregatePort.saveCrew(crew);
+                CrewData saved = aggregatePort.saveCrew(crew);
+                enforceHostInvariant(partyroom, userId, saved);
+                return saved;
             }
         }
 
@@ -113,20 +115,25 @@ public class PartyroomAccessCommandService {
             log.info("[tryEnter] IDEMPOTENT - already active or concurrent insert loser, no event. userId={}, partyroomId={}",
                     userId, partyroomId.getId());
         }
+        if (!result.raceLoser) {
+            enforceHostInvariant(partyroom, userId, result.crew);
+        }
         return result.crew;
     }
 
     /**
      * Crew를 active 상태로 만든다 (idempotent). 호출자에게 transitioned 플래그를 돌려 ENTER 이벤트
-     * 발행 여부를 판단하게 한다.
+     * 발행 여부를, raceLoser 플래그를 돌려 추가 mutation(예: enforceHostInvariant healing) skip 여부를
+     * 판단하게 한다.
      *
      * 흐름:
-     *  1. activateCrew atomic toggle 시도 → 1이면 inactive→active 전이 성공.
+     *  1. activateCrew atomic toggle 시도 → 1이면 inactive→active 전이 성공. (transitioned=true, raceLoser=false)
      *  2. 0 (row missing 또는 이미 active) → findCrew 분기:
      *     a. row 없음 → INSERT. 동시 INSERT 패배자는 DataIntegrityViolationException —
      *        outer 트랜잭션이 rollback-only 상태가 되므로 winner 조회는 별 트랜잭션(REQUIRES_NEW)에서
-     *        수행. 본 호출자는 idempotent return.
-     *     b. row 있고 active → countryCode만 갱신, idempotent.
+     *        수행. 본 호출자는 idempotent return하며 raceLoser=true로 표시한다 — 호출자 측에서
+     *        추가 saveCrew 호출 시 UnexpectedRollbackException 위험이 있으므로 skip해야 한다.
+     *     b. row 있고 active → countryCode만 갱신, idempotent. (transitioned=false, raceLoser=false)
      */
     private CrewActivationResult ensureCrewActive(PartyroomData partyroom, UserId userId, CountryCode countryCode) {
         PartyroomId pid = partyroom.getPartyroomId();
@@ -136,27 +143,27 @@ public class PartyroomAccessCommandService {
         if (activated == 1) {
             CrewData crew = aggregatePort.findCrew(pid, userId).orElseThrow();
             crew.updateCountryCode(countryCode);
-            return new CrewActivationResult(aggregatePort.saveCrew(crew), true);
+            return new CrewActivationResult(aggregatePort.saveCrew(crew), true, false);
         }
 
         Optional<CrewData> existing = aggregatePort.findCrew(pid, userId);
         if (existing.isEmpty()) {
             try {
                 CrewData newCrew = CrewData.create(pid, userId, GradeType.LISTENER, countryCode, now);
-                return new CrewActivationResult(aggregatePort.saveCrew(newCrew), true);
+                return new CrewActivationResult(aggregatePort.saveCrew(newCrew), true, false);
             } catch (DataIntegrityViolationException e) {
                 // INSERT race 패배 — outer tx가 rollback-only 상태. winner row 조회는 별 트랜잭션에서.
                 log.info("[ensureCrewActive] CONCURRENT_INSERT_LOSER - userId={}, partyroomId={}",
                         userId, pid.getId());
                 CrewData winner = findCrewInNewTransaction(pid, userId);
-                return new CrewActivationResult(winner, false);
+                return new CrewActivationResult(winner, false, true);
             }
         }
 
         // 이미 active — countryCode만 갱신
         CrewData crew = existing.get();
         crew.updateCountryCode(countryCode);
-        return new CrewActivationResult(aggregatePort.saveCrew(crew), false);
+        return new CrewActivationResult(aggregatePort.saveCrew(crew), false, false);
     }
 
     /**
@@ -171,7 +178,31 @@ public class PartyroomAccessCommandService {
         );
     }
 
-    private record CrewActivationResult(CrewData crew, boolean transitioned) {}
+    /**
+     * Host invariant 강제: 진입 user가 partyroom host인데 grade가 HOST가 아니면 승격.
+     * Idempotent — 이미 HOST면 no-op. createMainStage가 enterByHost를 건너뛰는 경우와
+     * 기존 잘못된 grade row를 자동 healing.
+     *
+     * 호출 측 PRECONDITION: outer @Transactional이 rollback-only 상태가 아닐 것.
+     * INSERT race-loser 분기에서는 호출하지 말 것 — outer tx가 rollback-only이므로
+     * saveCrew가 UnexpectedRollbackException을 던진다. tryEnter 호출 측에서
+     * CrewActivationResult.raceLoser 플래그로 식별하여 skip한다.
+     *
+     * saveCrew 호출은 명시적이지만 같은 트랜잭션 내 managed entity merge라 DB write 비용은 0
+     * (dirty check + flush 시 단일 UPDATE). 명시 호출은 expel/exit 패턴과의 대칭 + mock 기반
+     * 테스트의 검증 용이성을 위해 유지.
+     */
+    private void enforceHostInvariant(PartyroomData partyroom, UserId userId, CrewData crew) {
+        if (!userId.equals(partyroom.getHostId())) return;
+        if (crew.getGradeType() == GradeType.HOST) return;
+        GradeType prev = crew.getGradeType();
+        crew.updateGrade(GradeType.HOST);
+        aggregatePort.saveCrew(crew);
+        log.info("[enforceHostInvariant] HEALED - userId={}, partyroomId={}, crewId={}, {} → HOST",
+                userId, partyroom.getPartyroomId().getId(), crew.getId(), prev);
+    }
+
+    private record CrewActivationResult(CrewData crew, boolean transitioned, boolean raceLoser) {}
 
     private void publishAccessChangedEvent(PartyroomId partyroomId, CrewData crew, UserId userId) {
         eventPublisher.publishEvent(new CrewAccessedEvent(partyroomId, new CrewId(crew.getId()), userId, AccessType.ENTER));

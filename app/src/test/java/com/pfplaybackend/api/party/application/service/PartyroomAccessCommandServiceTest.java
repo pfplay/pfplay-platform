@@ -14,6 +14,7 @@ import com.pfplaybackend.api.party.domain.entity.data.PartyroomPlaybackData;
 import com.pfplaybackend.api.party.domain.enums.GradeType;
 import com.pfplaybackend.api.party.domain.enums.PartyroomStatus;
 import com.pfplaybackend.api.party.domain.event.CrewAccessedEvent;
+import com.pfplaybackend.api.party.domain.event.CrewGradeChangedEvent;
 import com.pfplaybackend.api.party.domain.port.PartyroomAggregatePort;
 import com.pfplaybackend.api.party.domain.service.PartyroomAggregateService;
 import com.pfplaybackend.api.party.domain.value.CountryCode;
@@ -306,6 +307,296 @@ class PartyroomAccessCommandServiceTest {
             assertThat(result).isSameAs(winnerCrew);
             // No ENTER event published — concurrent insert loser must not inflate the counter
             verify(eventPublisher, never()).publishEvent(any(CrewAccessedEvent.class));
+        } finally {
+            ThreadLocalContext.clearContext();
+        }
+    }
+
+    @Test
+    @DisplayName("tryEnter: fresh entry, non-host user → CrewData created with LISTENER grade (regression)")
+    void tryEnter_freshNonHostEntry_assignsListenerGrade() {
+        // given — partyroom hosted by someone else, no existing crew row
+        UserId hostId = new UserId(99L);
+        PartyroomData partyroom = mock(PartyroomData.class);
+        when(partyroom.getPartyroomId()).thenReturn(partyroomId);
+        when(partyroom.getStatus()).thenReturn(PartyroomStatus.ACTIVE);
+        when(partyroom.isSuspended()).thenReturn(false);
+        // host stub is lenient — Task 1 baseline: enforceHostInvariant helper not yet wired,
+        // so the stub will only be consumed once Task 2 lands. Until then it is unused.
+        lenient().when(partyroom.getHostId()).thenReturn(hostId);
+
+        when(partyroomQueryService.getPartyroomById(partyroomId)).thenReturn(partyroom);
+        when(aggregatePort.countActiveCrews(partyroomId)).thenReturn(0L);
+        when(partyroomQueryService.getMyActivePartyroom(userId)).thenReturn(Optional.empty());
+        when(aggregatePort.findCrew(partyroomId, userId)).thenReturn(Optional.empty());
+        when(aggregatePort.activateCrew(eq(partyroomId), eq(userId), any())).thenReturn(0);
+        // CrewData.create()는 id를 부여하지 않으므로(JPA IDENTITY 컬럼) saveCrew stub이
+        // ENTER 이벤트 발행 시 new CrewId(crew.getId())의 long unboxing NPE를 막기 위해
+        // ReflectionTestUtils로 id를 시뮬레이션 주입.
+        when(aggregatePort.saveCrew(any(CrewData.class)))
+                .thenAnswer(inv -> {
+                    CrewData input = inv.getArgument(0);
+                    ReflectionTestUtils.setField(input, "id", 100L);
+                    return input;
+                });
+
+        // when
+        CrewData result = partyroomAccessCommandService.tryEnter(partyroomId, null);
+
+        // then
+        assertThat(result.getGradeType()).isEqualTo(GradeType.LISTENER);
+    }
+
+    @Test
+    @DisplayName("tryEnter: existing LISTENER row, non-host user → grade unchanged, updateGrade not invoked (regression)")
+    void tryEnter_existingListenerNonHost_unchanged() {
+        // given — partyroom hosted by someone else, user already a listener, currently inactive
+        UserId hostId = new UserId(99L);
+        PartyroomData partyroom = mock(PartyroomData.class);
+        when(partyroom.getPartyroomId()).thenReturn(partyroomId);
+        when(partyroom.getStatus()).thenReturn(PartyroomStatus.ACTIVE);
+        when(partyroom.isSuspended()).thenReturn(false);
+        // host stub is lenient — see note in tryEnter_freshNonHostEntry_assignsListenerGrade.
+        lenient().when(partyroom.getHostId()).thenReturn(hostId);
+
+        CrewData existingCrew = spy(CrewData.builder()
+                .id(20L)
+                .partyroomId(partyroomId)
+                .userId(userId)
+                .gradeType(GradeType.LISTENER)
+                .isActive(false)
+                .build());
+
+        when(partyroomQueryService.getPartyroomById(partyroomId)).thenReturn(partyroom);
+        when(aggregatePort.countActiveCrews(partyroomId)).thenReturn(0L);
+        when(partyroomQueryService.getMyActivePartyroom(userId)).thenReturn(Optional.empty());
+        when(aggregatePort.findCrew(partyroomId, userId)).thenReturn(Optional.of(existingCrew));
+        when(aggregatePort.activateCrew(eq(partyroomId), eq(userId), any())).thenReturn(1);
+        when(aggregatePort.saveCrew(any(CrewData.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        // when
+        CrewData result = partyroomAccessCommandService.tryEnter(partyroomId, null);
+
+        // then
+        assertThat(result.getGradeType()).isEqualTo(GradeType.LISTENER);
+        verify(existingCrew, never()).updateGrade(any(GradeType.class));
+    }
+
+    @Test
+    @DisplayName("tryEnter: fresh entry, user is partyroom host → returned CrewData has HOST grade")
+    void tryEnter_freshHostEntry_assignsHostGrade() {
+        // given — partyroom hosted by THIS user, no existing crew row
+        PartyroomData partyroom = mock(PartyroomData.class);
+        when(partyroom.getPartyroomId()).thenReturn(partyroomId);
+        when(partyroom.getStatus()).thenReturn(PartyroomStatus.ACTIVE);
+        when(partyroom.isSuspended()).thenReturn(false);
+        when(partyroom.getHostId()).thenReturn(userId);
+
+        when(partyroomQueryService.getPartyroomById(partyroomId)).thenReturn(partyroom);
+        when(aggregatePort.countActiveCrews(partyroomId)).thenReturn(0L);
+        when(partyroomQueryService.getMyActivePartyroom(userId)).thenReturn(Optional.empty());
+        when(aggregatePort.findCrew(partyroomId, userId)).thenReturn(Optional.empty());
+        when(aggregatePort.activateCrew(eq(partyroomId), eq(userId), any())).thenReturn(0);
+        // C3 INSERT path: saveCrew must assign id (CrewId long-unbox NPE protection)
+        when(aggregatePort.saveCrew(any(CrewData.class)))
+                .thenAnswer(inv -> {
+                    CrewData input = inv.getArgument(0);
+                    ReflectionTestUtils.setField(input, "id", 100L);
+                    return input;
+                });
+
+        // when
+        CrewData result = partyroomAccessCommandService.tryEnter(partyroomId, null);
+
+        // then
+        assertThat(result.getGradeType()).isEqualTo(GradeType.HOST);
+    }
+
+    @Test
+    @DisplayName("tryEnter: existing LISTENER row, user is host, re-activate path → grade promoted to HOST")
+    void tryEnter_existingListenerHost_promotesToHost() {
+        // given — partyroom hosted by THIS user, existing inactive LISTENER row
+        PartyroomData partyroom = mock(PartyroomData.class);
+        when(partyroom.getPartyroomId()).thenReturn(partyroomId);
+        when(partyroom.getStatus()).thenReturn(PartyroomStatus.ACTIVE);
+        when(partyroom.isSuspended()).thenReturn(false);
+        when(partyroom.getHostId()).thenReturn(userId);
+
+        CrewData staleCrew = CrewData.builder()
+                .id(30L)
+                .partyroomId(partyroomId)
+                .userId(userId)
+                .gradeType(GradeType.LISTENER)
+                .isActive(false)
+                .build();
+
+        when(partyroomQueryService.getPartyroomById(partyroomId)).thenReturn(partyroom);
+        when(aggregatePort.countActiveCrews(partyroomId)).thenReturn(0L);
+        when(partyroomQueryService.getMyActivePartyroom(userId)).thenReturn(Optional.empty());
+        when(aggregatePort.findCrew(partyroomId, userId)).thenReturn(Optional.of(staleCrew));
+        when(aggregatePort.activateCrew(eq(partyroomId), eq(userId), any())).thenReturn(1);
+        when(aggregatePort.saveCrew(any(CrewData.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        // when
+        CrewData result = partyroomAccessCommandService.tryEnter(partyroomId, null);
+
+        // then
+        assertThat(result.getGradeType()).isEqualTo(GradeType.HOST);
+    }
+
+    @Test
+    @DisplayName("tryEnter: existing HOST row, user is host → updateGrade not invoked (helper short-circuit)")
+    void tryEnter_existingHostHost_idempotent() {
+        // given
+        PartyroomData partyroom = mock(PartyroomData.class);
+        when(partyroom.getPartyroomId()).thenReturn(partyroomId);
+        when(partyroom.getStatus()).thenReturn(PartyroomStatus.ACTIVE);
+        when(partyroom.isSuspended()).thenReturn(false);
+        when(partyroom.getHostId()).thenReturn(userId);
+
+        CrewData hostCrew = spy(CrewData.builder()
+                .id(40L)
+                .partyroomId(partyroomId)
+                .userId(userId)
+                .gradeType(GradeType.HOST)
+                .isActive(false)
+                .build());
+
+        when(partyroomQueryService.getPartyroomById(partyroomId)).thenReturn(partyroom);
+        when(aggregatePort.countActiveCrews(partyroomId)).thenReturn(0L);
+        when(partyroomQueryService.getMyActivePartyroom(userId)).thenReturn(Optional.empty());
+        when(aggregatePort.findCrew(partyroomId, userId)).thenReturn(Optional.of(hostCrew));
+        when(aggregatePort.activateCrew(eq(partyroomId), eq(userId), any())).thenReturn(1);
+        when(aggregatePort.saveCrew(any(CrewData.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        // when
+        partyroomAccessCommandService.tryEnter(partyroomId, null);
+
+        // then — helper must short-circuit when grade already HOST
+        verify(hostCrew, never()).updateGrade(any(GradeType.class));
+    }
+
+    @Test
+    @DisplayName("tryEnter: same-room re-entry, host with stale LISTENER row → grade promoted to HOST")
+    void tryEnter_sameRoomReentry_promotesHostIfStale() {
+        // given — partyroom hosted by THIS user, user already active in SAME room with stale LISTENER grade
+        PartyroomData partyroom = mock(PartyroomData.class);
+        when(partyroom.getPartyroomId()).thenReturn(partyroomId);
+        when(partyroom.getStatus()).thenReturn(PartyroomStatus.ACTIVE);
+        when(partyroom.isSuspended()).thenReturn(false);
+        when(partyroom.getHostId()).thenReturn(userId);
+
+        CrewData staleCrew = CrewData.builder()
+                .id(50L)
+                .partyroomId(partyroomId)
+                .userId(userId)
+                .gradeType(GradeType.LISTENER)
+                .isActive(true)
+                .build();
+
+        when(partyroomQueryService.getPartyroomById(partyroomId)).thenReturn(partyroom);
+        when(aggregatePort.countActiveCrews(partyroomId)).thenReturn(1L);
+        when(aggregatePort.findCrew(partyroomId, userId)).thenReturn(Optional.of(staleCrew));
+        when(aggregatePort.saveCrew(any(CrewData.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        // 같은 룸에 이미 active — same-room re-entry path
+        ActivePartyroomDto activeRoomInfo = mock(ActivePartyroomDto.class);
+        when(activeRoomInfo.id()).thenReturn(1L);
+        when(partyroomQueryService.getMyActivePartyroom(userId)).thenReturn(Optional.of(activeRoomInfo));
+
+        // when
+        CrewData result = partyroomAccessCommandService.tryEnter(partyroomId, null);
+
+        // then
+        assertThat(result.getGradeType()).isEqualTo(GradeType.HOST);
+    }
+
+    @Test
+    @DisplayName("tryEnter healing: grade promotion is silent — no CrewGradeChangedEvent published")
+    void tryEnter_healing_doesNotPublishGradeChangeEvent() {
+        // given — same setup pattern as Test #3 (LISTENER → HOST healing path via re-activate)
+        PartyroomData partyroom = mock(PartyroomData.class);
+        when(partyroom.getPartyroomId()).thenReturn(partyroomId);
+        when(partyroom.getStatus()).thenReturn(PartyroomStatus.ACTIVE);
+        when(partyroom.isSuspended()).thenReturn(false);
+        when(partyroom.getHostId()).thenReturn(userId);
+
+        CrewData staleCrew = CrewData.builder()
+                .id(60L)
+                .partyroomId(partyroomId)
+                .userId(userId)
+                .gradeType(GradeType.LISTENER)
+                .isActive(false)
+                .build();
+
+        when(partyroomQueryService.getPartyroomById(partyroomId)).thenReturn(partyroom);
+        when(aggregatePort.countActiveCrews(partyroomId)).thenReturn(0L);
+        when(partyroomQueryService.getMyActivePartyroom(userId)).thenReturn(Optional.empty());
+        when(aggregatePort.findCrew(partyroomId, userId)).thenReturn(Optional.of(staleCrew));
+        when(aggregatePort.activateCrew(eq(partyroomId), eq(userId), any())).thenReturn(1);
+        when(aggregatePort.saveCrew(any(CrewData.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        // when
+        partyroomAccessCommandService.tryEnter(partyroomId, null);
+
+        // then — silent healing: no CrewGradeChangedEvent
+        verify(eventPublisher, never()).publishEvent(any(CrewGradeChangedEvent.class));
+    }
+
+    @Test
+    @DisplayName("tryEnter race-loser: helper skipped to avoid write on rollback-only outer tx")
+    void tryEnter_raceLoser_skipsHealingToAvoidRollbackOnlyTx() {
+        // given — same setup as tryEnterConcurrentInsertLoserShouldNotPublishEnter, but
+        // user IS the host and winner row is LISTENER. The healing helper would normally
+        // try to promote → saveCrew on rollback-only outer tx → UnexpectedRollbackException.
+        // The raceLoser guard must skip the helper entirely.
+        PartyroomId racePartyroomId = new PartyroomId(701L);
+        UserId raceUserId = new UserId(8002L);
+        AuthContext authContext = new AuthContext(raceUserId, AuthorityTier.GT);
+        ThreadLocalContext.setContext(authContext);
+
+        try {
+            PartyroomData partyroom = mock(PartyroomData.class);
+            when(partyroom.getPartyroomId()).thenReturn(racePartyroomId);
+            when(partyroom.getStatus()).thenReturn(PartyroomStatus.ACTIVE);
+            when(partyroom.isSuspended()).thenReturn(false);
+            // lenient: getHostId() would be consumed by enforceHostInvariant if the raceLoser guard
+            // were absent. With the guard applied the helper is skipped entirely → stub unused.
+            lenient().when(partyroom.getHostId()).thenReturn(raceUserId);
+            when(partyroomQueryService.getPartyroomById(racePartyroomId)).thenReturn(partyroom);
+            when(aggregatePort.countActiveCrews(racePartyroomId)).thenReturn(0L);
+            when(partyroomQueryService.getMyActivePartyroom(raceUserId)).thenReturn(Optional.empty());
+
+            when(aggregatePort.activateCrew(eq(racePartyroomId), eq(raceUserId), any())).thenReturn(0);
+
+            // Winner row from REQUIRES_NEW: a LISTENER row that WOULD trigger healing
+            // if the guard were missing.
+            CrewData winnerCrew = mock(CrewData.class);
+            // lenient: getGradeType() would be consumed by enforceHostInvariant if guard were absent;
+            // after guard is applied the helper is skipped so the stub goes unused — strict mode throws.
+            lenient().when(winnerCrew.getGradeType()).thenReturn(GradeType.LISTENER);
+            when(aggregatePort.findCrew(eq(racePartyroomId), eq(raceUserId)))
+                    .thenReturn(Optional.empty())
+                    .thenReturn(Optional.empty())
+                    .thenReturn(Optional.of(winnerCrew));
+            // saveCrew는 두 경로 모두 trigger:
+            //   1. ensureCrewActive INSERT 시도 → DataIntegrityViolationException → race-loser 분기 진입
+            //   2. (가드 없을 시) enforceHostInvariant healing → 또 한 번 saveCrew → 동일 예외 → 테스트 RED
+            // 가드 적용 후엔 helper skip되어 두 번째 호출 자체가 발생하지 않음.
+            when(aggregatePort.saveCrew(any()))
+                    .thenThrow(new DataIntegrityViolationException("uk_crew_partyroom_user"));
+
+            // Wire requiresNewReadOnlyTx (skipped by @InjectMocks since @PostConstruct doesn't fire)
+            TransactionStatus txStatus = mock(TransactionStatus.class);
+            when(transactionManager.getTransaction(any())).thenReturn(txStatus);
+            ReflectionTestUtils.invokeMethod(partyroomAccessCommandService, "initTxTemplates");
+
+            // when
+            CrewData result = partyroomAccessCommandService.tryEnter(racePartyroomId, null);
+
+            // then — guard prevents the helper from invoking updateGrade or extra saveCrew
+            assertThat(result).isSameAs(winnerCrew);
+            verify(winnerCrew, never()).updateGrade(any(GradeType.class));
         } finally {
             ThreadLocalContext.clearContext();
         }
