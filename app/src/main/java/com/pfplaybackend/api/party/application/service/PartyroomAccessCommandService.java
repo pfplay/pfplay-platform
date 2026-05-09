@@ -185,8 +185,12 @@ public class PartyroomAccessCommandService {
      *
      * 호출 측 PRECONDITION: outer @Transactional이 rollback-only 상태가 아닐 것.
      * INSERT race-loser 분기에서는 호출하지 말 것 — outer tx가 rollback-only이므로
-     * saveCrew가 UnexpectedRollbackException을 던진다. CrewActivationResult.raceLoser
-     * 플래그로 식별하여 skip한다 (가드는 Task 5에서 추가됨).
+     * saveCrew가 UnexpectedRollbackException을 던진다. tryEnter 호출 측에서
+     * CrewActivationResult.raceLoser 플래그로 식별하여 skip한다.
+     *
+     * saveCrew 호출은 명시적이지만 같은 트랜잭션 내 managed entity merge라 DB write 비용은 0
+     * (dirty check + flush 시 단일 UPDATE). 명시 호출은 expel/exit 패턴과의 대칭 + mock 기반
+     * 테스트의 검증 용이성을 위해 유지.
      */
     private void enforceHostInvariant(PartyroomData partyroom, UserId userId, CrewData crew) {
         if (!userId.equals(partyroom.getHostId())) return;
