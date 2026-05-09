@@ -113,6 +113,7 @@ public class PartyroomAccessCommandService {
             log.info("[tryEnter] IDEMPOTENT - already active or concurrent insert loser, no event. userId={}, partyroomId={}",
                     userId, partyroomId.getId());
         }
+        enforceHostInvariant(partyroom, userId, result.crew);
         return result.crew;
     }
 
@@ -169,6 +170,26 @@ public class PartyroomAccessCommandService {
         return requiresNewReadOnlyTx.execute(status ->
                 aggregatePort.findCrew(partyroomId, userId).orElseThrow()
         );
+    }
+
+    /**
+     * Host invariant 강제: 진입 user가 partyroom host인데 grade가 HOST가 아니면 승격.
+     * Idempotent — 이미 HOST면 no-op. createMainStage가 enterByHost를 건너뛰는 경우와
+     * 기존 잘못된 grade row를 자동 healing.
+     *
+     * 호출 측 PRECONDITION: outer @Transactional이 rollback-only 상태가 아닐 것.
+     * INSERT race-loser 분기에서는 호출하지 말 것 — outer tx가 rollback-only이므로
+     * saveCrew가 UnexpectedRollbackException을 던진다. CrewActivationResult.raceLoser
+     * 플래그로 식별하여 skip한다 (가드는 Task 5에서 추가됨).
+     */
+    private void enforceHostInvariant(PartyroomData partyroom, UserId userId, CrewData crew) {
+        if (!userId.equals(partyroom.getHostId())) return;
+        if (crew.getGradeType() == GradeType.HOST) return;
+        GradeType prev = crew.getGradeType();
+        crew.updateGrade(GradeType.HOST);
+        aggregatePort.saveCrew(crew);
+        log.info("[enforceHostInvariant] HEALED - userId={}, partyroomId={}, crewId={}, {} → HOST",
+                userId, partyroom.getPartyroomId().getId(), crew.getId(), prev);
     }
 
     private record CrewActivationResult(CrewData crew, boolean transitioned) {}
