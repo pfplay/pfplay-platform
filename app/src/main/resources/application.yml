@@ -159,7 +159,6 @@ app:
       allowed:
         - https://localhost:3000
         - http://localhost:3000
-        - https://admin.pfplay.xyz
     admin-csrf:
       enabled: true
       cookie-name: XSRF-TOKEN
@@ -296,6 +295,11 @@ app:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS}
 
+  security:
+    admin-origin-guard:
+      allowed:
+        - https://stg-admin.pfplay.xyz
+
 ---
 
 # 🔴 운영 환경
@@ -350,6 +354,11 @@ app:
 
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS}
+
+  security:
+    admin-origin-guard:
+      allowed:
+        - https://admin.pfplay.xyz
 
 springdoc:
   swagger-ui:
