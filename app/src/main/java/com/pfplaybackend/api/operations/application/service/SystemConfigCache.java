@@ -12,7 +12,7 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * In-memory snapshot cache for SystemConfig (maintenance mode keys).
+ * In-memory snapshot cache for SystemConfig.
  *
  * 30-second TTL. Per-instance — no distributed invalidation in PR 3.
  * Tolerated staleness window matches spec (§9.3 "system_config 캐시 stale: 캐시 TTL 30~60초").
@@ -25,6 +25,8 @@ public class SystemConfigCache {
 
     static final Duration SNAPSHOT_TTL = Duration.ofSeconds(30);
     static final String DEFAULT_MAINTENANCE_MESSAGE = "시스템 점검 중입니다.";
+    static final int DEFAULT_DJ_GRACE_SECONDS = 30;
+    static final int DEFAULT_LISTENER_GRACE_SECONDS = 10;
 
     private final SystemConfigRepository repository;
     private final Clock clock;
@@ -41,6 +43,14 @@ public class SystemConfigCache {
 
     public String getMaintenanceMessage() {
         return current().maintenanceMessage;
+    }
+
+    public int getDjGraceSeconds() {
+        return current().djGraceSeconds;
+    }
+
+    public int getListenerGraceSeconds() {
+        return current().listenerGraceSeconds;
     }
 
     /** Public so PR 6's event listener can force-invalidate after admin toggle. */
@@ -62,7 +72,9 @@ public class SystemConfigCache {
     private Snapshot fetch(Instant now) {
         boolean enabled = readBool(ConfigKey.MAINTENANCE_ENABLED, false);
         String message = readString(ConfigKey.MAINTENANCE_MESSAGE, DEFAULT_MAINTENANCE_MESSAGE);
-        return new Snapshot(enabled, message, now);
+        int djGrace = readInt(ConfigKey.PRESENCE_DJ_GRACE_SECONDS, DEFAULT_DJ_GRACE_SECONDS);
+        int listenerGrace = readInt(ConfigKey.PRESENCE_LISTENER_GRACE_SECONDS, DEFAULT_LISTENER_GRACE_SECONDS);
+        return new Snapshot(enabled, message, djGrace, listenerGrace, now);
     }
 
     /**
@@ -87,5 +99,24 @@ public class SystemConfigCache {
             .orElse(fallback);
     }
 
-    private record Snapshot(boolean maintenanceEnabled, String maintenanceMessage, Instant fetchedAt) {}
+    /**
+     * Fail-open: missing rows, blank values, non-numeric values, or non-positive integers
+     * fall back to {@code fallback}. A typo must not brick presence semantics.
+     */
+    private int readInt(ConfigKey key, int fallback) {
+        Optional<SystemConfigData> row = repository.findByConfigKey(key.value());
+        if (row.isEmpty()) return fallback;
+        String v = row.get().getConfigValue();
+        if (v == null || v.isBlank()) return fallback;
+        try {
+            int parsed = Integer.parseInt(v.trim());
+            return parsed > 0 ? parsed : fallback;
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
+    }
+
+    private record Snapshot(boolean maintenanceEnabled, String maintenanceMessage,
+                            int djGraceSeconds, int listenerGraceSeconds,
+                            Instant fetchedAt) {}
 }

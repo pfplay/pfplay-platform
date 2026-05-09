@@ -95,6 +95,21 @@ public class PartyroomAggregateAdapter implements PartyroomAggregatePort, Partyr
         return crewRepository.deactivateCrew(partyroomId, userId, now);
     }
 
+    @Override
+    public int markCrewPending(PartyroomId partyroomId, UserId userId, LocalDateTime now) {
+        return crewRepository.markPending(partyroomId, userId, now);
+    }
+
+    @Override
+    public int clearCrewPending(PartyroomId partyroomId, UserId userId) {
+        return crewRepository.clearPending(partyroomId, userId);
+    }
+
+    @Override
+    public List<CrewData> findStalePendingCrews(LocalDateTime threshold) {
+        return crewRepository.findStalePending(threshold);
+    }
+
     // ===== DJ: DjData =====
 
     @Override

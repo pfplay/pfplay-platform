@@ -29,6 +29,12 @@ public interface PartyroomAggregatePort {
     /** 조건부 atomic toggle. 반환값: 1 (전이 발생) / 0 (미전이). 자세한 시맨틱은 CrewRepository javadoc. */
     int activateCrew(PartyroomId partyroomId, UserId userId, LocalDateTime now);
     int deactivateCrew(PartyroomId partyroomId, UserId userId, LocalDateTime now);
+    /** Presence grace: ONLINE → PENDING_EXIT atomic toggle. 1 = transition occurred, 0 = no-op. */
+    int markCrewPending(PartyroomId partyroomId, UserId userId, LocalDateTime now);
+    /** Presence grace: PENDING_EXIT → ONLINE atomic toggle. 1 = transition occurred, 0 = no-op. */
+    int clearCrewPending(PartyroomId partyroomId, UserId userId);
+    /** Presence grace reconciliation: rows whose pending_exit_at is older than threshold. */
+    List<CrewData> findStalePendingCrews(LocalDateTime threshold);
 
     // ===== DJ: DjData =====
     List<DjData> findDjsOrdered(PartyroomId partyroomId);

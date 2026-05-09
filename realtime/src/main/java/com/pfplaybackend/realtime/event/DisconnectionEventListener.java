@@ -1,5 +1,6 @@
 package com.pfplaybackend.realtime.event;
 
+import com.pfplaybackend.realtime.port.PresencePort;
 import com.pfplaybackend.realtime.port.SessionCachePort;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -15,11 +16,15 @@ import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 public class DisconnectionEventListener implements ApplicationListener<SessionDisconnectEvent> {
     private static final Logger logger = LoggerFactory.getLogger(DisconnectionEventListener.class);
     private final SessionCachePort sessionCachePort;
+    private final PresencePort presencePort;
 
     @Override
     public void onApplicationEvent(SessionDisconnectEvent event) {
         StompHeaderAccessor headerAccessor = StompHeaderAccessor.wrap(event.getMessage());
         String sessionId = headerAccessor.getSessionId();
+        // PRESENCE: enter grace before deleting session cache (adapter still needs it
+        // to look up partyroomId/userId).
+        presencePort.onSessionDisconnected(sessionId);
         sessionCachePort.deleteSessionCache(sessionId);
         logger.info("Web socket connection closed: {}", sessionId);
 

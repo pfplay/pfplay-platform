@@ -38,4 +38,6 @@ public record ConfigKey(String value) {
     // Well-known keys
     public static final ConfigKey MAINTENANCE_ENABLED = new ConfigKey("maintenance.enabled");
     public static final ConfigKey MAINTENANCE_MESSAGE = new ConfigKey("maintenance.message");
+    public static final ConfigKey PRESENCE_DJ_GRACE_SECONDS = new ConfigKey("presence.dj_grace_seconds");
+    public static final ConfigKey PRESENCE_LISTENER_GRACE_SECONDS = new ConfigKey("presence.listener_grace_seconds");
 }
