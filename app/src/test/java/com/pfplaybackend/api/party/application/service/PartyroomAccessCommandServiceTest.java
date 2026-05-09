@@ -310,4 +310,74 @@ class PartyroomAccessCommandServiceTest {
             ThreadLocalContext.clearContext();
         }
     }
+
+    @Test
+    @DisplayName("tryEnter: fresh entry, non-host user → CrewData created with LISTENER grade (regression)")
+    void tryEnter_freshNonHostEntry_assignsListenerGrade() {
+        // given — partyroom hosted by someone else, no existing crew row
+        UserId hostId = new UserId(99L);
+        PartyroomData partyroom = mock(PartyroomData.class);
+        when(partyroom.getPartyroomId()).thenReturn(partyroomId);
+        when(partyroom.getStatus()).thenReturn(PartyroomStatus.ACTIVE);
+        when(partyroom.isSuspended()).thenReturn(false);
+        // host stub is lenient — Task 1 baseline: enforceHostInvariant helper not yet wired,
+        // so the stub will only be consumed once Task 2 lands. Until then it is unused.
+        lenient().when(partyroom.getHostId()).thenReturn(hostId);
+
+        when(partyroomQueryService.getPartyroomById(partyroomId)).thenReturn(partyroom);
+        when(aggregatePort.countActiveCrews(partyroomId)).thenReturn(0L);
+        when(partyroomQueryService.getMyActivePartyroom(userId)).thenReturn(Optional.empty());
+        when(aggregatePort.findCrew(partyroomId, userId)).thenReturn(Optional.empty());
+        when(aggregatePort.activateCrew(eq(partyroomId), eq(userId), any())).thenReturn(0);
+        // CrewData.create()는 id를 부여하지 않으므로(JPA IDENTITY 컬럼) saveCrew stub이
+        // ENTER 이벤트 발행 시 new CrewId(crew.getId())의 long unboxing NPE를 막기 위해
+        // ReflectionTestUtils로 id를 시뮬레이션 주입.
+        when(aggregatePort.saveCrew(any(CrewData.class)))
+                .thenAnswer(inv -> {
+                    CrewData input = inv.getArgument(0);
+                    ReflectionTestUtils.setField(input, "id", 100L);
+                    return input;
+                });
+
+        // when
+        CrewData result = partyroomAccessCommandService.tryEnter(partyroomId, null);
+
+        // then
+        assertThat(result.getGradeType()).isEqualTo(GradeType.LISTENER);
+    }
+
+    @Test
+    @DisplayName("tryEnter: existing LISTENER row, non-host user → grade unchanged, updateGrade not invoked (regression)")
+    void tryEnter_existingListenerNonHost_unchanged() {
+        // given — partyroom hosted by someone else, user already a listener, currently inactive
+        UserId hostId = new UserId(99L);
+        PartyroomData partyroom = mock(PartyroomData.class);
+        when(partyroom.getPartyroomId()).thenReturn(partyroomId);
+        when(partyroom.getStatus()).thenReturn(PartyroomStatus.ACTIVE);
+        when(partyroom.isSuspended()).thenReturn(false);
+        // host stub is lenient — see note in tryEnter_freshNonHostEntry_assignsListenerGrade.
+        lenient().when(partyroom.getHostId()).thenReturn(hostId);
+
+        CrewData existingCrew = spy(CrewData.builder()
+                .id(20L)
+                .partyroomId(partyroomId)
+                .userId(userId)
+                .gradeType(GradeType.LISTENER)
+                .isActive(false)
+                .build());
+
+        when(partyroomQueryService.getPartyroomById(partyroomId)).thenReturn(partyroom);
+        when(aggregatePort.countActiveCrews(partyroomId)).thenReturn(0L);
+        when(partyroomQueryService.getMyActivePartyroom(userId)).thenReturn(Optional.empty());
+        when(aggregatePort.findCrew(partyroomId, userId)).thenReturn(Optional.of(existingCrew));
+        when(aggregatePort.activateCrew(eq(partyroomId), eq(userId), any())).thenReturn(1);
+        when(aggregatePort.saveCrew(any(CrewData.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        // when
+        CrewData result = partyroomAccessCommandService.tryEnter(partyroomId, null);
+
+        // then
+        assertThat(result.getGradeType()).isEqualTo(GradeType.LISTENER);
+        verify(existingCrew, never()).updateGrade(any(GradeType.class));
+    }
 }
