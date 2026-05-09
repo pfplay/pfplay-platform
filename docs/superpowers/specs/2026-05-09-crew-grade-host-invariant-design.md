@@ -162,6 +162,8 @@ return result.crew();
 | 7 | `tryEnter_healing_doesNotPublishGradeChangeEvent` | healing 발생 | `eventPublisher.publishEvent` 호출 인자 중 `CrewGradeChangedEvent` 인스턴스 0회 (silent healing 검증) |
 | 8 | `tryEnter_raceLoser_skipsHealingToAvoidRollbackOnlyTx` | INSERT race-loser 분기 (DataIntegrityViolationException 시뮬), userId == hostId | helper 호출 skip 검증 — `crew.updateGrade` 호출 0회. (UnexpectedRollbackException 회피 가드의 회귀 방지) |
 
+**Test #8 셋업 노트**: race-loser 분기는 `requiresNewReadOnlyTx.execute(...)` callback (REQUIRES_NEW)을 통해 winner row를 읽음. `PartyroomAccessCommandService`의 `@PostConstruct initTxTemplates`가 주입된 `PlatformTransactionManager`로 `TransactionTemplate`을 만들므로, 테스트는 `transactionManager` mock의 `getTransaction`/`commit`이 callback inline 실행을 허용하도록 wiring하거나 (가장 단순한 형태: callback을 직접 invoke 하는 stub `PlatformTransactionManager`) 두 번째 `findCrew` mock이 winner row를 반환하도록 셋업해야 함.
+
 기존 회귀 보호:
 - `PartyroomAccessCommandServiceTest` ENTER 이벤트 발행 케이스
 - `PartyroomAccessCommandServiceDjQueueChangeTest`
