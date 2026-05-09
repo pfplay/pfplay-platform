@@ -1,5 +1,6 @@
 package com.pfplaybackend.realtime.event;
 
+import com.pfplaybackend.realtime.port.PresencePort;
 import com.pfplaybackend.realtime.port.SessionCachePort;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -23,11 +24,14 @@ class DisconnectionEventListenerTest {
     @Mock
     private SessionCachePort sessionCachePort;
 
+    @Mock
+    private PresencePort presencePort;
+
     @InjectMocks
     private DisconnectionEventListener listener;
 
     @Test
-    @DisplayName("정상 종료(1000) 시 세션 캐시를 삭제한다")
+    @DisplayName("정상 종료(1000) 시 presence를 PENDING으로 표시하고 세션 캐시를 삭제한다")
     void onApplicationEventNormalCloseDeletesSessionCache() {
         // given
         String sessionId = "session-normal";
@@ -37,11 +41,12 @@ class DisconnectionEventListenerTest {
         listener.onApplicationEvent(event);
 
         // then
+        verify(presencePort).onSessionDisconnected(sessionId);
         verify(sessionCachePort).deleteSessionCache(sessionId);
     }
 
     @Test
-    @DisplayName("비정상 종료(1006) 시에도 세션 캐시를 삭제한다")
+    @DisplayName("비정상 종료(1006) 시에도 presence와 세션 캐시 정리가 동일하게 일어난다")
     void onApplicationEventAbnormalCloseDeletesSessionCache() {
         // given
         String sessionId = "session-abnormal";
@@ -52,6 +57,7 @@ class DisconnectionEventListenerTest {
         listener.onApplicationEvent(event);
 
         // then
+        verify(presencePort).onSessionDisconnected(sessionId);
         verify(sessionCachePort).deleteSessionCache(sessionId);
     }
 
