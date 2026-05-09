@@ -46,6 +46,9 @@ Super admin (V5-seeded `user_id=1`)은 Main Stage partyroom의 `host_id`로 설�
  * Host invariant 강제: 진입 user가 partyroom host인데 grade가 HOST가 아니면 승격.
  * Idempotent — 이미 HOST면 no-op. createMainStage가 enterByHost를 건너뛰는 경우와
  * 기존 잘못된 grade row를 자동 healing.
+ *
+ * 호출 측 PRECONDITION: outer @Transactional이 rollback-only 상태가 아닐 것.
+ * race-loser 분기에서는 호출하지 말 것 (§4.4 참고).
  */
 private void enforceHostInvariant(PartyroomData partyroom, UserId userId, CrewData crew) {
     if (!userId.equals(partyroom.getHostId())) return;
@@ -58,7 +61,21 @@ private void enforceHostInvariant(PartyroomData partyroom, UserId userId, CrewDa
 }
 ```
 
-### 4.2 Call sites — `tryEnter` 두 군데
+### 4.2 `CrewActivationResult` 확장
+
+기존 `record CrewActivationResult(CrewData crew, boolean transitioned)` 에 race-loser 식별 플래그를 추가하여 healing call site가 안전하게 skip할 수 있게 한다:
+
+```java
+private record CrewActivationResult(CrewData crew, boolean transitioned, boolean raceLoser) {}
+```
+
+`ensureCrewActive` 내부의 4개 return:
+- activate(==1) 분기: `new CrewActivationResult(crew, true, false)`
+- INSERT 성공 분기: `new CrewActivationResult(crew, true, false)`
+- INSERT race-loser 분기 (catch): `new CrewActivationResult(winner, false, true)` ← 변경
+- already-active 분기: `new CrewActivationResult(crew, false, false)`
+
+### 4.3 Call sites — `tryEnter` 두 군데
 
 **(1) 같은-룸 재진입 분기 (현재 line 96-103)**
 ```java
@@ -68,28 +85,55 @@ private void enforceHostInvariant(PartyroomData partyroom, UserId userId, CrewDa
             ExceptionCreator.create(CrewException.INVALID_ACTIVE_ROOM));
     crew.updateCountryCode(countryCode);
     CrewData saved = aggregatePort.saveCrew(crew);
-    enforceHostInvariant(partyroom, userId, saved);   // ADD
+    enforceHostInvariant(partyroom, userId, saved);   // ADD — outer tx healthy
     return saved;
 }
 ```
+이 분기는 outer tx가 rollback-only가 될 일이 없으므로 무조건 healing 호출 안전.
+
+`saved` 와 `crew`는 JPA managed entity로 가정 (Spring Data JPA `save()`는 merge → 같은 persistence context 내에서 동일 instance 반환). `enforceHostInvariant`가 mutate한 결과는 `saved` 참조에도 그대로 반영됨.
 
 **(2) `ensureCrewActive` 결과 받은 후 (현재 line 107 이후)**
 ```java
 CrewActivationResult result = ensureCrewActive(partyroom, userId, countryCode);
-if (result.transitioned) {
-    publishAccessChangedEvent(partyroom.getPartyroomId(), result.crew, userId);
+if (result.transitioned()) {
+    publishAccessChangedEvent(partyroom.getPartyroomId(), result.crew(), userId);
 } else {
     log.info("[tryEnter] IDEMPOTENT - already active or concurrent insert loser, no event. ...");
 }
-enforceHostInvariant(partyroom, userId, result.crew);  // ADD
-return result.crew;
+if (!result.raceLoser()) {
+    enforceHostInvariant(partyroom, userId, result.crew());  // ADD — race-loser 분기 제외
+}
+return result.crew();
 ```
 
-이 두 호출로 `tryEnter`의 모든 반환 경로 (분기 a/b/c/d)를 커버.
+### 4.4 race-loser에서 healing skip이 안전한 이유
 
-### 4.3 What we are NOT doing
+- super admin Main Stage 시나리오 (single user, single seeded host) 에선 INSERT race 자체가 발생할 수 없음
+- 일반 partyroom에서 race가 발생해도 race-loser entry에서 healing이 빠질 뿐, 다음 non-race 진입에서 자동으로 healing됨 (helper는 idempotent)
+- 대안 (race-loser path도 별 REQUIRES_NEW transaction에서 healing) 은 복잡도 대비 이득 없음 (YAGNI)
 
-1. **`createMainStage` 호출 흐름 변경 안 함** — invariant가 런타임에 보장되므로 동작상 동일. 단, stale 코멘트 한 줄 추가하여 future reader 안내 (host grade는 `enforceHostInvariant`가 보장)
+이 두 호출로 `tryEnter`의 모든 안전한 반환 경로를 커버.
+
+### 4.5 What we are NOT doing
+
+1. **`createMainStage` 호출 흐름 변경 안 함** — invariant가 런타임에 보장되므로 동작상 동일. 단, `PartyroomCommandService.java:45-48`의 stale 코멘트를 다음과 같이 갱신 (구체 wording):
+
+   기존:
+   ```
+   // 도메인 invariant: 프로필 없는 사용자는 partyroom에 active crew로 등록하지 않는다.
+   // V5-seeded super-admin은 profile이 없으므로 enterByHost를 호출하면 customer GET /api/v1/partyrooms
+   // 응답 빌드 시 ProfileSettingDto null lookup → NPE. 호스트 권한은 partyroom.host_id로 충분하며
+   // 본 스테이지엔 crew row가 불필요. (PA-7)
+   ```
+
+   교체:
+   ```
+   // 본 스테이지는 host crew row를 사전 생성하지 않는다. host의 grade는
+   // PartyroomAccessCommandService.tryEnter의 enforceHostInvariant가 진입 시점에
+   // 자동 보장한다 (host_id == userId면 HOST로 승격/생성). PA-7의 NPE 회피는
+   // ApplicationReadyEventListener.finalizeSuperAdminProfile() 에서 처리됨.
+   ```
 2. **`countryCode` 정리 안 함** — frontend 미사용은 별도 cleanup PR로 추적
 3. **`CrewGradeChangedEvent` 발행 안 함** — silent healing 채택. listener 사이드 이펙트 제로, 다음 setup 조회 시 반영
 4. **수동 SQL 마이그레이션 만들지 않음** — fix 적용 후 다음 진입 1회로 자동 healing
@@ -105,17 +149,18 @@ return result.crew;
 
 ## 6. Test plan
 
-`PartyroomAccessCommandServiceTest` (기존 파일)에 7개 케이스 추가:
+`PartyroomAccessCommandServiceTest` (기존 파일)에 8개 케이스 추가:
 
 | # | 테스트 | 시나리오 | 검증 |
 |---|--------|---------|------|
-| 1 | `tryEnter_freshHostEntry_assignsHostGrade` | row 0건, userId == hostId, 첫 진입 | 새 CrewData가 `HOST` grade로 생성 (또는 LISTENER로 생성된 직후 즉시 HOST로 승격) |
-| 2 | `tryEnter_freshNonHostEntry_assignsListenerGrade` | row 0건, userId != hostId, 첫 진입 | 새 CrewData가 `LISTENER` grade로 생성 (회귀 방지) |
-| 3 | `tryEnter_existingListenerHost_promotesToHost` | row 있음 (LISTENER inactive), userId == hostId, 재진입 (b/c 분기) | grade `HOST`로 승격, saveCrew 호출됨 |
-| 4 | `tryEnter_existingListenerNonHost_unchanged` | row 있음 (LISTENER), userId != hostId | grade `LISTENER` 유지, updateGrade 호출 0회 (잘못된 승격 방지) |
-| 5 | `tryEnter_existingHostHost_idempotent` | row 있음 (HOST), userId == hostId | updateGrade/saveCrew **healing path** 호출 0회 |
-| 6 | `tryEnter_sameRoomReentry_promotesHostIfStale` | 같은-룸 재진입 분기 (d), 기존 grade LISTENER, userId == hostId | grade HOST로 승격 |
-| 7 | `tryEnter_healing_doesNotPublishGradeChangeEvent` | healing 발생 | `CrewGradeChangedEvent` publishEvent 호출 0회 (silent healing 검증) |
+| 1 | `tryEnter_freshHostEntry_assignsHostGrade` | row 0건, userId == hostId, 첫 진입 | tryEnter 반환 CrewData의 `gradeType == HOST` (구현이 INSERT-then-promote든 INSERT-with-HOST든 무관, 최종 결과만 검증) |
+| 2 | `tryEnter_freshNonHostEntry_assignsListenerGrade` | row 0건, userId != hostId, 첫 진입 | 반환 CrewData의 `gradeType == LISTENER` (회귀 방지) |
+| 3 | `tryEnter_existingListenerHost_promotesToHost` | row 있음 (LISTENER inactive), userId == hostId, 재진입 (a/b 분기) | 반환 CrewData의 `gradeType == HOST` |
+| 4 | `tryEnter_existingListenerNonHost_unchanged` | row 있음 (LISTENER), userId != hostId | 반환 CrewData `gradeType == LISTENER`, `crew.updateGrade` 호출 0회 (잘못된 승격 방지) |
+| 5 | `tryEnter_existingHostHost_idempotent` | row 있음 (HOST), userId == hostId | `crew.updateGrade` 호출 0회 (helper 자체 no-op 보장; saveCrew는 ensureCrewActive/재진입 path에서 1회 호출되는 건 정상) |
+| 6 | `tryEnter_sameRoomReentry_promotesHostIfStale` | 같은-룸 재진입 분기, 기존 grade LISTENER, userId == hostId | 반환 CrewData `gradeType == HOST` |
+| 7 | `tryEnter_healing_doesNotPublishGradeChangeEvent` | healing 발생 | `eventPublisher.publishEvent` 호출 인자 중 `CrewGradeChangedEvent` 인스턴스 0회 (silent healing 검증) |
+| 8 | `tryEnter_raceLoser_skipsHealingToAvoidRollbackOnlyTx` | INSERT race-loser 분기 (DataIntegrityViolationException 시뮬), userId == hostId | helper 호출 skip 검증 — `crew.updateGrade` 호출 0회. (UnexpectedRollbackException 회피 가드의 회귀 방지) |
 
 기존 회귀 보호:
 - `PartyroomAccessCommandServiceTest` ENTER 이벤트 발행 케이스
