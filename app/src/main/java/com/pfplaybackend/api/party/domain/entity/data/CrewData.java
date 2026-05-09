@@ -58,6 +58,9 @@ public class CrewData extends BaseEntity {
     @Column(nullable = false)
     private LocalDateTime enteredAt;
     private LocalDateTime exitedAt;
+    // Presence grace window: when set, the crew row is in PENDING_EXIT (still is_active=1
+    // but client signal lost). Cleared on reconnect; promoted to OFFLINE when grace elapses.
+    private LocalDateTime pendingExitAt;
     // 입장 시점에 프론트엔드가 전달한 국가 코드 (ISO 3166-1 alpha-2). 전달되지 않으면 null.
     @Column(name = "country_code", length = 2)
     @Convert(converter = CountryCodeConverter.class)
@@ -69,6 +72,7 @@ public class CrewData extends BaseEntity {
     @Builder
     public CrewData(Long id, PartyroomId partyroomId, UserId userId, GradeType gradeType,
                     boolean isActive, boolean isBanned, LocalDateTime enteredAt, LocalDateTime exitedAt,
+                    LocalDateTime pendingExitAt,
                     CountryCode countryCode,
                     LocalDateTime createdAt, LocalDateTime updatedAt) {
         this.id = id;
@@ -79,6 +83,7 @@ public class CrewData extends BaseEntity {
         this.isBanned = isBanned;
         this.enteredAt = enteredAt;
         this.exitedAt = exitedAt;
+        this.pendingExitAt = pendingExitAt;
         this.countryCode = countryCode;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
@@ -107,19 +112,40 @@ public class CrewData extends BaseEntity {
     public void deactivatePresence(LocalDateTime now) {
         this.isActive = false;
         this.exitedAt = now;
+        this.pendingExitAt = null;
     }
 
     public void deactivatePresence() {
         deactivatePresence(LocalDateTime.now());
     }
 
+    /**
+     * Re-entry path: clears prior exited_at and pending_exit_at so a stale value from a
+     * previous session does not poison the new active row. Fixes Issue #193.
+     */
     public void activatePresence(LocalDateTime now) {
         this.isActive = true;
         this.enteredAt = now;
+        this.exitedAt = null;
+        this.pendingExitAt = null;
     }
 
     public void activatePresence() {
         activatePresence(LocalDateTime.now());
+    }
+
+    public void markPending(LocalDateTime now) {
+        if (this.pendingExitAt == null) {
+            this.pendingExitAt = now;
+        }
+    }
+
+    public void clearPending() {
+        this.pendingExitAt = null;
+    }
+
+    public boolean isPendingExit() {
+        return this.pendingExitAt != null;
     }
 
     public void updateGrade(GradeType gradeType) {

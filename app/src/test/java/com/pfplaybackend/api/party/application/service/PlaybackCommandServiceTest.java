@@ -38,6 +38,7 @@ import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
@@ -206,19 +207,20 @@ class PlaybackCommandServiceTest {
     }
 
     @Test
-    @DisplayName("updatePlaybackAggregation — 어그리게이션이 정상 업데이트된다")
+    @DisplayName("updatePlaybackAggregation — atomic delta 적용 후 reload된 aggregation 반환")
     void updatePlaybackAggregationUpdatesSuccessfully() {
         // given
         PlaybackAggregationData aggregation = mock(PlaybackAggregationData.class);
         PlaybackId playbackId = new PlaybackId(1L);
+        when(playbackAggregationRepository.applyAggregationDelta(playbackId, 1, 0, 1)).thenReturn(1);
         when(playbackAggregationRepository.findById(playbackId)).thenReturn(Optional.of(aggregation));
-        when(playbackAggregationRepository.save(any())).thenReturn(aggregation);
 
         // when
-        playbackCommandService.updatePlaybackAggregation(playbackId, List.of(1, 0, 1));
+        PlaybackAggregationData result = playbackCommandService.updatePlaybackAggregation(playbackId, List.of(1, 0, 1));
 
         // then
-        verify(aggregation).updateAggregation(1, 0, 1);
-        verify(playbackAggregationRepository).save(aggregation);
+        verify(playbackAggregationRepository).applyAggregationDelta(playbackId, 1, 0, 1);
+        verify(playbackAggregationRepository).findById(playbackId);
+        assertThat(result).isEqualTo(aggregation);
     }
 }

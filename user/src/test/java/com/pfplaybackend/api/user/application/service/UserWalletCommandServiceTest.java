@@ -47,7 +47,7 @@ class UserWalletCommandServiceTest {
     void updateMyWalletAddressSuccess() {
         // given
         MemberData member = mock(MemberData.class);
-        when(memberRepository.findByUserId(userId)).thenReturn(Optional.of(member));
+        when(memberRepository.findByUserAccountId(userId.getUid())).thenReturn(Optional.of(member));
         UpdateWalletCommand command = new UpdateWalletCommand("0xABC123");
 
         // when
@@ -62,7 +62,7 @@ class UserWalletCommandServiceTest {
     @DisplayName("updateMyWalletAddress — 회원이 없으면 NoSuchElementException이 발생한다")
     void updateMyWalletAddressMemberNotFound() {
         // given
-        when(memberRepository.findByUserId(userId)).thenReturn(Optional.empty());
+        when(memberRepository.findByUserAccountId(userId.getUid())).thenReturn(Optional.empty());
         UpdateWalletCommand command = new UpdateWalletCommand("0xABC123");
 
         // when & then

@@ -6,6 +6,7 @@ import com.pfplaybackend.api.common.enums.AuthorityTier;
 import com.pfplaybackend.api.common.exception.ExceptionCreator;
 import com.pfplaybackend.api.party.adapter.out.persistence.PlaybackReactionHistoryRepository;
 import com.pfplaybackend.api.party.application.dto.partyroom.ActivePartyroomDto;
+import com.pfplaybackend.api.party.application.port.out.AddedTrackInfo;
 import com.pfplaybackend.api.party.domain.entity.data.CrewData;
 import com.pfplaybackend.api.party.domain.entity.data.history.PlaybackReactionHistoryData;
 import com.pfplaybackend.api.party.domain.enums.ReactionType;
@@ -13,6 +14,7 @@ import com.pfplaybackend.api.party.domain.exception.ReactionException;
 import com.pfplaybackend.api.party.domain.model.ReactionPostProcessResult;
 import com.pfplaybackend.api.party.domain.model.ReactionState;
 import com.pfplaybackend.api.party.domain.service.PlaybackReactionDomainService;
+import com.pfplaybackend.api.party.application.dto.playback.AddedTrackDto;
 import com.pfplaybackend.api.party.application.dto.playback.ReactionHistoryDto;
 import com.pfplaybackend.api.party.domain.value.CrewId;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
@@ -49,8 +51,13 @@ public class PlaybackReactionCommandService {
         ReactionPostProcessResult reactionPostProcessDto = executeProcess(historyData, existingState, targetState);
         Optional<CrewData> optional = partyroomQueryService.getCrewByUserId(partyroomId, authContext.getUserId());
         CrewData crew = optional.orElseThrow();
-        playbackReactionPostProcessCommandService.postProcess(reactionPostProcessDto, reactionType, partyroomId, playbackId, new CrewId(crew.getId()));
-        return ReactionHistoryDto.from(targetState);
+        AddedTrackInfo addedTrack = playbackReactionPostProcessCommandService.postProcess(
+                reactionPostProcessDto, reactionType, partyroomId, playbackId, new CrewId(crew.getId()));
+        return ReactionHistoryDto.from(targetState, toAddedTrackDto(addedTrack));
+    }
+
+    private AddedTrackDto toAddedTrackDto(AddedTrackInfo info) {
+        return info == null ? null : new AddedTrackDto(info.trackId(), info.playlistId());
     }
 
     private PlaybackReactionHistoryData getValidReactionHistoryData(AuthContext authContext, PlaybackId playbackId) {

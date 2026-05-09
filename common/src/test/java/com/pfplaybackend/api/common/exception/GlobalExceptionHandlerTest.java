@@ -12,7 +12,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.BeanPropertyBindingResult;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.http.HttpHeaders;
 
 import java.lang.reflect.Method;
 
@@ -163,6 +167,42 @@ class GlobalExceptionHandlerTest {
                 .contains("fieldA: A must not be null")
                 .contains("fieldB: B must be positive")
                 .contains(";");
+    }
+
+    @Test
+    @DisplayName("handleMethodNotSupported — 잘못된 HTTP method이면 405를 반환한다")
+    void handleMethodNotSupportedReturns405() {
+        HttpRequestMethodNotSupportedException ex = new HttpRequestMethodNotSupportedException("GET");
+
+        ResponseEntity<ApiErrorResponse> response = handler.handleMethodNotSupported(ex);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.METHOD_NOT_ALLOWED);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().status()).isEqualTo(405);
+    }
+
+    @Test
+    @DisplayName("handleMediaTypeNotSupported — 지원하지 않는 Content-Type이면 415를 반환한다")
+    void handleMediaTypeNotSupportedReturns415() {
+        HttpMediaTypeNotSupportedException ex = new HttpMediaTypeNotSupportedException("text/xml not supported");
+
+        ResponseEntity<ApiErrorResponse> response = handler.handleMediaTypeNotSupported(ex);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNSUPPORTED_MEDIA_TYPE);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().status()).isEqualTo(415);
+    }
+
+    @Test
+    @DisplayName("handleNoHandlerFound — 매핑되지 않은 경로이면 404를 반환한다")
+    void handleNoHandlerFoundReturns404() {
+        NoHandlerFoundException ex = new NoHandlerFoundException("GET", "/api/v1/missing", new HttpHeaders());
+
+        ResponseEntity<ApiErrorResponse> response = handler.handleNoHandlerFound(ex);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().status()).isEqualTo(404);
     }
 
     private static MethodParameter methodParameterForTarget() throws NoSuchMethodException {

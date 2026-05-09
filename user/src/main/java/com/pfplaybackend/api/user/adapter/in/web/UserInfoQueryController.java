@@ -1,7 +1,7 @@
 package com.pfplaybackend.api.user.adapter.in.web;
 
 import com.pfplaybackend.api.common.ApiCommonResponse;
-import com.pfplaybackend.api.common.config.security.jwt.CookieUtil;
+import com.pfplaybackend.api.common.config.security.jwt.SharedSessionCookieWriter;
 import com.pfplaybackend.api.common.exception.http.UnauthorizedException;
 import com.pfplaybackend.api.user.application.dto.result.MyInfoResult;
 import com.pfplaybackend.api.user.application.service.UserInfoQueryService;
@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class UserInfoQueryController {
 
     private final UserInfoQueryService userInfoService;
-    private final CookieUtil cookieUtil;
+    private final SharedSessionCookieWriter sharedSessionCookieWriter;
 
     @Operation(summary = "내 정보 조회", description = "현재 인증된 사용자(게스트 또는 회원)의 기본 정보를 조회합니다. 인증이 유효하지 않은 경우 토큰 쿠키가 삭제됩니다.")
     @SecurityRequirement(name = "cookieAuth")
@@ -37,8 +37,7 @@ public class UserInfoQueryController {
                     .status(HttpStatus.OK)
                     .body(ApiCommonResponse.success(myInfoResult));
         } catch (UnauthorizedException e) {
-            cookieUtil.deleteAccessTokenCookie(response);
-            cookieUtil.deleteRefreshTokenCookie(response);
+            sharedSessionCookieWriter.clear(response);
             throw e;
         }
     }

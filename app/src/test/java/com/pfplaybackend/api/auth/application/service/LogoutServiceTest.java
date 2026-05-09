@@ -68,7 +68,7 @@ class LogoutServiceTest {
                 .build();
 
         CustomJwtAuthenticationToken token = new CustomJwtAuthenticationToken(
-                jwt, Collections.emptyList(), userId, "test@test.com", AuthorityTier.FM, "google"
+                jwt, Collections.emptyList(), userId, "test@test.com", AuthorityTier.FM
         );
         SecurityContextHolder.getContext().setAuthentication(token);
     }

@@ -151,7 +151,7 @@ class DomainEventRedisRelayTest {
         CrewId punisherCrewId = new CrewId(10L);
         CrewId punishedCrewId = new CrewId(20L);
         CrewPenalizedEvent event = new CrewPenalizedEvent(
-                partyroomId, punisherCrewId, punishedCrewId, "Bad behavior", PenaltyType.ONE_TIME_EXPULSION
+                partyroomId, punisherCrewId, punishedCrewId, 999L, "Bad behavior", PenaltyType.ONE_TIME_EXPULSION
         );
 
         // when

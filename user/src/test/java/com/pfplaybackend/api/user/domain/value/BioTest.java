@@ -70,4 +70,19 @@ class BioTest {
         assertThatThrownBy(() -> bio.update("", NEW_INTRO))
                 .isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test
+    void updateNickname_preservesIntroduction() {
+        Bio bio = new Bio(new Nickname("old"), "intro-text");
+        bio.updateNickname("new");
+        assertThat(bio.getNicknameValue()).isEqualTo("new");
+        assertThat(bio.getIntroduction()).isEqualTo("intro-text");
+    }
+
+    @Test
+    void updateNickname_replacesExistingNickname() {
+        Bio bio = new Bio(new Nickname("old"), null);
+        bio.updateNickname("renamed");
+        assertThat(bio.getNicknameValue()).isEqualTo("renamed");
+    }
 }

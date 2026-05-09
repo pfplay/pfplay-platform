@@ -15,6 +15,7 @@ import com.pfplaybackend.api.party.domain.entity.data.*;
 import com.pfplaybackend.api.party.domain.enums.GradeType;
 import com.pfplaybackend.api.party.domain.enums.ReactionType;
 import com.pfplaybackend.api.party.domain.enums.StageType;
+import com.pfplaybackend.api.party.domain.exception.PartyroomException;
 import com.pfplaybackend.api.party.domain.value.*;
 import com.pfplaybackend.api.user.domain.entity.data.MemberData;
 import lombok.RequiredArgsConstructor;
@@ -58,6 +59,8 @@ public class AdminPartyroomService {
         String linkDomain = command.linkDomain();
         if (linkDomain == null || linkDomain.isEmpty()) {
             linkDomain = generateUniqueLinkDomain();
+        } else if (isLinkDomainDuplicated(linkDomain)) {
+            throw ExceptionCreator.create(PartyroomException.LINK_DOMAIN_ALREADY_EXISTS);
         }
 
         PartyroomData partyroom = createPartyroom(
@@ -96,7 +99,7 @@ public class AdminPartyroomService {
                 totalVirtualMembers++;
             }
 
-            UserId hostUserId = virtualMembers.get(0).getUserId();
+            UserId hostUserId = new UserId(virtualMembers.get(0).getUserAccountId());
 
             PartyroomData partyroom = createPartyroom(
                     title,
@@ -108,11 +111,11 @@ public class AdminPartyroomService {
 
             for (int j = 1; j < virtualMembers.size(); j++) {
                 MemberData member = virtualMembers.get(j);
-                enterMemberAsRegularCrew(partyroom, member.getUserId());
+                enterMemberAsRegularCrew(partyroom, new UserId(member.getUserAccountId()));
             }
 
             List<String> crewUserIds = virtualMembers.stream()
-                    .map(m -> m.getUserId().getUid().toString())
+                    .map(m -> m.getUserAccountId().toString())
                     .collect(Collectors.toList());
 
             BulkPreviewResult.PartyroomSummary summary = new BulkPreviewResult.PartyroomSummary(

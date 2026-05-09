@@ -38,7 +38,7 @@ public class DjCommandController {
     @SecurityRequirement(name = "cookieAuth")
     @ApiErrorCodes({DjException.class})
     @PostMapping("/{partyroomId}/dj-queue")
-    @PreAuthorize("hasAnyRole('ROLE_MEMBER')")
+    @PreAuthorize("hasRole('MEMBER')")
     public ResponseEntity<ApiCommonResponse<CreateDjResponse>> enqueueDj(
             @Parameter(description = "파티룸 ID") @PathVariable Long partyroomId,
             @Valid @RequestBody RegisterDjRequest request) {

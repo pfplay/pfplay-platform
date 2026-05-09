@@ -1,17 +1,17 @@
 package com.pfplaybackend.api.admin.adapter.out.external;
 
 import com.pfplaybackend.api.admin.application.port.out.AdminAvatarResourcePort;
-import com.pfplaybackend.api.user.adapter.out.persistence.AvatarBodyResourceRepository;
-import com.pfplaybackend.api.user.adapter.out.persistence.AvatarFaceResourceRepository;
-import com.pfplaybackend.api.user.application.dto.shared.AvatarBodyDto;
-import com.pfplaybackend.api.user.application.dto.shared.AvatarIconDto;
-import com.pfplaybackend.api.user.application.service.AvatarResourceQueryService;
-import com.pfplaybackend.api.user.application.service.UserAvatarCommandService;
-import com.pfplaybackend.api.user.domain.entity.data.AvatarBodyResourceData;
-import com.pfplaybackend.api.user.domain.entity.data.AvatarFaceResourceData;
-import com.pfplaybackend.api.user.domain.value.AvatarBodyUri;
-import com.pfplaybackend.api.user.domain.value.AvatarFaceUri;
-import com.pfplaybackend.api.user.domain.value.AvatarIconUri;
+import com.pfplaybackend.api.avatar.adapter.out.persistence.AvatarBodyResourceRepository;
+import com.pfplaybackend.api.avatar.adapter.out.persistence.AvatarFaceResourceRepository;
+import com.pfplaybackend.api.avatar.application.dto.AvatarBodyDto;
+import com.pfplaybackend.api.avatar.application.dto.AvatarFaceDto;
+import com.pfplaybackend.api.avatar.application.dto.AvatarIconDto;
+import com.pfplaybackend.api.avatar.application.port.in.AvatarCatalogQueryUseCase;
+import com.pfplaybackend.api.avatar.domain.entity.data.AvatarBodyResourceData;
+import com.pfplaybackend.api.avatar.domain.entity.data.AvatarFaceResourceData;
+import com.pfplaybackend.api.avatar.domain.value.AvatarBodyUri;
+import com.pfplaybackend.api.avatar.domain.value.AvatarFaceUri;
+import com.pfplaybackend.api.avatar.domain.value.AvatarIconUri;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -23,8 +23,7 @@ public class AdminAvatarResourceAdapter implements AdminAvatarResourcePort {
 
     private final AvatarBodyResourceRepository avatarBodyResourceRepository;
     private final AvatarFaceResourceRepository avatarFaceResourceRepository;
-    private final AvatarResourceQueryService avatarResourceQueryService;
-    private final UserAvatarCommandService userAvatarCommandService;
+    private final AvatarCatalogQueryUseCase avatarCatalogQueryUseCase;
 
     @Override
     public List<AvatarBodyResourceData> findAllAvatarBodyResources() {
@@ -38,16 +37,20 @@ public class AdminAvatarResourceAdapter implements AdminAvatarResourcePort {
 
     @Override
     public AvatarBodyDto findAvatarBodyByUri(AvatarBodyUri uri) {
-        return avatarResourceQueryService.findAvatarBodyByUri(uri);
+        return avatarCatalogQueryUseCase.findBodyByUri(uri.getValue()).orElse(null);
     }
 
     @Override
     public AvatarIconUri findAvatarIconPairWithSingleBody(AvatarBodyDto bodyDto) {
-        return userAvatarCommandService.findAvatarIconPairWithSingleBody(bodyDto);
+        // After PR 10, body's iconUri is on the body itself.
+        return new AvatarIconUri(bodyDto.getIconUri());
     }
 
     @Override
     public AvatarIconDto findPairAvatarIconByFaceUri(AvatarFaceUri uri) {
-        return avatarResourceQueryService.findPairAvatarIconByFaceUri(uri);
+        AvatarFaceDto face = avatarCatalogQueryUseCase.findFaceByUri(uri.getValue()).orElseThrow();
+        String iconUri = avatarCatalogQueryUseCase.findFaceIconUriByName(face.name());
+        String iconName = "ava_icon_" + face.name().split("_", 2)[1];
+        return new AvatarIconDto(0L, iconName, iconUri, true);
     }
 }

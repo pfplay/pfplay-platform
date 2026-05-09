@@ -1,10 +1,14 @@
 package com.pfplaybackend.api.party.adapter.in.web;
 
+import com.pfplaybackend.api.common.exception.ExceptionCreator;
+import com.pfplaybackend.api.party.domain.exception.PenaltyException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
@@ -55,5 +59,19 @@ class CrewPenaltyCommandControllerTest extends AbstractPartyCommandWebMvcTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("releaseCrewPenalty — admin이 부과한 페널티는 403 (PNT-003)")
+    void releaseCrewPenaltyAdminAppliedReturns403() throws Exception {
+        // given
+        doThrow(ExceptionCreator.create(PenaltyException.ADMIN_APPLIED_PENALTY_REQUIRES_ADMIN_RELEASE))
+                .when(crewPenaltyCommandService).releaseCrewPenalty(any(), eq(999L));
+
+        // when & then
+        mockMvc.perform(delete("/api/v1/partyrooms/1/penalties/999")
+                        .with(jwt().authorities(() -> "ROLE_MEMBER"))
+                        .with(csrf()))
+                .andExpect(status().isForbidden());
     }
 }

@@ -4,14 +4,17 @@ import com.pfplaybackend.api.common.ThreadLocalContext;
 import com.pfplaybackend.api.common.aspect.context.AuthContext;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.enums.AuthorityTier;
+import com.pfplaybackend.api.user.adapter.out.persistence.ActivityRepository;
 import com.pfplaybackend.api.user.adapter.out.persistence.GuestRepository;
 import com.pfplaybackend.api.user.adapter.out.persistence.MemberRepository;
 import com.pfplaybackend.api.user.adapter.out.persistence.UserProfileRepository;
 import com.pfplaybackend.api.user.application.dto.shared.ActivitySummaryDto;
 import com.pfplaybackend.api.user.application.dto.shared.ProfileSettingDto;
 import com.pfplaybackend.api.user.application.dto.shared.ProfileSummaryDto;
+import com.pfplaybackend.api.user.domain.entity.data.GuestData;
+import com.pfplaybackend.api.user.domain.entity.data.MemberData;
 import com.pfplaybackend.api.user.domain.entity.data.ProfileData;
-import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
+import com.pfplaybackend.api.user.domain.value.ActivitySummary;
 import com.pfplaybackend.api.user.domain.value.AvatarSetting;
 import com.pfplaybackend.api.user.domain.value.ProfileSummary;
 import lombok.RequiredArgsConstructor;
@@ -28,33 +31,61 @@ public class UserProfileQueryService {
     private final UserProfileRepository userProfileRepository;
     private final GuestRepository guestRepository;
     private final MemberRepository memberRepository;
+    private final ActivityRepository activityRepository;
 
     public ProfileSummaryDto getMyProfileSummary() {
         AuthContext authContext = ThreadLocalContext.getAuthContext();
-        ProfileSummary summary = findUserWithProfile(authContext.getUserId(), authContext.getAuthorityTier())
-                .getProfileSummary();
+        ProfileSummary summary = buildProfileSummary(authContext.getUserId(), authContext.getAuthorityTier());
         return toProfileSummaryDto(summary);
     }
 
     public ProfileSummaryDto getOtherProfileSummary(UserId otherUserId, AuthorityTier authorityTier) {
-        ProfileSummary summary = findUserWithProfile(otherUserId, authorityTier)
-                .getProfileSummary();
+        ProfileSummary summary = buildProfileSummary(otherUserId, authorityTier);
         return toProfileSummaryDto(summary);
     }
 
     public AuthorityTier getAuthorityTier(UserId userId) {
-        return memberRepository.findByUserId(userId)
-                .map(UserAccountData::getAuthorityTier)
-                .orElseGet(() -> guestRepository.findByUserId(userId)
-                        .map(UserAccountData::getAuthorityTier)
+        return memberRepository.findByUserAccountId(userId.getUid())
+                .map(MemberData::getAuthorityTier)
+                .orElseGet(() -> guestRepository.findByUserAccountId(userId.getUid())
+                        .map(GuestData::getAuthorityTier)
                         .orElseThrow());
     }
 
-    private UserAccountData findUserWithProfile(UserId userId, AuthorityTier tier) {
+    /**
+     * Builds the profile summary view. For members, activity rows are loaded
+     * externally (Member no longer owns the activity collection — see Task 11
+     * notes on {@link MemberData}). Guests have no activity rows.
+     */
+    private ProfileSummary buildProfileSummary(UserId userId, AuthorityTier tier) {
         if (tier == AuthorityTier.GT) {
-            return guestRepository.findByUserId(userId).orElseThrow();
+            GuestData guest = guestRepository.findByUserAccountId(userId.getUid()).orElseThrow();
+            return buildSummaryFromProfile(guest.getProfileData(), List.of());
         }
-        return memberRepository.findByUserId(userId).orElseThrow();
+        MemberData member = memberRepository.findByUserAccountId(userId.getUid()).orElseThrow();
+        List<ActivitySummary> activities = activityRepository.findAllByUserId(userId).stream()
+                .map(a -> new ActivitySummary(a.getActivityType(), a.getScore().getValue()))
+                .toList();
+        return member.getProfileSummary(activities);
+    }
+
+    private ProfileSummary buildSummaryFromProfile(ProfileData profileData, List<ActivitySummary> activities) {
+        AvatarSetting avatar = profileData.getAvatarSetting();
+        return new ProfileSummary(
+                profileData.getNicknameValue(),
+                profileData.getIntroduction(),
+                avatar.getAvatarBodyUri().getValue(),
+                avatar.getAvatarCompositionType(),
+                avatar.getCombinePositionX(),
+                avatar.getCombinePositionY(),
+                avatar.getOffsetX(),
+                avatar.getOffsetY(),
+                avatar.getScale(),
+                avatar.getAvatarFaceUri().getValue(),
+                avatar.getAvatarIconUri().getValue(),
+                profileData.getWalletAddress() != null ? profileData.getWalletAddress().getValue() : null,
+                activities
+        );
     }
 
     // 다수 사용자에 대한 프로필 설정 정보 조회

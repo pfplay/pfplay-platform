@@ -12,6 +12,7 @@ import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -43,8 +44,8 @@ public class PartyroomAggregateAdapter implements PartyroomAggregatePort, Partyr
     }
 
     @Override
-    public Optional<PartyroomData> findActiveHostRoom(UserId userId) {
-        return partyroomRepository.findActiveHostRoom(userId);
+    public Optional<PartyroomData> findNonTerminatedHostRoom(UserId userId) {
+        return partyroomRepository.findNonTerminatedHostRoom(userId);
     }
 
     @Override
@@ -82,6 +83,31 @@ public class PartyroomAggregateAdapter implements PartyroomAggregatePort, Partyr
     @Override
     public long countActiveCrews(PartyroomId partyroomId) {
         return crewRepository.countByPartyroomIdAndIsActiveTrue(partyroomId);
+    }
+
+    @Override
+    public int activateCrew(PartyroomId partyroomId, UserId userId, LocalDateTime now) {
+        return crewRepository.activateCrew(partyroomId, userId, now);
+    }
+
+    @Override
+    public int deactivateCrew(PartyroomId partyroomId, UserId userId, LocalDateTime now) {
+        return crewRepository.deactivateCrew(partyroomId, userId, now);
+    }
+
+    @Override
+    public int markCrewPending(PartyroomId partyroomId, UserId userId, LocalDateTime now) {
+        return crewRepository.markPending(partyroomId, userId, now);
+    }
+
+    @Override
+    public int clearCrewPending(PartyroomId partyroomId, UserId userId) {
+        return crewRepository.clearPending(partyroomId, userId);
+    }
+
+    @Override
+    public List<CrewData> findStalePendingCrews(LocalDateTime threshold) {
+        return crewRepository.findStalePending(threshold);
     }
 
     // ===== DJ: DjData =====

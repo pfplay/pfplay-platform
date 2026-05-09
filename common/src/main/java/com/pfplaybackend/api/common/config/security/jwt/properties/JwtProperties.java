@@ -10,19 +10,14 @@ import org.springframework.context.annotation.Configuration;
 public class JwtProperties {
 
     private String secret;
-    private Long expirationMs;
-    private Long refreshExpirationMs;
-    private CookieProperties cookie = new CookieProperties();
+    private long adminAccessTokenExpirationMs = 900_000L;     // 15 min
+    private long sharedSessionTokenExpirationMs = 86_400_000L; // 24h
+
+    private Cookie cookie = new Cookie();
 
     @Data
-    public static class CookieProperties {
-        private String accessTokenName = "AccessToken";
-        private String refreshTokenName = "RefreshToken";
-        private String domain = "localhost";
-        private String path = "/";
-        private Integer accessTokenExpirySeconds = 86400;
-        private Integer refreshTokenExpirySeconds = 604800;
-        private boolean secure = true;
-        private String sameSite = "Lax";
+    public static class Cookie {
+        private AdminCookieProperties admin = new AdminCookieProperties();
+        private SharedCookieProperties shared = new SharedCookieProperties();
     }
 }

@@ -26,7 +26,7 @@ public class TrackQueryController {
     @SecurityRequirement(name = "cookieAuth")
     @ApiErrorCodes({PlaylistException.class})
     @GetMapping("{playlistId}/tracks")
-    @PreAuthorize("hasRole('ROLE_MEMBER')")
+    @PreAuthorize("hasRole('MEMBER')")
     public ResponseEntity<ApiCommonResponse<QueryTrackListResponse>> getAllTracks(
             @Parameter(description = "트랙을 조회할 플레이리스트 ID") @PathVariable Long playlistId,
             @Parameter(description = "페이지 번호 (0부터 시작)") @RequestParam int pageNumber,

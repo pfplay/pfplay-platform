@@ -1,5 +1,6 @@
 package com.pfplaybackend.realtime.event;
 
+import com.pfplaybackend.realtime.port.PresencePort;
 import com.pfplaybackend.realtime.port.SessionCachePort;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -27,6 +28,9 @@ class SubscriptionEventListenerTest {
     @Mock
     private SessionCachePort sessionCachePort;
 
+    @Mock
+    private PresencePort presencePort;
+
     @InjectMocks
     private SubscriptionEventListener listener;
 
@@ -53,6 +57,7 @@ class SubscriptionEventListenerTest {
 
         // then
         verify(sessionCachePort).saveSessionCache(sessionId, userId, destination);
+        verify(presencePort).onSessionConnected(sessionId);
     }
 
     @Test

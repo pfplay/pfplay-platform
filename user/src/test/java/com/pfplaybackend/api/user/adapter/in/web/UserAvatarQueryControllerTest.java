@@ -1,6 +1,6 @@
 package com.pfplaybackend.api.user.adapter.in.web;
 
-import com.pfplaybackend.api.user.application.dto.shared.AvatarFaceDto;
+import com.pfplaybackend.api.avatar.application.dto.AvatarFaceDto;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

@@ -10,4 +10,7 @@ import java.util.Optional;
 public interface CrewPenaltyHistoryRepository extends JpaRepository<CrewPenaltyHistoryData, Long> {
     List<CrewPenaltyHistoryData> findAllByPartyroomIdAndReleasedIsFalse(PartyroomId partyroomId);
     Optional<CrewPenaltyHistoryData> findByIdAndPartyroomIdAndReleasedIsFalse(Long id, PartyroomId partyroomId);
+
+    /** [PR 9] partyroom의 최근 페널티 (released 포함). admin detail 응답용. */
+    List<CrewPenaltyHistoryData> findTop5ByPartyroomIdOrderByPenaltyDateDesc(PartyroomId partyroomId);
 }

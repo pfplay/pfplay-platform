@@ -18,9 +18,9 @@ class GuestSignControllerTest extends AbstractUserWebMvcTest {
     @DisplayName("createGuest — 200 OK + 쿠키 설정")
     void createGuestReturns200() throws Exception {
         // given
-        GuestData guest = GuestData.createWithFixedUserId(new UserId(1L), "test-agent");
+        GuestData guest = GuestData.createForUserAccount(1L, "test-agent");
         when(guestSignService.getGuestOrCreate()).thenReturn(guest);
-        when(jwtService.generateAccessToken(any())).thenReturn("mock-jwt-token");
+        when(jwtService.mintSharedSessionToken(any())).thenReturn("mock-jwt-token");
 
         // when & then
         mockMvc.perform(post("/api/v1/users/guests/sign")

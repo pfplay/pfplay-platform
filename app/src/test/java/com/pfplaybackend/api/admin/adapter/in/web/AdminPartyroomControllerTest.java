@@ -29,7 +29,7 @@ class AdminPartyroomControllerTest extends AbstractAdminWebMvcTest {
 
         // when & then
         mockMvc.perform(post("/api/v1/admin/partyrooms")
-                        .with(jwt().authorities(() -> "FM"))
+                        .with(jwt().authorities(() -> "ROLE_ADMIN"))
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
@@ -63,7 +63,7 @@ class AdminPartyroomControllerTest extends AbstractAdminWebMvcTest {
 
         // when & then
         mockMvc.perform(post("/api/v1/admin/partyrooms/bulk-preview")
-                        .with(jwt().authorities(() -> "FM"))
+                        .with(jwt().authorities(() -> "ROLE_ADMIN"))
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))

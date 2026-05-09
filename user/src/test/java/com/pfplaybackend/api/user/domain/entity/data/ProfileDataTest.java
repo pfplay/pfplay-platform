@@ -2,6 +2,9 @@ package com.pfplaybackend.api.user.domain.entity.data;
 
 import com.pfplaybackend.api.common.domain.enums.AvatarCompositionType;
 import com.pfplaybackend.api.common.domain.value.UserId;
+import com.pfplaybackend.api.avatar.domain.value.AvatarBodyUri;
+import com.pfplaybackend.api.avatar.domain.value.AvatarFaceUri;
+import com.pfplaybackend.api.avatar.domain.value.AvatarIconUri;
 import com.pfplaybackend.api.user.domain.enums.FaceSourceType;
 import com.pfplaybackend.api.user.domain.value.*;
 import org.junit.jupiter.api.DisplayName;
@@ -101,5 +104,16 @@ class ProfileDataTest {
 
         // then
         assertThat(profile.getWalletAddress().getValue()).isEqualTo("0xABC123");
+    }
+
+    @Test
+    void updateNickname_whenBioPresent_delegatesToBioPreservingIntroduction() {
+        ProfileData profile = ProfileData.builder()
+                .nickname(new Nickname("old"))
+                .introduction("intro")
+                .build();
+        profile.updateNickname("new");
+        assertThat(profile.getNicknameValue()).isEqualTo("new");
+        assertThat(profile.getIntroduction()).isEqualTo("intro");
     }
 }

@@ -26,25 +26,13 @@ import java.util.stream.Collectors;
  * HTTP 상태코드별 그룹핑 → ApiResponse 생성 → Example(드롭다운) 자동 등록한다.
  * 에러 코드가 추가/수정되면 enum만 변경하면 Swagger 문서가 자동 반영된다.
  * </p>
+ * <p>
+ * status code/description은 {@link ErrorType} enum이 자체 보유 — enum 값 추가 시
+ * 컴파일러가 (statusCode, description) 지정을 강제하므로 동기화 누락 불가.
+ * </p>
  */
 @Component
 public class ApiErrorCodeCustomizer implements OperationCustomizer {
-
-    private static final Map<ErrorType, Integer> STATUS_MAP = Map.of(
-            ErrorType.BAD_REQUEST, 400,
-            ErrorType.UNAUTHORIZED, 401,
-            ErrorType.FORBIDDEN, 403,
-            ErrorType.NOT_FOUND, 404,
-            ErrorType.CONFLICT, 409
-    );
-
-    private static final Map<ErrorType, String> STATUS_DESCRIPTION = Map.of(
-            ErrorType.BAD_REQUEST, "잘못된 요청",
-            ErrorType.UNAUTHORIZED, "인증 실패",
-            ErrorType.FORBIDDEN, "권한 부족 또는 접근 제한",
-            ErrorType.NOT_FOUND, "리소스를 찾을 수 없음",
-            ErrorType.CONFLICT, "리소스 충돌"
-    );
 
     @Override
     public Operation customize(Operation operation, HandlerMethod handlerMethod) {
@@ -71,11 +59,11 @@ public class ApiErrorCodeCustomizer implements OperationCustomizer {
         for (Map.Entry<ErrorType, List<DomainException>> entry : grouped.entrySet()) {
             ErrorType errorType = entry.getKey();
             List<DomainException> errors = entry.getValue();
-            int statusCode = STATUS_MAP.get(errorType);
+            int statusCode = errorType.getStatusCode();
             String statusKey = String.valueOf(statusCode);
 
             // description: 에러코드 목록
-            String description = STATUS_DESCRIPTION.get(errorType) + " — " +
+            String description = errorType.getDescription() + " — " +
                     errors.stream()
                             .map(e -> e.getErrorCode() + " (" + e.getMessage() + ")")
                             .collect(Collectors.joining(" | "));

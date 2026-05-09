@@ -13,6 +13,7 @@ import com.pfplaybackend.api.party.application.service.PartyroomQueryService;
 import com.pfplaybackend.api.party.application.service.PlaybackQueryService;
 import com.pfplaybackend.api.party.application.service.PlaybackReactionQueryService;
 import com.pfplaybackend.api.party.domain.entity.data.CrewData;
+import com.pfplaybackend.api.party.domain.entity.data.PartyroomData;
 import com.pfplaybackend.api.party.domain.entity.data.PlaybackAggregationData;
 import com.pfplaybackend.api.party.domain.entity.data.PlaybackData;
 import com.pfplaybackend.api.party.domain.entity.data.history.PlaybackReactionHistoryData;
@@ -45,9 +46,12 @@ public class PartyroomSetupQueryService {
 
     @Transactional(readOnly = true)
     public PartyroomSetupResult getSetupInfo(PartyroomId partyroomId) {
+        // Amplitude L1: stageType은 partyroom aggregate의 canonical 필드.
+        // 클라이언트가 lobby 캐시 lookup 없이도 입장 시점에서 받을 수 있도록 응답에 포함.
+        PartyroomData partyroom = partyroomQueryService.getPartyroomById(partyroomId);
         List<CrewSetupDto> crews = getCrewsForSetup(partyroomId);
         DisplayDto display = getDisplayInfo();
-        return new PartyroomSetupResult(crews, display);
+        return new PartyroomSetupResult(partyroom.getStageType(), crews, display);
     }
 
     private List<CrewSetupDto> getCrewsForSetup(PartyroomId partyroomId) {

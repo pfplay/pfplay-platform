@@ -4,6 +4,7 @@ import com.pfplaybackend.api.common.ThreadLocalContext;
 import com.pfplaybackend.api.common.aspect.context.AuthContext;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.enums.AuthorityTier;
+import com.pfplaybackend.api.common.exception.http.ConflictException;
 import com.pfplaybackend.api.common.exception.http.ForbiddenException;
 import com.pfplaybackend.api.common.exception.http.NotFoundException;
 import com.pfplaybackend.api.party.application.dto.command.CreatePartyroomCommand;
@@ -12,8 +13,10 @@ import com.pfplaybackend.api.party.application.dto.command.UpdatePartyroomComman
 import com.pfplaybackend.api.party.domain.entity.data.DjQueueData;
 import com.pfplaybackend.api.party.domain.entity.data.PartyroomData;
 import com.pfplaybackend.api.party.domain.entity.data.PartyroomPlaybackData;
+import com.pfplaybackend.api.party.domain.enums.PartyroomStatus;
 import com.pfplaybackend.api.party.domain.enums.QueueStatus;
 import com.pfplaybackend.api.party.domain.enums.StageType;
+import com.pfplaybackend.api.party.domain.event.PartyroomCreatedEvent;
 import com.pfplaybackend.api.party.domain.port.PartyroomAggregatePort;
 import com.pfplaybackend.api.party.domain.value.LinkDomain;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
@@ -69,14 +72,15 @@ class PartyroomCommandServiceTest {
     void createGeneralPartyRoomSuccess() {
         // given
         CreatePartyroomCommand command = new CreatePartyroomCommand("My Room", "Intro", "mylink", 10);
-        when(aggregatePort.findActiveHostRoom(userId)).thenReturn(Optional.empty());
+        when(aggregatePort.findNonTerminatedHostRoom(userId)).thenReturn(Optional.empty());
+        when(aggregatePort.findByLinkDomain(LinkDomain.of("mylink"))).thenReturn(Optional.empty());
         when(aggregatePort.savePartyroom(any(PartyroomData.class))).thenAnswer(invocation -> {
             PartyroomData p = invocation.getArgument(0);
             return PartyroomData.builder()
                     .id(1L).hostId(p.getHostId()).stageType(p.getStageType())
                     .title(p.getTitle()).introduction(p.getIntroduction())
                     .linkDomain(p.getLinkDomain()).playbackTimeLimit(p.getPlaybackTimeLimit())
-                    .noticeContent("").isTerminated(false).build();
+                    .noticeContent("").status(PartyroomStatus.ACTIVE).build();
         });
 
         // when
@@ -88,6 +92,8 @@ class PartyroomCommandServiceTest {
         verify(aggregatePort).savePlaybackState(any(PartyroomPlaybackData.class));
         verify(aggregatePort).saveDjQueueState(any(DjQueueData.class));
         verify(partyroomAccessCommandService).enterByHost(eq(userId), any(PartyroomData.class));
+        // PR 12a G4 — UserActivityLogListener consumes this for PARTYROOM_CREATED audit row.
+        verify(eventPublisher, atLeastOnce()).publishEvent(any(PartyroomCreatedEvent.class));
     }
 
     @Test
@@ -96,7 +102,7 @@ class PartyroomCommandServiceTest {
         // given
         CreatePartyroomCommand command = new CreatePartyroomCommand("My Room", "Intro", "mylink", 10);
         PartyroomData existing = PartyroomData.builder().id(99L).hostId(userId).build();
-        when(aggregatePort.findActiveHostRoom(userId)).thenReturn(Optional.of(existing));
+        when(aggregatePort.findNonTerminatedHostRoom(userId)).thenReturn(Optional.of(existing));
 
         // when & then
         assertThatThrownBy(() -> partyroomCommandService.createGeneralPartyRoom(command))
@@ -108,7 +114,8 @@ class PartyroomCommandServiceTest {
     void createGeneralPartyRoomAutoGeneratesLinkDomain() {
         // given
         CreatePartyroomCommand command = new CreatePartyroomCommand("My Room", "Intro", "", 10);
-        when(aggregatePort.findActiveHostRoom(userId)).thenReturn(Optional.empty());
+        when(aggregatePort.findNonTerminatedHostRoom(userId)).thenReturn(Optional.empty());
+        when(aggregatePort.findByLinkDomain(any(LinkDomain.class))).thenReturn(Optional.empty());
 
         ArgumentCaptor<PartyroomData> captor = ArgumentCaptor.forClass(PartyroomData.class);
         when(aggregatePort.savePartyroom(any(PartyroomData.class))).thenAnswer(invocation -> {
@@ -117,7 +124,7 @@ class PartyroomCommandServiceTest {
                     .id(1L).hostId(p.getHostId()).stageType(p.getStageType())
                     .title(p.getTitle()).introduction(p.getIntroduction())
                     .linkDomain(p.getLinkDomain()).playbackTimeLimit(p.getPlaybackTimeLimit())
-                    .noticeContent("").isTerminated(false).build();
+                    .noticeContent("").status(PartyroomStatus.ACTIVE).build();
         });
 
         // when
@@ -127,6 +134,37 @@ class PartyroomCommandServiceTest {
         verify(aggregatePort).savePartyroom(captor.capture());
         assertThat(captor.getValue().getLinkDomain().getValue()).isNotEmpty();
         assertThat(captor.getValue().getLinkDomain().getValue()).hasSize(12);
+    }
+
+    @Test
+    @DisplayName("createGeneralPartyRoom — 사용자가 지정한 linkDomain이 이미 존재하면 CONFLICT(409)을 던진다")
+    void createGeneralPartyRoomRejectsDuplicateLinkDomain() {
+        // given
+        CreatePartyroomCommand command = new CreatePartyroomCommand("My Room", "Intro", "taken", 10);
+        when(aggregatePort.findNonTerminatedHostRoom(userId)).thenReturn(Optional.empty());
+        PartyroomData existing = PartyroomData.builder().id(99L).hostId(new UserId(99L)).build();
+        when(aggregatePort.findByLinkDomain(LinkDomain.of("taken"))).thenReturn(Optional.of(existing));
+
+        // when & then
+        assertThatThrownBy(() -> partyroomCommandService.createGeneralPartyRoom(command))
+                .isInstanceOf(ConflictException.class);
+        verify(aggregatePort, never()).savePartyroom(any());
+        verify(partyroomAccessCommandService, never()).enterByHost(any(), any());
+    }
+
+    @Test
+    @DisplayName("createGeneralPartyRoom — 자동 생성된 linkDomain이 매번 충돌하면 CONFLICT(409)을 던진다")
+    void createGeneralPartyRoomAutoGenExhausted() {
+        // given
+        CreatePartyroomCommand command = new CreatePartyroomCommand("My Room", "Intro", "", 10);
+        when(aggregatePort.findNonTerminatedHostRoom(userId)).thenReturn(Optional.empty());
+        PartyroomData existing = PartyroomData.builder().id(99L).hostId(new UserId(99L)).build();
+        when(aggregatePort.findByLinkDomain(any(LinkDomain.class))).thenReturn(Optional.of(existing));
+
+        // when & then
+        assertThatThrownBy(() -> partyroomCommandService.createGeneralPartyRoom(command))
+                .isInstanceOf(ConflictException.class);
+        verify(aggregatePort, never()).savePartyroom(any());
     }
 
     // ========== updatePartyroom ==========
@@ -140,7 +178,7 @@ class PartyroomCommandServiceTest {
                 .id(1L).hostId(userId).stageType(StageType.GENERAL)
                 .title("Old Title").introduction("Old Intro")
                 .linkDomain(LinkDomain.of("old")).playbackTimeLimit(PlaybackTimeLimit.ofMinutes(5))
-                .noticeContent("").isTerminated(false).build();
+                .noticeContent("").status(PartyroomStatus.ACTIVE).build();
         when(aggregatePort.findPartyroomById(1L)).thenReturn(Optional.of(partyroom));
 
         UpdatePartyroomCommand command = new UpdatePartyroomCommand("New Title", "New Intro", "newlink", 10);
@@ -178,7 +216,7 @@ class PartyroomCommandServiceTest {
                 .id(1L).partyroomId(partyroomId).hostId(userId).stageType(StageType.GENERAL)
                 .title("Room").introduction("Intro")
                 .linkDomain(LinkDomain.of("link")).playbackTimeLimit(PlaybackTimeLimit.ofMinutes(5))
-                .noticeContent("").isTerminated(false).build();
+                .noticeContent("").status(PartyroomStatus.ACTIVE).build();
         when(aggregatePort.findPartyroomById(1L)).thenReturn(Optional.of(partyroom));
 
         // when
@@ -215,12 +253,12 @@ class PartyroomCommandServiceTest {
                 .id(1L).partyroomId(new PartyroomId(1L)).hostId(userId).stageType(StageType.GENERAL)
                 .title("Unused 1").introduction("").linkDomain(LinkDomain.of("u1"))
                 .playbackTimeLimit(PlaybackTimeLimit.ofMinutes(5))
-                .noticeContent("").isTerminated(false).build();
+                .noticeContent("").status(PartyroomStatus.ACTIVE).build();
         PartyroomData p2 = PartyroomData.builder()
                 .id(2L).partyroomId(new PartyroomId(2L)).hostId(userId).stageType(StageType.GENERAL)
                 .title("Unused 2").introduction("").linkDomain(LinkDomain.of("u2"))
                 .playbackTimeLimit(PlaybackTimeLimit.ofMinutes(5))
-                .noticeContent("").isTerminated(false).build();
+                .noticeContent("").status(PartyroomStatus.ACTIVE).build();
         when(aggregatePort.findAllUnusedPartyroomDataByDay(30)).thenReturn(List.of(p1, p2));
 
         // when
@@ -258,7 +296,7 @@ class PartyroomCommandServiceTest {
                 .id(1L).hostId(userId).stageType(StageType.GENERAL)
                 .title("Room").introduction("").linkDomain(LinkDomain.of("link"))
                 .playbackTimeLimit(PlaybackTimeLimit.ofMinutes(5))
-                .noticeContent("").isTerminated(false).build();
+                .noticeContent("").status(PartyroomStatus.ACTIVE).build();
         when(aggregatePort.findPartyroomById(1L)).thenReturn(Optional.of(partyroom));
 
         DjQueueData djQueue = DjQueueData.createFor(new PartyroomId(1L));
@@ -283,7 +321,7 @@ class PartyroomCommandServiceTest {
                 .id(1L).hostId(userId).stageType(StageType.GENERAL)
                 .title("Room").introduction("").linkDomain(LinkDomain.of("link"))
                 .playbackTimeLimit(PlaybackTimeLimit.ofMinutes(5))
-                .noticeContent("").isTerminated(false).build();
+                .noticeContent("").status(PartyroomStatus.ACTIVE).build();
         when(aggregatePort.findPartyroomById(1L)).thenReturn(Optional.of(partyroom));
 
         DjQueueData djQueue = DjQueueData.createFor(new PartyroomId(1L));

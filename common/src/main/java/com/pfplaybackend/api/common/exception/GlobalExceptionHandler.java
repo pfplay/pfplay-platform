@@ -3,15 +3,20 @@ package com.pfplaybackend.api.common.exception;
 import com.pfplaybackend.api.common.ApiErrorResponse;
 import com.pfplaybackend.api.common.enums.ExceptionEnum;
 import com.pfplaybackend.api.common.exception.http.*;
+import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.servlet.NoHandlerFoundException;
 
 import java.util.stream.Collectors;
 
@@ -67,6 +72,12 @@ public class GlobalExceptionHandler {
         return createExceptionResponse(e);
     }
 
+    @ExceptionHandler(TooManyRequestsException.class)
+    public ResponseEntity<ApiErrorResponse> handleTooManyRequestsException(TooManyRequestsException e) {
+        log.error(e.getMessage());
+        return createExceptionResponse(e);
+    }
+
     private ResponseEntity<ApiErrorResponse> createExceptionResponse(AbstractHTTPException e) {
         return ResponseEntity
                 .status(e.getStatus())
@@ -84,6 +95,41 @@ public class GlobalExceptionHandler {
                 .body(ApiErrorResponse.of(HttpStatus.BAD_REQUEST, null, detail));
     }
 
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<ApiErrorResponse> handleConstraintViolation(ConstraintViolationException e) {
+        String detail = e.getConstraintViolations().stream()
+                .map(cv -> cv.getPropertyPath() + ": " + cv.getMessage())
+                .collect(Collectors.joining("; "));
+        log.error("Constraint violation: {}", detail);
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ApiErrorResponse.of(HttpStatus.BAD_REQUEST, null, detail));
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ApiErrorResponse> handleMethodNotSupported(HttpRequestMethodNotSupportedException e) {
+        log.warn("Method not allowed: {}", e.getMessage());
+        return ResponseEntity
+                .status(HttpStatus.METHOD_NOT_ALLOWED)
+                .body(ApiErrorResponse.of(HttpStatus.METHOD_NOT_ALLOWED, null, e.getMessage()));
+    }
+
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ApiErrorResponse> handleMediaTypeNotSupported(HttpMediaTypeNotSupportedException e) {
+        log.warn("Unsupported media type: {}", e.getMessage());
+        return ResponseEntity
+                .status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
+                .body(ApiErrorResponse.of(HttpStatus.UNSUPPORTED_MEDIA_TYPE, null, e.getMessage()));
+    }
+
+    @ExceptionHandler(NoHandlerFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleNoHandlerFound(NoHandlerFoundException e) {
+        log.warn("No handler found: {}", e.getMessage());
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(ApiErrorResponse.of(HttpStatus.NOT_FOUND, null, e.getMessage()));
+    }
+
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<ApiErrorResponse> handleTypeMismatch(MethodArgumentTypeMismatchException e) {
         log.error("Type mismatch: parameter '{}', value '{}', required type '{}'",
@@ -92,6 +138,17 @@ public class GlobalExceptionHandler {
                 .status(HttpStatus.BAD_REQUEST)
                 .body(ApiErrorResponse.of(HttpStatus.BAD_REQUEST, null,
                         String.format("Invalid value '%s' for parameter '%s'", e.getValue(), e.getName())));
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiErrorResponse> handleMessageNotReadable(HttpMessageNotReadableException e) {
+        log.warn("Malformed request body: {}", e.getMostSpecificCause() != null
+                ? e.getMostSpecificCause().getMessage()
+                : e.getMessage());
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ApiErrorResponse.of(HttpStatus.BAD_REQUEST, null,
+                        "Invalid request body"));
     }
 
     @ExceptionHandler(AccessDeniedException.class)

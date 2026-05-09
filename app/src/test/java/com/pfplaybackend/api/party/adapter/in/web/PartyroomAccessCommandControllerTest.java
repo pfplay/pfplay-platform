@@ -54,6 +54,40 @@ class PartyroomAccessCommandControllerTest extends AbstractPartyCommandWebMvcTes
     }
 
     @Test
+    @DisplayName("enterPartyroom — body 자체 생략 시에도 201 Created (frontend가 국기 기능 비활성화 케이스)")
+    void enterPartyroomWithoutBodyReturns201() throws Exception {
+        // given
+        CrewData crew = mock(CrewData.class);
+        when(crew.getId()).thenReturn(1L);
+        when(crew.getGradeType()).thenReturn(GradeType.CLUBBER);
+        when(partyroomAccessCommandService.tryEnter(any(), any())).thenReturn(crew);
+
+        // when & then — no .content(), no .contentType()
+        mockMvc.perform(post("/api/v1/partyrooms/1/crews")
+                        .with(jwt().authorities(() -> "ROLE_MEMBER"))
+                        .with(csrf()))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    @DisplayName("enterPartyroom — Content-Type만 있고 body가 빈 경우에도 201 Created")
+    void enterPartyroomWithEmptyBodyReturns201() throws Exception {
+        // given
+        CrewData crew = mock(CrewData.class);
+        when(crew.getId()).thenReturn(1L);
+        when(crew.getGradeType()).thenReturn(GradeType.CLUBBER);
+        when(partyroomAccessCommandService.tryEnter(any(), any())).thenReturn(crew);
+
+        // when & then — empty JSON object
+        mockMvc.perform(post("/api/v1/partyrooms/1/crews")
+                        .with(jwt().authorities(() -> "ROLE_MEMBER"))
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
     @DisplayName("enterPartyroom — 잘못된 countryCode 형식은 400")
     void enterPartyroomWithInvalidCountryCodeReturns400() throws Exception {
         mockMvc.perform(post("/api/v1/partyrooms/1/crews")

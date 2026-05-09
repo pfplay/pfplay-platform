@@ -1,5 +1,5 @@
 package com.pfplaybackend.api.user.application.dto.command;
 
-import com.pfplaybackend.api.user.domain.value.AvatarBodyUri;
+import com.pfplaybackend.api.avatar.domain.value.AvatarBodyUri;
 
 public record UpdateAvatarBodyCommand(AvatarBodyUri avatarBodyUri) {}

@@ -4,6 +4,7 @@ import com.pfplaybackend.api.common.config.redis.RedisMessagePublisher;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.exception.http.NotFoundException;
 import com.pfplaybackend.api.party.domain.entity.data.PartyroomData;
+import com.pfplaybackend.api.party.domain.enums.PartyroomStatus;
 import com.pfplaybackend.api.party.domain.enums.StageType;
 import com.pfplaybackend.api.party.domain.port.PartyroomAggregatePort;
 import com.pfplaybackend.api.party.domain.value.LinkDomain;
@@ -38,7 +39,7 @@ class PartyroomNoticeQueryServiceTest {
                 .id(1L).hostId(new UserId(1L)).stageType(StageType.GENERAL)
                 .title("Test Room").introduction("Welcome")
                 .linkDomain(LinkDomain.of("testlink")).playbackTimeLimit(PlaybackTimeLimit.ofMinutes(10))
-                .noticeContent("Important Notice").isTerminated(false).build();
+                .noticeContent("Important Notice").status(PartyroomStatus.ACTIVE).build();
 
         when(aggregatePort.findPartyroomById(1L)).thenReturn(Optional.of(partyroom));
 
