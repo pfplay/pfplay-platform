@@ -202,6 +202,17 @@ public class PartyroomAccessCommandService {
     public void exit(PartyroomId partyroomId) {
         AuthContext authContext = ThreadLocalContext.getAuthContext();
         UserId userId = authContext.getUserId();
+        exitInternal(partyroomId, userId);
+    }
+
+    /**
+     * exit() body extracted so non-HTTP callers (presence grace expiration listener,
+     * reconcile cron) can run the same flow without ThreadLocal AuthContext setup.
+     * Strict invariant: callers MUST already have authority to act on this user/room
+     * (e.g., the user themselves, or system-level recovery actions).
+     */
+    @Transactional
+    public void exitInternal(PartyroomId partyroomId, UserId userId) {
         log.info("[exit] START - userId={}, partyroomId={}", userId, partyroomId.getId());
 
         PartyroomData partyroom = partyroomQueryService.getPartyroomById(partyroomId);

@@ -48,14 +48,58 @@ class SystemConfigCacheTest {
     void second_call_within_ttl_does_not_hit_repo() {
         when(repository.findByConfigKey(anyString()))
             .thenReturn(Optional.of(seed("maintenance.enabled", "false")))
-            .thenReturn(Optional.of(seed("maintenance.message", "")));
+            .thenReturn(Optional.of(seed("maintenance.message", "")))
+            .thenReturn(Optional.of(seed("presence.dj_grace_seconds", "30")))
+            .thenReturn(Optional.of(seed("presence.listener_grace_seconds", "10")));
 
         cache.isMaintenanceMode();
         clock.advanceSeconds(29);
         cache.isMaintenanceMode();
         cache.getMaintenanceMessage();
+        cache.getDjGraceSeconds();
+        cache.getListenerGraceSeconds();
 
-        verify(repository, times(2)).findByConfigKey(anyString()); // initial pair only
+        // One snapshot fetch loads all four keys; further reads within TTL hit no repo.
+        verify(repository, times(4)).findByConfigKey(anyString());
+    }
+
+    @Test
+    void readInt_returns_value_for_valid_int() {
+        when(repository.findByConfigKey(ConfigKey.MAINTENANCE_ENABLED.value()))
+            .thenReturn(Optional.empty());
+        when(repository.findByConfigKey(ConfigKey.MAINTENANCE_MESSAGE.value()))
+            .thenReturn(Optional.empty());
+        when(repository.findByConfigKey(ConfigKey.PRESENCE_DJ_GRACE_SECONDS.value()))
+            .thenReturn(Optional.of(seed("presence.dj_grace_seconds", "45")));
+        when(repository.findByConfigKey(ConfigKey.PRESENCE_LISTENER_GRACE_SECONDS.value()))
+            .thenReturn(Optional.of(seed("presence.listener_grace_seconds", "  15  ")));
+
+        assertThat(cache.getDjGraceSeconds()).isEqualTo(45);
+        assertThat(cache.getListenerGraceSeconds()).isEqualTo(15);
+    }
+
+    @Test
+    void readInt_falls_back_on_garbage() {
+        when(repository.findByConfigKey(ConfigKey.MAINTENANCE_ENABLED.value()))
+            .thenReturn(Optional.empty());
+        when(repository.findByConfigKey(ConfigKey.MAINTENANCE_MESSAGE.value()))
+            .thenReturn(Optional.empty());
+        when(repository.findByConfigKey(ConfigKey.PRESENCE_DJ_GRACE_SECONDS.value()))
+            .thenReturn(Optional.of(seed("presence.dj_grace_seconds", "thirty")));
+        when(repository.findByConfigKey(ConfigKey.PRESENCE_LISTENER_GRACE_SECONDS.value()))
+            .thenReturn(Optional.of(seed("presence.listener_grace_seconds", "-5")));
+
+        // Defaults: 30 / 10
+        assertThat(cache.getDjGraceSeconds()).isEqualTo(30);
+        assertThat(cache.getListenerGraceSeconds()).isEqualTo(10);
+    }
+
+    @Test
+    void readInt_falls_back_on_missing_row() {
+        when(repository.findByConfigKey(anyString())).thenReturn(Optional.empty());
+
+        assertThat(cache.getDjGraceSeconds()).isEqualTo(30);
+        assertThat(cache.getListenerGraceSeconds()).isEqualTo(10);
     }
 
     @Test

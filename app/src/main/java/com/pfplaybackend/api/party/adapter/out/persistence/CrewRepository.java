@@ -22,14 +22,50 @@ public interface CrewRepository extends JpaRepository<CrewData, Long> {
      *  - 반환 1: is_active=false → true 전이 발생 (호출자는 ENTER 이벤트 발행 의무)
      *  - 반환 0: row 없거나 이미 active (호출자는 후속 분기 — 새 INSERT 또는 idempotent return)
      * Race B-reentry 차단: 동시 호출 중 정확히 한 호출자만 1 반환.
+     *
+     * Resets exited_at and pending_exit_at to NULL so stale values from prior sessions
+     * do not poison the new active row (fixes Issue #193).
      */
     @Modifying(clearAutomatically = true)
     @Query("UPDATE CrewData c " +
-           "SET c.isActive = true, c.enteredAt = :now " +
+           "SET c.isActive = true, c.enteredAt = :now, c.exitedAt = NULL, c.pendingExitAt = NULL " +
            "WHERE c.partyroomId = :partyroomId AND c.userId = :userId AND c.isActive = false")
     int activateCrew(@Param("partyroomId") PartyroomId partyroomId,
                      @Param("userId") UserId userId,
                      @Param("now") LocalDateTime now);
+
+    /**
+     * Crew rows stuck in PENDING_EXIT past the threshold. Used by reconcile cron to
+     * recover from lost Redis expired events (Issue #195) and process them as OFFLINE.
+     */
+    @Query("SELECT c FROM CrewData c " +
+           "WHERE c.isActive = true AND c.pendingExitAt IS NOT NULL AND c.pendingExitAt < :threshold")
+    List<CrewData> findStalePending(@Param("threshold") LocalDateTime threshold);
+
+    /**
+     * Conditional clear of pending_exit_at on reconnect. Returns 1 when the transition
+     * PENDING_EXIT → ONLINE actually occurred (caller is the unique winner; race losers
+     * see 0 and return idempotently).
+     */
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE CrewData c SET c.pendingExitAt = NULL " +
+           "WHERE c.partyroomId = :partyroomId AND c.userId = :userId " +
+           "AND c.isActive = true AND c.pendingExitAt IS NOT NULL")
+    int clearPending(@Param("partyroomId") PartyroomId partyroomId,
+                     @Param("userId") UserId userId);
+
+    /**
+     * Conditional set of pending_exit_at on disconnect. Returns 1 when the transition
+     * ONLINE → PENDING_EXIT actually occurred. Idempotent: returns 0 if already pending
+     * (so the original timestamp/grace is not extended) or if crew is already inactive.
+     */
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE CrewData c SET c.pendingExitAt = :now " +
+           "WHERE c.partyroomId = :partyroomId AND c.userId = :userId " +
+           "AND c.isActive = true AND c.pendingExitAt IS NULL")
+    int markPending(@Param("partyroomId") PartyroomId partyroomId,
+                    @Param("userId") UserId userId,
+                    @Param("now") LocalDateTime now);
 
     /**
      * crew row를 inactive로 조건부 toggle.
