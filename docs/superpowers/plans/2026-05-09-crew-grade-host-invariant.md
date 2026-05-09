@@ -554,6 +554,10 @@ void tryEnter_raceLoser_skipsHealingToAvoidRollbackOnlyTx() {
                 .thenReturn(Optional.empty())
                 .thenReturn(Optional.empty())
                 .thenReturn(Optional.of(winnerCrew));
+        // saveCrew는 두 경로 모두 trigger:
+        //   1. ensureCrewActive INSERT 시도 → DataIntegrityViolationException → race-loser 분기 진입
+        //   2. (가드 없을 시) enforceHostInvariant healing → 또 한 번 saveCrew → 동일 예외 → 테스트 RED
+        // 가드 적용 후엔 helper skip되어 두 번째 호출 자체가 발생하지 않음.
         when(aggregatePort.saveCrew(any()))
                 .thenThrow(new DataIntegrityViolationException("uk_crew_partyroom_user"));
 
@@ -654,10 +658,10 @@ In `PartyroomAccessCommandService.tryEnter`, find the line added in Task 2 Step 
         return result.crew;
 ```
 
-Replace with:
+Replace with (using direct field access for style consistency with surrounding `result.crew` / `result.transitioned`):
 
 ```java
-        if (!result.raceLoser()) {
+        if (!result.raceLoser) {
             enforceHostInvariant(partyroom, userId, result.crew);
         }
         return result.crew;
@@ -802,7 +806,9 @@ If healing log does not appear OR Grade tab still shows LISTENER:
 - Verify the deployed commit hash matches the merged PR
 - Check whether super admin's tryEnter actually goes through (e.g., admin origin guard, CSRF, etc. — see memory `project_admin_csrf_oauth2_wrapping.md`)
 
-- [ ] **Step 4: Push branch and open PR**
+- [ ] **Step 4: Push branch and open PR** ⏸️ **PAUSE — 사용자 confirm 필수 (shared-state action)**
+
+이 단계는 remote에 push하고 GitHub PR을 생성하므로 사용자 명시적 승인 후에만 실행할 것. CLAUDE.md의 "Executing actions with care" 가이드 준수.
 
 ```powershell
 git push -u origin fix/crew-grade-host-invariant
