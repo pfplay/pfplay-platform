@@ -14,6 +14,7 @@ import com.pfplaybackend.api.party.domain.entity.data.PartyroomPlaybackData;
 import com.pfplaybackend.api.party.domain.enums.GradeType;
 import com.pfplaybackend.api.party.domain.enums.PartyroomStatus;
 import com.pfplaybackend.api.party.domain.event.CrewAccessedEvent;
+import com.pfplaybackend.api.party.domain.event.CrewGradeChangedEvent;
 import com.pfplaybackend.api.party.domain.port.PartyroomAggregatePort;
 import com.pfplaybackend.api.party.domain.service.PartyroomAggregateService;
 import com.pfplaybackend.api.party.domain.value.CountryCode;
@@ -508,5 +509,37 @@ class PartyroomAccessCommandServiceTest {
 
         // then
         assertThat(result.getGradeType()).isEqualTo(GradeType.HOST);
+    }
+
+    @Test
+    @DisplayName("tryEnter healing: grade promotion is silent — no CrewGradeChangedEvent published")
+    void tryEnter_healing_doesNotPublishGradeChangeEvent() {
+        // given — same setup pattern as Test #3 (LISTENER → HOST healing path via re-activate)
+        PartyroomData partyroom = mock(PartyroomData.class);
+        when(partyroom.getPartyroomId()).thenReturn(partyroomId);
+        when(partyroom.getStatus()).thenReturn(PartyroomStatus.ACTIVE);
+        when(partyroom.isSuspended()).thenReturn(false);
+        when(partyroom.getHostId()).thenReturn(userId);
+
+        CrewData staleCrew = CrewData.builder()
+                .id(60L)
+                .partyroomId(partyroomId)
+                .userId(userId)
+                .gradeType(GradeType.LISTENER)
+                .isActive(false)
+                .build();
+
+        when(partyroomQueryService.getPartyroomById(partyroomId)).thenReturn(partyroom);
+        when(aggregatePort.countActiveCrews(partyroomId)).thenReturn(0L);
+        when(partyroomQueryService.getMyActivePartyroom(userId)).thenReturn(Optional.empty());
+        when(aggregatePort.findCrew(partyroomId, userId)).thenReturn(Optional.of(staleCrew));
+        when(aggregatePort.activateCrew(eq(partyroomId), eq(userId), any())).thenReturn(1);
+        when(aggregatePort.saveCrew(any(CrewData.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        // when
+        partyroomAccessCommandService.tryEnter(partyroomId, null);
+
+        // then — silent healing: no CrewGradeChangedEvent
+        verify(eventPublisher, never()).publishEvent(any(CrewGradeChangedEvent.class));
     }
 }
