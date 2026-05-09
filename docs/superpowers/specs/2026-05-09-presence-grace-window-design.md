@@ -264,8 +264,11 @@ Coupled enough that splitting hurts review:
    Pattern matches existing `PlaybackDurationWaitTopicListener`.
 8. **STOMP DISCONNECT hook**: existing STOMP session listener (`SubscriptionEventListener`
    was seen in logs) gains a disconnect handler → `markPending` for each subscribed room.
-9. **Heartbeat timeout**: configure STOMP heartbeat in WebSocket config; on timeout
-   server-side, fire same path as DISCONNECT.
+9. **Heartbeat timeout**: STOMP heartbeat configured in `WebSocketConfig` —
+   `setHeartbeatValue([10_000, 5_000])` + dedicated `ThreadPoolTaskScheduler`.
+   Server-side timeout fires `SessionDisconnectEvent` automatically, which
+   the existing `DisconnectionEventListener` already routes to
+   `presencePort.onSessionDisconnected`.
 10. **Reconcile cron** (`@Scheduled(fixedDelay = 60_000)`): scan stale PENDING_EXIT, call
     `forceOffline`. Doubles as startup recovery.
 11. **Issue #193 fix in same PR**: `activatePresence` and `activateCrew` JPQL clear
@@ -286,20 +289,42 @@ Coupled enough that splitting hurts review:
 - Integration: re-entry after OFFLINE → both `exited_at` and `pending_exit_at` cleared
   (Issue #193 regression).
 
+## STOMP heartbeat (resolved)
+
+Configured in `WebSocketConfig`:
+
+```
+server → client:  10000 ms  (server emits heartbeat every 10s)
+client → server:   5000 ms  (server expects client heartbeat every 5s)
+```
+
+With STOMP's 1.5x grace, a missing client heartbeat triggers DISCONNECT within
+~7.5s of the actual disconnect. That leaves ~2.5s of headroom inside the default
+10s `listener_grace_seconds` before `forceOffline` fires — so a brief blip
+(<10s total: detection + grace) does not disturb the room. A dedicated
+single-thread `ThreadPoolTaskScheduler` bean drives the heartbeats.
+
+Note: heartbeat is negotiated at CONNECT. The pfplay-web stomp client must
+opt in (e.g., `client.heartbeatIncoming = 10000; client.heartbeatOutgoing = 5000`)
+otherwise the negotiated value falls back to `0,0` and only TCP keepalive
+detects disconnects (much slower). This is captured in the pfplay-web E2E
+contract issue.
+
 ## Open questions for review
 
-1. **STOMP heartbeat values**: what client/server intervals do we want? Need to align
-   with grace defaults (heartbeat timeout should be < listener_grace_seconds, otherwise
-   timeout itself eats most of the grace). Suggested: client→server 5s, server→client
-   10s, server timeout 8s.
-2. **Pagehide proactive ping**: do we want to add the new `mode=pending` to the existing
-   exit endpoint in this PR, or leave to a follow-up? The model works without it — STOMP
-   DISCONNECT alone is enough trigger. Adding it just shaves a few seconds off perceived
-   latency for the disconnecting user (no functional difference for others).
-3. **Multi-instance considerations**: deployment is currently single-instance per env.
-   When/if we go multi-instance, `PRESENCE:PENDING:*` Redis keys are shared so the listener
-   on any instance handles the expired event. The reconcile cron would need leader election
-   to avoid duplicate processing. Out of scope for this PR; flag for future.
+1. **Pagehide proactive ping**: do we want to add a small endpoint that the
+   client can hit during the browser `pagehide` event (e.g., via
+   `navigator.sendBeacon`) to enter PENDING_EXIT immediately rather than
+   waiting for STOMP heartbeat timeout? The model works without it — STOMP
+   DISCONNECT alone is enough trigger. Adding it shaves the ~7.5s detection
+   gap off the disconnecting user's perceived recovery window. Defer until
+   we measure real-world cases of "user reconnected within 10s but was
+   already broadcast as exited".
+2. **Multi-instance considerations**: deployment is currently single-instance
+   per env. When/if we go multi-instance, `PRESENCE:PENDING:*` Redis keys are
+   shared so the listener on any instance handles the expired event. The
+   reconcile cron would need leader election to avoid duplicate processing.
+   Out of scope for this PR; flag for future.
 
 ## Out of scope (deferred)
 
