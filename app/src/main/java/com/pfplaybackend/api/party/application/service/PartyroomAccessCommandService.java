@@ -115,21 +115,25 @@ public class PartyroomAccessCommandService {
             log.info("[tryEnter] IDEMPOTENT - already active or concurrent insert loser, no event. userId={}, partyroomId={}",
                     userId, partyroomId.getId());
         }
-        enforceHostInvariant(partyroom, userId, result.crew);
+        if (!result.raceLoser) {
+            enforceHostInvariant(partyroom, userId, result.crew);
+        }
         return result.crew;
     }
 
     /**
      * Crew를 active 상태로 만든다 (idempotent). 호출자에게 transitioned 플래그를 돌려 ENTER 이벤트
-     * 발행 여부를 판단하게 한다.
+     * 발행 여부를, raceLoser 플래그를 돌려 추가 mutation(예: enforceHostInvariant healing) skip 여부를
+     * 판단하게 한다.
      *
      * 흐름:
-     *  1. activateCrew atomic toggle 시도 → 1이면 inactive→active 전이 성공.
+     *  1. activateCrew atomic toggle 시도 → 1이면 inactive→active 전이 성공. (transitioned=true, raceLoser=false)
      *  2. 0 (row missing 또는 이미 active) → findCrew 분기:
      *     a. row 없음 → INSERT. 동시 INSERT 패배자는 DataIntegrityViolationException —
      *        outer 트랜잭션이 rollback-only 상태가 되므로 winner 조회는 별 트랜잭션(REQUIRES_NEW)에서
-     *        수행. 본 호출자는 idempotent return.
-     *     b. row 있고 active → countryCode만 갱신, idempotent.
+     *        수행. 본 호출자는 idempotent return하며 raceLoser=true로 표시한다 — 호출자 측에서
+     *        추가 saveCrew 호출 시 UnexpectedRollbackException 위험이 있으므로 skip해야 한다.
+     *     b. row 있고 active → countryCode만 갱신, idempotent. (transitioned=false, raceLoser=false)
      */
     private CrewActivationResult ensureCrewActive(PartyroomData partyroom, UserId userId, CountryCode countryCode) {
         PartyroomId pid = partyroom.getPartyroomId();
@@ -139,27 +143,27 @@ public class PartyroomAccessCommandService {
         if (activated == 1) {
             CrewData crew = aggregatePort.findCrew(pid, userId).orElseThrow();
             crew.updateCountryCode(countryCode);
-            return new CrewActivationResult(aggregatePort.saveCrew(crew), true);
+            return new CrewActivationResult(aggregatePort.saveCrew(crew), true, false);
         }
 
         Optional<CrewData> existing = aggregatePort.findCrew(pid, userId);
         if (existing.isEmpty()) {
             try {
                 CrewData newCrew = CrewData.create(pid, userId, GradeType.LISTENER, countryCode, now);
-                return new CrewActivationResult(aggregatePort.saveCrew(newCrew), true);
+                return new CrewActivationResult(aggregatePort.saveCrew(newCrew), true, false);
             } catch (DataIntegrityViolationException e) {
                 // INSERT race 패배 — outer tx가 rollback-only 상태. winner row 조회는 별 트랜잭션에서.
                 log.info("[ensureCrewActive] CONCURRENT_INSERT_LOSER - userId={}, partyroomId={}",
                         userId, pid.getId());
                 CrewData winner = findCrewInNewTransaction(pid, userId);
-                return new CrewActivationResult(winner, false);
+                return new CrewActivationResult(winner, false, true);
             }
         }
 
         // 이미 active — countryCode만 갱신
         CrewData crew = existing.get();
         crew.updateCountryCode(countryCode);
-        return new CrewActivationResult(aggregatePort.saveCrew(crew), false);
+        return new CrewActivationResult(aggregatePort.saveCrew(crew), false, false);
     }
 
     /**
@@ -194,7 +198,7 @@ public class PartyroomAccessCommandService {
                 userId, partyroom.getPartyroomId().getId(), crew.getId(), prev);
     }
 
-    private record CrewActivationResult(CrewData crew, boolean transitioned) {}
+    private record CrewActivationResult(CrewData crew, boolean transitioned, boolean raceLoser) {}
 
     private void publishAccessChangedEvent(PartyroomId partyroomId, CrewData crew, UserId userId) {
         eventPublisher.publishEvent(new CrewAccessedEvent(partyroomId, new CrewId(crew.getId()), userId, AccessType.ENTER));

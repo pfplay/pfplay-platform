@@ -542,4 +542,63 @@ class PartyroomAccessCommandServiceTest {
         // then — silent healing: no CrewGradeChangedEvent
         verify(eventPublisher, never()).publishEvent(any(CrewGradeChangedEvent.class));
     }
+
+    @Test
+    @DisplayName("tryEnter race-loser: helper skipped to avoid write on rollback-only outer tx")
+    void tryEnter_raceLoser_skipsHealingToAvoidRollbackOnlyTx() {
+        // given — same setup as tryEnterConcurrentInsertLoserShouldNotPublishEnter, but
+        // user IS the host and winner row is LISTENER. The healing helper would normally
+        // try to promote → saveCrew on rollback-only outer tx → UnexpectedRollbackException.
+        // The raceLoser guard must skip the helper entirely.
+        PartyroomId racePartyroomId = new PartyroomId(701L);
+        UserId raceUserId = new UserId(8002L);
+        AuthContext authContext = new AuthContext(raceUserId, AuthorityTier.GT);
+        ThreadLocalContext.setContext(authContext);
+
+        try {
+            PartyroomData partyroom = mock(PartyroomData.class);
+            when(partyroom.getPartyroomId()).thenReturn(racePartyroomId);
+            when(partyroom.getStatus()).thenReturn(PartyroomStatus.ACTIVE);
+            when(partyroom.isSuspended()).thenReturn(false);
+            // lenient: getHostId() would be consumed by enforceHostInvariant if the raceLoser guard
+            // were absent. With the guard applied the helper is skipped entirely → stub unused.
+            lenient().when(partyroom.getHostId()).thenReturn(raceUserId);
+            when(partyroomQueryService.getPartyroomById(racePartyroomId)).thenReturn(partyroom);
+            when(aggregatePort.countActiveCrews(racePartyroomId)).thenReturn(0L);
+            when(partyroomQueryService.getMyActivePartyroom(raceUserId)).thenReturn(Optional.empty());
+
+            when(aggregatePort.activateCrew(eq(racePartyroomId), eq(raceUserId), any())).thenReturn(0);
+
+            // Winner row from REQUIRES_NEW: a LISTENER row that WOULD trigger healing
+            // if the guard were missing.
+            CrewData winnerCrew = mock(CrewData.class);
+            // lenient: getGradeType() would be consumed by enforceHostInvariant if guard were absent;
+            // after guard is applied the helper is skipped so the stub goes unused — strict mode throws.
+            lenient().when(winnerCrew.getGradeType()).thenReturn(GradeType.LISTENER);
+            when(aggregatePort.findCrew(eq(racePartyroomId), eq(raceUserId)))
+                    .thenReturn(Optional.empty())
+                    .thenReturn(Optional.empty())
+                    .thenReturn(Optional.of(winnerCrew));
+            // saveCrew는 두 경로 모두 trigger:
+            //   1. ensureCrewActive INSERT 시도 → DataIntegrityViolationException → race-loser 분기 진입
+            //   2. (가드 없을 시) enforceHostInvariant healing → 또 한 번 saveCrew → 동일 예외 → 테스트 RED
+            // 가드 적용 후엔 helper skip되어 두 번째 호출 자체가 발생하지 않음.
+            when(aggregatePort.saveCrew(any()))
+                    .thenThrow(new DataIntegrityViolationException("uk_crew_partyroom_user"));
+
+            // Wire requiresNewReadOnlyTx (skipped by @InjectMocks since @PostConstruct doesn't fire)
+            TransactionStatus txStatus = mock(TransactionStatus.class);
+            when(transactionManager.getTransaction(any())).thenReturn(txStatus);
+            ReflectionTestUtils.invokeMethod(partyroomAccessCommandService, "initTxTemplates");
+
+            // when
+            CrewData result = partyroomAccessCommandService.tryEnter(racePartyroomId, null);
+
+            // then — guard prevents the helper from invoking updateGrade or extra saveCrew
+            assertThat(result).isSameAs(winnerCrew);
+            verify(winnerCrew, never()).updateGrade(any(GradeType.class));
+        } finally {
+            ThreadLocalContext.clearContext();
+        }
+    }
 }
