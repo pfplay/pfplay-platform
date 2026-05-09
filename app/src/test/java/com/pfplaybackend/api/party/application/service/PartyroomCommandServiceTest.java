@@ -4,6 +4,7 @@ import com.pfplaybackend.api.common.ThreadLocalContext;
 import com.pfplaybackend.api.common.aspect.context.AuthContext;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.enums.AuthorityTier;
+import com.pfplaybackend.api.common.exception.http.ConflictException;
 import com.pfplaybackend.api.common.exception.http.ForbiddenException;
 import com.pfplaybackend.api.common.exception.http.NotFoundException;
 import com.pfplaybackend.api.party.application.dto.command.CreatePartyroomCommand;
@@ -72,6 +73,7 @@ class PartyroomCommandServiceTest {
         // given
         CreatePartyroomCommand command = new CreatePartyroomCommand("My Room", "Intro", "mylink", 10);
         when(aggregatePort.findNonTerminatedHostRoom(userId)).thenReturn(Optional.empty());
+        when(aggregatePort.findByLinkDomain(LinkDomain.of("mylink"))).thenReturn(Optional.empty());
         when(aggregatePort.savePartyroom(any(PartyroomData.class))).thenAnswer(invocation -> {
             PartyroomData p = invocation.getArgument(0);
             return PartyroomData.builder()
@@ -113,6 +115,7 @@ class PartyroomCommandServiceTest {
         // given
         CreatePartyroomCommand command = new CreatePartyroomCommand("My Room", "Intro", "", 10);
         when(aggregatePort.findNonTerminatedHostRoom(userId)).thenReturn(Optional.empty());
+        when(aggregatePort.findByLinkDomain(any(LinkDomain.class))).thenReturn(Optional.empty());
 
         ArgumentCaptor<PartyroomData> captor = ArgumentCaptor.forClass(PartyroomData.class);
         when(aggregatePort.savePartyroom(any(PartyroomData.class))).thenAnswer(invocation -> {
@@ -131,6 +134,37 @@ class PartyroomCommandServiceTest {
         verify(aggregatePort).savePartyroom(captor.capture());
         assertThat(captor.getValue().getLinkDomain().getValue()).isNotEmpty();
         assertThat(captor.getValue().getLinkDomain().getValue()).hasSize(12);
+    }
+
+    @Test
+    @DisplayName("createGeneralPartyRoom — 사용자가 지정한 linkDomain이 이미 존재하면 CONFLICT(409)을 던진다")
+    void createGeneralPartyRoomRejectsDuplicateLinkDomain() {
+        // given
+        CreatePartyroomCommand command = new CreatePartyroomCommand("My Room", "Intro", "taken", 10);
+        when(aggregatePort.findNonTerminatedHostRoom(userId)).thenReturn(Optional.empty());
+        PartyroomData existing = PartyroomData.builder().id(99L).hostId(new UserId(99L)).build();
+        when(aggregatePort.findByLinkDomain(LinkDomain.of("taken"))).thenReturn(Optional.of(existing));
+
+        // when & then
+        assertThatThrownBy(() -> partyroomCommandService.createGeneralPartyRoom(command))
+                .isInstanceOf(ConflictException.class);
+        verify(aggregatePort, never()).savePartyroom(any());
+        verify(partyroomAccessCommandService, never()).enterByHost(any(), any());
+    }
+
+    @Test
+    @DisplayName("createGeneralPartyRoom — 자동 생성된 linkDomain이 매번 충돌하면 CONFLICT(409)을 던진다")
+    void createGeneralPartyRoomAutoGenExhausted() {
+        // given
+        CreatePartyroomCommand command = new CreatePartyroomCommand("My Room", "Intro", "", 10);
+        when(aggregatePort.findNonTerminatedHostRoom(userId)).thenReturn(Optional.empty());
+        PartyroomData existing = PartyroomData.builder().id(99L).hostId(new UserId(99L)).build();
+        when(aggregatePort.findByLinkDomain(any(LinkDomain.class))).thenReturn(Optional.of(existing));
+
+        // when & then
+        assertThatThrownBy(() -> partyroomCommandService.createGeneralPartyRoom(command))
+                .isInstanceOf(ConflictException.class);
+        verify(aggregatePort, never()).savePartyroom(any());
     }
 
     // ========== updatePartyroom ==========
