@@ -42,10 +42,10 @@ public class PartyroomCommandService {
 
     @Transactional
     public void createMainStage(CreatePartyroomCommand command, UserId adminId) {
-        // 도메인 invariant: 프로필 없는 사용자는 partyroom에 active crew로 등록하지 않는다.
-        // V5-seeded super-admin은 profile이 없으므로 enterByHost를 호출하면 customer GET /api/v1/partyrooms
-        // 응답 빌드 시 ProfileSettingDto null lookup → NPE. 호스트 권한은 partyroom.host_id로 충분하며
-        // 본 스테이지엔 crew row가 불필요. (PA-7)
+        // 본 스테이지는 host crew row를 사전 생성하지 않는다. host의 grade는
+        // PartyroomAccessCommandService.tryEnter의 enforceHostInvariant가 진입 시점에
+        // 자동 보장한다 (host_id == userId면 HOST로 승격/생성). PA-7의 NPE 회피는
+        // ApplicationReadyEventListener.finalizeSuperAdminProfile() 에서 처리됨.
         createPartyroom(command, StageType.MAIN, adminId);
     }
 
