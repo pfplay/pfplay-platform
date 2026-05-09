@@ -474,4 +474,39 @@ class PartyroomAccessCommandServiceTest {
         // then — helper must short-circuit when grade already HOST
         verify(hostCrew, never()).updateGrade(any(GradeType.class));
     }
+
+    @Test
+    @DisplayName("tryEnter: same-room re-entry, host with stale LISTENER row → grade promoted to HOST")
+    void tryEnter_sameRoomReentry_promotesHostIfStale() {
+        // given — partyroom hosted by THIS user, user already active in SAME room with stale LISTENER grade
+        PartyroomData partyroom = mock(PartyroomData.class);
+        when(partyroom.getPartyroomId()).thenReturn(partyroomId);
+        when(partyroom.getStatus()).thenReturn(PartyroomStatus.ACTIVE);
+        when(partyroom.isSuspended()).thenReturn(false);
+        when(partyroom.getHostId()).thenReturn(userId);
+
+        CrewData staleCrew = CrewData.builder()
+                .id(50L)
+                .partyroomId(partyroomId)
+                .userId(userId)
+                .gradeType(GradeType.LISTENER)
+                .isActive(true)
+                .build();
+
+        when(partyroomQueryService.getPartyroomById(partyroomId)).thenReturn(partyroom);
+        when(aggregatePort.countActiveCrews(partyroomId)).thenReturn(1L);
+        when(aggregatePort.findCrew(partyroomId, userId)).thenReturn(Optional.of(staleCrew));
+        when(aggregatePort.saveCrew(any(CrewData.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        // 같은 룸에 이미 active — same-room re-entry path
+        ActivePartyroomDto activeRoomInfo = mock(ActivePartyroomDto.class);
+        when(activeRoomInfo.id()).thenReturn(1L);
+        when(partyroomQueryService.getMyActivePartyroom(userId)).thenReturn(Optional.of(activeRoomInfo));
+
+        // when
+        CrewData result = partyroomAccessCommandService.tryEnter(partyroomId, null);
+
+        // then
+        assertThat(result.getGradeType()).isEqualTo(GradeType.HOST);
+    }
 }

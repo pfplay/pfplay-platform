@@ -99,7 +99,9 @@ public class PartyroomAccessCommandService {
                 CrewData crew = existingCrew.orElseThrow(() ->
                         ExceptionCreator.create(CrewException.INVALID_ACTIVE_ROOM));
                 crew.updateCountryCode(countryCode);
-                return aggregatePort.saveCrew(crew);
+                CrewData saved = aggregatePort.saveCrew(crew);
+                enforceHostInvariant(partyroom, userId, saved);
+                return saved;
             }
         }
 
