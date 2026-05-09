@@ -5,6 +5,7 @@ import com.pfplaybackend.api.admin.application.dto.result.AdminPartyroomResult;
 import com.pfplaybackend.api.admin.application.port.out.AdminPartyroomPort;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.exception.http.BadRequestException;
+import com.pfplaybackend.api.common.exception.http.ConflictException;
 import com.pfplaybackend.api.common.exception.http.NotFoundException;
 import com.pfplaybackend.api.party.application.service.PartyroomAccessCommandService;
 import com.pfplaybackend.api.party.application.service.PlaybackQueryService;
@@ -93,6 +94,7 @@ class AdminPartyroomServiceTest {
 
         PartyroomData savedPartyroom = createTestPartyroom("Test Room", "testdomain01");
 
+        when(adminPartyroomPort.findPartyroomByLinkDomain(LinkDomain.of("testdomain01"))).thenReturn(Optional.empty());
         when(adminPartyroomPort.savePartyroom(any(PartyroomData.class))).thenReturn(savedPartyroom);
 
         // when
@@ -102,6 +104,22 @@ class AdminPartyroomServiceTest {
         assertThat(result.title()).isEqualTo("Test Room");
         assertThat(result.linkDomain()).isEqualTo("testdomain01");
         verify(partyroomAccessCommandService).enterByHost(any(UserId.class), eq(savedPartyroom));
+    }
+
+    @Test
+    @DisplayName("createPartyroomWithHost — 사용자가 지정한 linkDomain이 이미 존재하면 CONFLICT(409)을 던진다")
+    void createPartyroomWithHostRejectsDuplicateLinkDomain() {
+        // given
+        AdminCreatePartyroomCommand command = new AdminCreatePartyroomCommand(
+                "100", "Test Room", "Welcome", "taken", 5);
+        PartyroomData existing = createTestPartyroom("Existing", "taken");
+        when(adminPartyroomPort.findPartyroomByLinkDomain(LinkDomain.of("taken"))).thenReturn(Optional.of(existing));
+
+        // when & then
+        assertThatThrownBy(() -> adminPartyroomService.createPartyroomWithHost(command))
+                .isInstanceOf(ConflictException.class);
+        verify(adminPartyroomPort, never()).savePartyroom(any());
+        verify(partyroomAccessCommandService, never()).enterByHost(any(), any());
     }
 
     @Test

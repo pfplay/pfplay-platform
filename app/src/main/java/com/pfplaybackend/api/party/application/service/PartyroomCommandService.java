@@ -34,6 +34,8 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class PartyroomCommandService {
 
+    private static final int LINK_DOMAIN_GENERATION_MAX_ATTEMPTS = 5;
+
     private final PartyroomAggregatePort aggregatePort;
     private final PartyroomAccessCommandService partyroomAccessCommandService;
     private final ApplicationEventPublisher eventPublisher;
@@ -55,14 +57,26 @@ public class PartyroomCommandService {
         if(optionalActive.isPresent()) throw ExceptionCreator.create(PartyroomException.ALREADY_HOST);
 
         String linkDomain = command.linkDomain();
-        if(linkDomain == null || linkDomain.isEmpty()) {
-            linkDomain = UUID.randomUUID().toString().replaceAll("-", "").substring(0, 12);
+        if (linkDomain == null || linkDomain.isEmpty()) {
+            linkDomain = generateUniqueLinkDomain();
+        } else if (aggregatePort.findByLinkDomain(LinkDomain.of(linkDomain)).isPresent()) {
+            throw ExceptionCreator.create(PartyroomException.LINK_DOMAIN_ALREADY_EXISTS);
         }
         PartyroomData createdPartyroom = createPartyroom(
                 new CreatePartyroomCommand(command.title(), command.introduction(), linkDomain, command.playbackTimeLimit()),
                 StageType.GENERAL, authContext.getUserId());
         partyroomAccessCommandService.enterByHost(authContext.getUserId(), createdPartyroom);
         return createdPartyroom;
+    }
+
+    private String generateUniqueLinkDomain() {
+        for (int attempt = 0; attempt < LINK_DOMAIN_GENERATION_MAX_ATTEMPTS; attempt++) {
+            String candidate = UUID.randomUUID().toString().replaceAll("-", "").substring(0, 12);
+            if (aggregatePort.findByLinkDomain(LinkDomain.of(candidate)).isEmpty()) {
+                return candidate;
+            }
+        }
+        throw ExceptionCreator.create(PartyroomException.LINK_DOMAIN_ALREADY_EXISTS);
     }
 
     private PartyroomData createPartyroom(CreatePartyroomCommand command, StageType stageType, UserId hostId) {
