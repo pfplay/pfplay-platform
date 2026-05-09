@@ -14,15 +14,24 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.annotation.Profile;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+/**
+ * Dev/test 전용 임시 회원 생성 endpoint. prod profile에서는 bean 자체가
+ * 생성되지 않으므로 path 매핑이 없고 404가 반환된다. SecurityConfig의
+ * `/api/v1/users/members/sign/**` permitAll matcher는 prod에서도 그대로
+ * 남아있지만, 핸들러가 없으므로 인증 우회만 의미할 뿐 외부에서 임시
+ * 계정을 만들 수 없다.
+ */
 @Tag(name = "User Sign API")
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/users")
+@Profile("!prod")
 public class EasyUserManagementController {
 
     private final SharedSessionCookieWriter sharedSessionCookieWriter;
