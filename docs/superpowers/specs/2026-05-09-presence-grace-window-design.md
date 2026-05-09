@@ -310,6 +310,34 @@ otherwise the negotiated value falls back to `0,0` and only TCP keepalive
 detects disconnects (much slower). This is captured in the pfplay-web E2E
 contract issue.
 
+### STOMP heartbeat does NOT replace the LB keep-alive heartbeat
+
+The application-level custom heartbeat in pfplay-web (`/pub/heartbeat`, 4s
+interval, handled by `HeartbeatController` on the server) stays in place
+permanently as a separate concern: it keeps the GCP HTTP(S) Load Balancer
+backend service connection alive. The configured backend service timeout
+is **30 seconds** (the GCP Classic ALB default; verified via
+`gcloud compute backend-services describe <name> --global` — value
+`timeoutSec: 30`).
+
+A previous attempt to rely on STOMP built-in heartbeat alone for this
+purpose did not keep the LB connection alive in practice. The exact
+mechanism is unverified — possible explanations include Spring Boot
+heartbeat configuration pitfalls (e.g.,
+[spring-boot#30872](https://github.com/spring-projects/spring-boot/issues/30872)
+where missing `TaskScheduler` causes negotiation to silently fall back to
+`heart-beat:0,0`), client-side opt-in not being set, or LB-specific
+treatment of small heartbeat frames. None of these has been narrowed down
+to a single root cause, and a controlled reproducer is hard to run because
+stg does not sit behind GCP LB (only prod does).
+
+Bottom line: two heartbeats coexist with separate jobs.
+
+| Heartbeat | Frequency | Purpose | Owner |
+|---|---|---|---|
+| `/pub/heartbeat` (PING/PONG STOMP message) | 4s client → server | Keep GCP LB backend connection alive (30s timeout) | `HeartbeatController` (server) + pfplay-web custom interval (client) |
+| STOMP built-in heartbeat (newline frame) | 5s/10s bidirectional | Fast disconnect detection for presence model | Spring SimpleBroker + pfplay-web stomp client opt-in |
+
 ## Open questions for review
 
 1. **Pagehide proactive ping**: do we want to add a small endpoint that the

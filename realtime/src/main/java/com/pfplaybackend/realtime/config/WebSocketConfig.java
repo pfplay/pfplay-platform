@@ -22,10 +22,17 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
-    // STOMP heartbeat targeted at the presence grace window.
-    // Server expects a client heartbeat every 5s; with the STOMP 1.5x grace this
-    // means a disconnect is detected within ~7.5s, leaving headroom inside the
-    // 10s default listener_grace_seconds before forceOffline fires.
+    // STOMP heartbeat — used for fast disconnect detection only. Server expects a
+    // client heartbeat every 5s; with the STOMP 1.5x grace this means a disconnect
+    // is detected within ~7.5s, leaving headroom inside the 10s default
+    // listener_grace_seconds before forceOffline fires.
+    //
+    // NOTE: this does NOT replace the existing application-level heartbeat
+    // (`/pub/heartbeat`, 4s interval) which is responsible for keeping the GCP
+    // HTTP(S) LB connection alive (backend service timeout = 30s, confirmed via
+    // `gcloud compute backend-services describe`). Past attempts to rely on STOMP
+    // heartbeat alone for LB keep-alive did not work in practice — root cause not
+    // verified, so the application heartbeat stays for keep-alive duties.
     private static final long SERVER_TO_CLIENT_HEARTBEAT_MS = 10_000L;
     private static final long CLIENT_TO_SERVER_HEARTBEAT_MS = 5_000L;
 
