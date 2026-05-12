@@ -122,4 +122,4 @@ realtime --> common
 - V16 presence grace window: `docs/superpowers/specs/2026-05-09-presence-grace-window-design.md`
 - 구현 계획: `docs/superpowers/plans/2026-04-20-admin-platform-pr0-pr10-pr11.md`
 - 운영 정책·함정: [`docs/OPERATIONS.md`](OPERATIONS.md)
-- ADR: `docs/adr/` (001-006 + 후속 ADR 007~ 시리즈 작성 예정 — V14/V16/super-admin seed/JVM TZ/admin-origin-guard)
+- ADR: `docs/adr/` 001~011 (001 unified entity model, 002 aggregate-repo facade, 003 id reference migration, 004 hybrid domain event, 005 cross-domain port adapter, 006 admin CSRF token, 007 V14 system announcement, 008 super-admin seed lifecycle, 009 JVM TZ KST, 010 V16 presence grace window, 011 admin origin guard)
