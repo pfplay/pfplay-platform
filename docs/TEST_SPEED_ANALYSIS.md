@@ -1,5 +1,14 @@
 # Test Speed Analysis
 
+> **측정 스냅샷**: 2026-03-15 시점 분석. **본 문서는 시점 스냅샷이며 재측정되지 않았습니다.**
+>
+> **최종 검토**: 2026-05-13. 다음 항목은 본문 표와 차이가 있을 수 있습니다:
+> - **JDK**: 본문은 Amazon Corretto 17.0.11 기준. 현재 프로젝트는 **JDK 21** (Microsoft JDK 권장, [`docs/OPERATIONS.md`](OPERATIONS.md) §12)
+> - **테스트 클래스 수**: 본문은 152개. 이후 admin 콘솔 묶음(PR #14a~g), V14 시스템 공지, V16 presence, crew-grade host invariant(PR #206) 등으로 신규 테스트가 추가되어 현재 카운트는 더 큼 (정확한 수치는 `./gradlew test` 출력으로 확인)
+> - 구조적 진단(병렬 fork, Spring Context 캐시 등)은 여전히 유효합니다 — 재측정이 필요하면 같은 방법론을 적용하세요
+>
+> 운영 정책·함정 모음: [`docs/OPERATIONS.md`](OPERATIONS.md)
+
 ## 측정 환경
 
 | 항목 | 값 |

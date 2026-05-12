@@ -1,8 +1,11 @@
 # Known Issues
 
+> **최종 검토**: 2026-05-13
+> 운영 정책·hygiene 사안(예: `ADMIN_SEED_*` 제거, admin-origin-guard env 분리 등)은 이 문서가 아니라 [`OPERATIONS.md`](OPERATIONS.md)에 정리되어 있습니다. 이 문서는 동작상 결함과 미해결 외부 의존 항목만 다룹니다.
+
 ## 1. WebSocket 재연결 시 세션 캐시 누락
 
-**상태**: 앱 크래시 수정 완료 / 클라이언트 알림 미구현
+**상태**: 앱 크래시 수정 완료 / 클라이언트 알림 미구현 (현재까지 진행 변동 없음)
 
 ### 현상
 
@@ -38,3 +41,25 @@
 
 - `app/.../adapter/out/persistence/RedisSessionCacheAdapter.java` — 세션 캐시 저장 로직
 - `realtime/.../event/SubscriptionEventListener.java` — SUBSCRIBE 이벤트 핸들러
+
+### V16 presence와의 관계
+이 이슈는 V16(ADR-010)에서 도입한 presence grace window와 **별개**입니다.
+- V16은 *"이미 입장한 크루의 일시 끊김"*을 grace window로 다듬음 (`crew.pending_exit_at` + Redis TTL)
+- 본 이슈는 *"서버 재시작으로 인해 입장 기록 자체가 사라진 상태"*를 다룸 — presence 라이프사이클 이전에 발생하는 race
+
+## 2. Prod 임시 유저 엔드포인트 노출 여부 미검증
+
+**상태**: 검증 outstanding
+
+### 현상
+`user` 모듈의 `TemporaryUserInitializeService` / `EasyUserManagementController`는 dev/stg 환경 편의용입니다. prod에서 `/temporary/full-member`류 임시 엔드포인트가 노출되면 안 됩니다.
+
+차단 가드가 백엔드에 들어가 있어야 하지만, prod ship 후 실제로 `/temporary/full-member` 호출 시 404가 반환되는지 직접 검증한 기록이 없습니다.
+
+### 액션
+prod 환경에 대해 `curl -i https://<prod-api>/temporary/full-member` → 404 확인 + 검증 결과를 본 문서에 기록.
+
+### 관련 파일
+- `user/.../adapter/in/web/EasyUserManagementController.java`
+- `user/.../application/service/initialize/TemporaryUserInitializeService.java`
+- 자세한 운영 컨텍스트: [`OPERATIONS.md`](OPERATIONS.md) §10

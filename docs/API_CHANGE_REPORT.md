@@ -3,6 +3,69 @@
 > **작성일**: 2026-03-09
 > **브랜치**: `chore/test-coverage-expansion`
 > **대상**: 프론트엔드 엔지니어
+>
+> **최종 검토**: 2026-05-13 — 이후 새로 추가된 엔드포인트는 아래 "2026-05 후속 추가 (신규 카테고리)" 섹션 참고. 본문 12가지 영역의 결정은 그대로 유효합니다.
+
+---
+
+## 2026-05 후속 추가 (신규 카테고리)
+
+본 보고서 작성(2026-03-09) 이후 도입된 도메인의 REST 엔드포인트입니다. WebSocket 신규 채널(`/sub/system/announcements`)은 [`asyncapi.yml`](asyncapi/asyncapi.yml)을 참조하세요.
+
+### V13 — 파티룸 신고
+| Method | Path | 책임 |
+|---|---|---|
+| `POST` | `/api/v1/partyrooms/{partyroomId}/reports` | 사용자가 파티룸 신고 제출 |
+| `GET` | `/api/v1/admin/reports` | 어드민 신고 목록 (페이지네이션, 필터) |
+| `GET` | `/api/v1/admin/reports/{reportId}` | 신고 상세 조회 |
+| `PATCH` | `/api/v1/admin/reports/{reportId}` | 처리 상태 갱신 |
+
+### V14 — 시스템 공지 / 점검
+| Method | Path | 책임 |
+|---|---|---|
+| `POST` | `/api/v1/admin/announcements` | 공지 발행 (SYSTEM_NOTIFICATION / MAINTENANCE_NOTICE) |
+| `GET` | `/api/v1/admin/announcements` | 어드민 공지 목록 |
+| `GET` | `/api/v1/admin/announcements/{id}` | 공지 상세 |
+| `DELETE` | `/api/v1/admin/announcements/{id}` | 공지 취소 |
+| `GET` | `/api/v1/system/status` | **사용자 측** 활성 공지/점검 상태 조회 (인증 불필요, edge에서 polling) |
+
+부수 채널: WebSocket `/sub/system/announcements` (`ANNOUNCEMENT_PUBLISHED` / `ANNOUNCEMENT_CANCELLED` / `MAINTENANCE_STARTED`). 자세한 사항은 [`asyncapi.yml`](asyncapi/asyncapi.yml) 및 [ADR-007](adr/007-system-announcement-architecture.md).
+
+### 어드민 콘솔 묶음 (M5/M6, 2026-04~05)
+| Method | Path | 책임 |
+|---|---|---|
+| `POST` | `/api/v1/admin/password/change` | 어드민 비밀번호 변경 (`mustChange` 첫 로그인 흐름) |
+| `GET` | `/api/v1/admin/members` | 회원 목록 (필터, 페이지네이션) |
+| `GET` | `/api/v1/admin/members/{memberId}` | 회원 상세 |
+| `PATCH` | `/api/v1/admin/members/{memberId}/tier` | 회원 tier 변경 |
+| `POST` | `/api/v1/admin/members/{memberId}/withdraw` | 강제 탈퇴 |
+| `GET` | `/api/v1/admin/partyrooms` | 파티룸 목록 |
+| `GET` | `/api/v1/admin/partyrooms/{partyroomId}` | 파티룸 상세 |
+| `PATCH` | `/api/v1/admin/partyrooms/{partyroomId}` | 파티룸 메타 수정 |
+| `PATCH` | `/api/v1/admin/partyrooms/{partyroomId}/display-flag` | 노출 플래그 토글 |
+| `POST` | `/api/v1/admin/partyrooms/{partyroomId}/terminate` | 파티룸 강제 종료 |
+| `POST` | `/api/v1/admin/partyrooms/{partyroomId}/suspend` | 일시 정지 |
+| `POST` | `/api/v1/admin/partyrooms/{partyroomId}/restore` | 정지 해제 |
+| `POST` | `/api/v1/admin/partyrooms/bulk-action` | 다중 파티룸 일괄 조치 |
+| `DELETE` | `/api/v1/admin/partyrooms/{partyroomId}/penalties/{penaltyId}` | 페널티 해제 |
+| `GET/POST/...` | `/api/v1/admin/avatar/bodies` `…/faces` | 아바타 카탈로그 관리 (publish / retire 포함) |
+| `PATCH` | `/api/v1/admin/system/administrators/{id}` | 다른 어드민 권한 변경 (super-admin) |
+| `POST` | `/api/v1/admin/system/administrators/{id}/revoke` | 어드민 권한 회수 |
+| `POST` | `/api/v1/admin/system/administrators/{id}/reset-password` | 비밀번호 재설정 |
+| `POST` | `/api/v1/admin/system/administrators/{id}/member-profile` | 가상 어드민 멤버 프로필 설정 |
+
+### V16 — Presence
+V16은 STOMP 기반(grace window 처리)이며 별도의 REST 엔드포인트를 노출하지 않습니다. [ADR-010](adr/010-presence-grace-window.md) 참조.
+
+### V15 — UNIQUE 제약
+V15는 schema-only(닉네임/링크 도메인 유니크). 새 엔드포인트 없음. 기존 닉네임 변경 API는 충돌 시 `409 CONFLICT`를 반환합니다.
+
+### CSRF / Origin Guard
+어드민 경로(`/api/v1/admin/**`, `/api/v1/auth/admin/**`)의 unsafe method 호출은 다음 모두를 요구합니다:
+1. `X-XSRF-TOKEN` 헤더 echo (쿠키 `XSRF-TOKEN` 값을 동일하게)
+2. `Origin` 또는 `Referer`가 백엔드 admin-origin-guard allowlist에 포함
+
+자세한 배경: [ADR-006](adr/006-admin-csrf-token.md), [ADR-011](adr/011-admin-origin-guard.md).
 
 ---
 

@@ -1,7 +1,12 @@
 # DDD 리팩토링 로드맵
 
-> **참고 (2026-04-20 갱신)**: 본 문서는 **과거 성숙도 리팩토링(Phase A-F) 완료 기록**이다. 40.0/40 달성된 시점의 스냅샷이며 **현 시점에서 진행 중인 작업을 나타내지 않는다**.
-> 현재 및 향후 작업(어드민 플랫폼, Avatar BC 등)은 `docs/superpowers/specs/2026-04-19-admin-platform-roadmap.md`를 참조한다.
+> **참고 (2026-05-13 갱신)**: 본 문서는 **과거 성숙도 리팩토링(Phase A-F) 완료 기록**이다. 40.0/40 달성된 시점의 스냅샷이며 **현 시점에서 진행 중인 작업을 나타내지 않는다**.
+> 이후의 진행 작업(어드민 플랫폼, V13 신고, V14 시스템 공지, V16 presence 등)은 다음 spec/plan에서 추적한다:
+> - `docs/superpowers/specs/2026-04-19-admin-platform-roadmap.md` (admin 플랫폼 묶음)
+> - `docs/superpowers/specs/2026-05-03-system-announcement-design.md` (V14)
+> - `docs/superpowers/specs/2026-05-09-presence-grace-window-design.md` (V16)
+> - `docs/superpowers/plans/` 디렉터리의 후속 plan들
+> 아키텍처 결정은 [`docs/adr/`](adr/) (현재 011까지)에, 운영 정책·함정은 [`docs/OPERATIONS.md`](OPERATIONS.md)에 분리되어 있다.
 > 이전 리팩토링(Phase 0~8, 모듈 재구조화, ERD 정규화)은 `docs/archive/`에 아카이빙됨.
 
 > 2026-02-21 성숙도 재평가에서 도출된 잔존 과제를 체계화한 장기 리팩토링 계획.
@@ -152,7 +157,9 @@ Phase F — 모듈 경계 및 admin 도메인 정리               ✅ 완료
 |------|------|------|
 | 성숙도 평가 기준 | `docs/MATURITY_ASSESSMENT.md` | 8개 차원 채점 기준, 현재/목표 점수 |
 | Context Map | `docs/CONTEXT_MAP.md` | Bounded Context 관계 및 포트 매핑 |
-| ADR | `docs/adr/` | 아키텍처 의사결정 기록 5건 |
+| ADR | `docs/adr/` | 아키텍처 의사결정 기록 11건 (001-011) |
+| 운영 정책·함정 | `docs/OPERATIONS.md` | JVM TZ, super-admin seed, admin-origin-guard, Cookie 분리 등 |
+| WebSocket 스펙 | `docs/asyncapi/asyncapi.yml` | STOMP 채널/메시지 (V14 시스템 공지 채널 포함) |
 | DTO Record 정책 | `docs/archive/DTO_RECORD_POLICY.md` | record vs class 사용 지침 |
 | 이전 리팩토링 계획 | `docs/archive/REFACTORING_PLAN.md` | Phase 0~8 완료 이력 |
 | 이전 모듈 재구조화 | `docs/archive/MODULE_RESTRUCTURING_PLAN.md` | Step A~E 완료 이력 |
