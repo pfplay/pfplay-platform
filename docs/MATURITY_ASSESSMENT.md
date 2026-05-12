@@ -3,8 +3,36 @@
 > PFPlay Backend의 DDD 구현 수준을 정량 평가하기 위한 항목별 기준점 문서.
 > 각 차원(1~8)에 대해 1~5점 척도를 정의하고, 현재 수준과 목표 수준을 기록한다.
 
-**평가일**: 2026-02-22
-**브랜치**: `refactor/ddd-cleanup`
+**최초 평가일**: 2026-02-22 (`refactor/ddd-cleanup` 브랜치 기준, 40.0/40 도달 선언)
+**최종 갱신**: 2026-05-13 — 갱신 노트는 아래 "## 2026-05 후속 변동" 섹션 참고
+
+---
+
+## 2026-05 후속 변동
+
+2026-02-22 만점 도달 이후 다음 변경이 추가되었습니다. **DDD 구조적 점수에는 영향 없음** (모두 기존 패턴을 따르는 신규 도메인/기능 추가)이지만 일부 차원의 "비고" 컬럼은 갱신이 필요합니다.
+
+### 주요 추가 작업
+- **M5 (V13)**: 파티룸 신고 시스템 (`PartyroomReport` aggregate, Administration BC). PR #12, #13
+- **M6 (V14)**: 시스템 공지 (`SystemAnnouncement` aggregate, Administration BC) + Vercel Edge Config 연동. PR #205, ADR-007
+- **V15**: `user_profile.nickname`, `partyroom.link_domain` UNIQUE 제약 (silent collision 차단)
+- **V16**: Presence Grace Window (`crew.pending_exit_at` + Redis TTL 기반 grace timer). PR shipped, ADR-010
+- **JVM TZ KST 고정** (ADR-009): Dockerfile + ClockConfig 통일. PR #202/#203/#205
+- **Super-admin V5 placeholder seed**: ApplicationReadyEventListener + idempotent SuperAdminSeedService. ADR-008
+- **Admin Origin Guard** (ADR-011): CSRF Option B 동반, env-aware 분리 hardening pending
+- **Admin 콘솔 prod 진입 (2026-05-09)**: pfplay-platform #205 + pfplay-admin #4 + pfplay-web #288 묶음
+- **ADR 추가**: 006(admin CSRF), 007(공지), 008(super-admin seed), 009(JVM TZ), 010(presence), 011(origin guard)
+
+### 차원별 영향 요약
+- **차원 1~4, 8** (구조적 차원): 영향 없음. 신규 aggregate(`SystemAnnouncement`, `PartyroomReport`)도 기존 헥사고널/포트 패턴을 따름. ArchUnit 예외 0건 유지
+- **차원 5 (도메인 이벤트 성숙도)**: 이벤트 카운트 14 → **17+** (V14 `AnnouncementPublishedEvent` / `AnnouncementCancelledEvent` / `MaintenanceStartedEvent` 추가). 점수 5.0 유지
+- **차원 6 (테스트 전략)**: 신규 도메인에 단위/통합 테스트 추가. 정확한 카운트는 `./gradlew test` 출력 기준. 점수 5.0 유지
+- **차원 7 (전략적 DDD 문서화)**: ADR 006~011 추가, `docs/OPERATIONS.md` 신설, `docs/asyncapi/asyncapi.yml`에 시스템 공지 채널 등재. 점수 5.0 유지
+
+### 운영 측면 outstanding (점수 무관)
+- `ADMIN_SEED_*` env 제거 (super-admin 첫 부팅 후 hygiene) — `docs/OPERATIONS.md` §3
+- admin-origin-guard env-aware 분리 — ADR-011, `docs/OPERATIONS.md` §4
+- prod `/temporary/full-member` 차단 가드 검증 — `docs/OPERATIONS.md` §10
 
 ---
 
