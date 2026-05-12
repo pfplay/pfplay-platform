@@ -12,10 +12,11 @@
 6. [CSRF + OAuth2 wrapping workaround](#6-csrf--oauth2-wrapping-workaround)
 7. [Combinable body `icon_uri = NULL`은 정상](#7-combinable-body-icon_uri--null은-정상)
 8. [첫 DJ 등록 직후 silent deactivate](#8-첫-dj-등록-직후-silent-deactivate)
-9. [V13 / V14 / V15 schema 정책](#9-v13--v14--v15-schema-정책)
-10. [dev/stg DB reset 정책](#10-devstg-db-reset-정책)
-11. [JDK 21 빌드 환경 (Windows)](#11-jdk-21-빌드-환경-windows)
-12. [PR 13~14g 묶음 — admin 도메인 진입 이력](#12-pr-1314g-묶음--admin-도메인-진입-이력)
+9. [Schema 마이그레이션 정책 (V13 / V14 / V15 / V16)](#9-schema-마이그레이션-정책-v13--v14--v15--v16)
+10. [임시 유저(Temporary User) 운영](#10-임시-유저temporary-user-운영)
+11. [dev/stg DB reset 정책](#11-devstg-db-reset-정책)
+12. [JDK 21 빌드 환경 (Windows)](#12-jdk-21-빌드-환경-windows)
+13. [PR 13~14g 묶음 — admin 도메인 진입 이력](#13-pr-1314g-묶음--admin-도메인-진입-이력)
 
 ---
 
@@ -152,33 +153,65 @@ PR이 머지 순서대로 들어오지 않으면 마이그레이션 버전 슬�
 - `DjQueueChangedEvent` payload는 **AFTER_COMMIT 시점에 late binding** (query 시점 stale 가능)
 - 사용자 친화적인 UX 메시지로 해석할 책임은 frontend에 있음 (pfplay-web)
 
-## 9. V13 / V14 / V15 schema 정책
+## 9. Schema 마이그레이션 정책 (V13 / V14 / V15 / V16)
 
-### V13 — 신고 시스템
-- `partyroom_report` 테이블 도입
-- 파티룸 단위 신고 처리. admin 콘솔에서 후속 조치
+### V13 — 파티룸 신고 시스템
+- `partyroom_report` 테이블 도입 (`V13__create_partyroom_report.sql`)
+- 파티룸 단위 신고 처리. admin 콘솔(`/reports`)에서 후속 조치
+- Administration BC의 aggregate
 - 관련 PR: #12, #13
 
 ### V14 — 시스템 공지
-- `system_announcement` + 1분 cron 배포
-- admin 콘솔에서 등록, 1분 내 사용자 콘솔에 반영
+- `system_announcement` 테이블 (`V14__create_system_announcement.sql`)
+- 다국어(`title_ko/en`, `message_ko/en`) + severity + 유지보수 윈도(`scheduled_start/end_at`) + 발송자 추적
+- 1분 cron으로 활성 공지 배포
 - 토큰 주입 방식: **GCE VM + DOT_ENV append** (Cloud Run 아님)
 - β 토글은 Vercel Edge Config 사용 (frontend 측)
+- 도메인: Administration BC (`api.administration.*`) — `SystemAnnouncementCommandService`, `SystemAnnouncementQueryService`, `MaintenanceSchedulerService`
+- 이벤트: `AnnouncementPublishedEvent`, `AnnouncementCancelledEvent`, `MaintenanceStartedEvent`
+- 외부 포트: `EdgeConfigPort` → `VercelEdgeConfigAdapter`
 
-### V15 — temp user 호환
-- 임시 유저 컬럼 추가, V14 schema와 호환 유지
-- 풀 멤버 전환 흐름: `/temporary/full-member`류 임시 엔드포인트
-- **prod 가드 필수**: prod에서 임시 엔드포인트(`/temporary/full-member`)가 노출되면 안 됨 → 차단 가드 필요
-- **검증 outstanding**: prod ship 후 `/temporary/full-member` → 404 확인 필요
-- 관련 PR: develop #196, release #198, pfplay-web#282(CLOSED)
+### V15 — 사용자 식별자 UNIQUE 제약
+- 파일: `V15__add_unique_constraints.sql`
+- `user_profile.nickname` + `partyroom.link_domain`에 UNIQUE 제약 추가
+- 의도: 이전까지 DB 제약 + 서비스 단 사전 검증이 모두 없어 silent collision이 가능했던 식별자에 무결성 강제
+- **선행 작업 필수**: stg/dev에서 마이그레이션 실행 전 중복 데이터 정리 필요 (마이그레이션 자체가 ALTER 실패할 수 있음)
+- temp user / V14 와는 무관한 schema-only 변경
 
-## 10. dev/stg DB reset 정책
+### V16 — Presence Grace Window
+- 파일: `V16__add_presence.sql`
+- `crew.pending_exit_at DATETIME(6)` 컬럼 + 인덱스 + `system_config`에 grace 값 두 개:
+  - `presence.dj_grace_seconds = 30` (현 DJ가 끊겼을 때 OFFLINE 판정까지의 유예)
+  - `presence.listener_grace_seconds = 10` (일반 listener 유예)
+- 의도: "잠시 끊김(PENDING_EXIT)"과 "확정 이탈(OFFLINE)"을 구분
+- **Source of truth**: DB row(`crew.pending_exit_at`). Redis TTL 키가 grace 타이머를 구동하고, 앱 재기동에도 견디도록 cron safety net 보유
+- 도메인: Party BC + Realtime 모듈 협업
+  - 포트: `realtime.port.PresencePort` (Party가 사용)
+  - 어댑터: `api.party.adapter.out.realtime.PresencePortAdapter`
+  - 서비스: `PartyroomPresenceService`
+  - 리스너: `PresenceExpirationListener` (Redis keyspace expire 이벤트 구독)
+- Spec: `docs/superpowers/specs/2026-05-09-presence-grace-window-design.md`
+
+## 10. 임시 유저(Temporary User) 운영
+
+> 참고: 메모리에서 한때 "V15 = temp user 호환"으로 기록되어 있었지만 **잘못된 매핑**입니다. V15는 위 §9의 UNIQUE 제약이고, 임시 유저는 별도 운영 정책입니다.
+
+### 시스템
+- 도메인: `user` 모듈 — `TemporaryUserInitializeService`, `EasyUserManagementController`
+- 풀 멤버 전환 흐름: `/temporary/full-member` 유사 엔드포인트
+- 목적: dev/stg 환경에서 빠른 사용자 생성/전환을 위한 운영 편의 기능
+
+### Prod 가드
+- **prod에서 임시 엔드포인트(`/temporary/full-member`)가 노출되면 안 됩니다** → 백엔드 측 차단 가드 필요
+- **검증 outstanding**: prod ship 이후 `/temporary/full-member` → 404 확인 필요
+
+## 11. dev/stg DB reset 정책
 
 - **dev/stg**는 schema breaking change 시 reset 허용 (개발 효율 우선)
 - **prod**는 reset 금지. 데이터 보존 마이그레이션 필수
 - JVM TZ KST 전환 시 dev/stg는 reset을 사용한 경험이 있고, prod는 SQL 마이그레이션 옵션을 보유했습니다 (admin 콘솔 prod 진입으로 기존 가정이 깨질 수 있어서)
 
-## 11. JDK 21 빌드 환경 (Windows)
+## 12. JDK 21 빌드 환경 (Windows)
 
 ### `JAVA_HOME` prefix 필수
 시스템 PATH에 다른 JDK가 잡혀 있을 수 있어, Gradle 호출 시 환경변수를 명시합니다.
@@ -202,7 +235,7 @@ JAVA_HOME="C:/Users/Eisen/.jdks/ms-21.0.7" ./gradlew :app:bootRun
 - IntelliJ Project SDK도 동일하게 JDK 21로 맞춥니다
 - Gradle JVM 설정도 동일
 
-## 12. PR 13~14g 묶음 — admin 도메인 진입 이력
+## 13. PR 13~14g 묶음 — admin 도메인 진입 이력
 
 ### 개발 단계 (2026-04-29 종료)
 - **M5**: PR #12 ~ #13 — 신고 시스템 (V13)
@@ -216,10 +249,9 @@ JAVA_HOME="C:/Users/Eisen/.jdks/ms-21.0.7" ./gradlew :app:bootRun
 
 ### Prod ship (2026-05-09)
 - pfplay-platform #205 + pfplay-admin #4 + pfplay-web #288 묶음으로 **admin 콘솔 첫 prod 진입**
-- 직후 PR #196 / #198 머지 (V15 temp user 호환 + prod 가드)
 - B1 PR #285 — super-admin Amplitude opt-out (pfplay-web)
 
 ### Outstanding actions
 - `ADMIN_SEED_*` env 제거 (super-admin 시드 후 hygiene) — §3
 - admin-origin-guard env-aware 분리 — §4
-- prod `/temporary/full-member` 차단 가드 검증 — §9
+- prod `/temporary/full-member` 차단 가드 검증 — §10
