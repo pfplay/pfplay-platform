@@ -111,6 +111,24 @@ channels:
         $ref: '#/components/messages/CrewProfileChanged'
 
   # ─────────────────────────────────────────
+  # Server → Client (Subscribe, System-wide Broadcast)
+  # ─────────────────────────────────────────
+  systemAnnouncementBroadcast:
+    address: /sub/system/announcements
+    title: 시스템 공지 브로드캐스트
+    description: |
+      시스템 전역 공지 및 점검 알림 채널입니다 (V14).
+      파티룸 단위가 아닌 **연결된 모든 클라이언트**가 수신합니다.
+      이 채널 메시지는 partyroomId 메타를 포함하지 않습니다.
+    messages:
+      AnnouncementPublished:
+        $ref: '#/components/messages/AnnouncementPublished'
+      AnnouncementCancelled:
+        $ref: '#/components/messages/AnnouncementCancelled'
+      MaintenanceStarted:
+        $ref: '#/components/messages/MaintenanceStarted'
+
+  # ─────────────────────────────────────────
   # Server → Client (Subscribe, Private)
   # ─────────────────────────────────────────
   heartbeatResponse:
@@ -252,6 +270,34 @@ operations:
     summary: 크루의 프로필(닉네임, 아바타)이 변경되었을 때 수신합니다.
     messages:
       - $ref: '#/channels/partyroomBroadcast/messages/CrewProfileChanged'
+
+  # Server → Client (System-wide Broadcast, V14)
+  receiveAnnouncementPublished:
+    action: receive
+    channel:
+      $ref: '#/channels/systemAnnouncementBroadcast'
+    title: 시스템 공지 발행 수신
+    summary: 어드민이 시스템 공지를 발행했을 때 모든 연결된 클라이언트가 수신합니다.
+    messages:
+      - $ref: '#/channels/systemAnnouncementBroadcast/messages/AnnouncementPublished'
+
+  receiveAnnouncementCancelled:
+    action: receive
+    channel:
+      $ref: '#/channels/systemAnnouncementBroadcast'
+    title: 시스템 공지 취소 수신
+    summary: 어드민이 발행된 시스템 공지를 취소했을 때 수신합니다.
+    messages:
+      - $ref: '#/channels/systemAnnouncementBroadcast/messages/AnnouncementCancelled'
+
+  receiveMaintenanceStarted:
+    action: receive
+    channel:
+      $ref: '#/channels/systemAnnouncementBroadcast'
+    title: 점검 시작 수신
+    summary: 예약된 점검 윈도가 시작되었을 때 수신합니다.
+    messages:
+      - $ref: '#/channels/systemAnnouncementBroadcast/messages/MaintenanceStarted'
 
   receiveHeartbeat:
     action: receive
@@ -508,6 +554,31 @@ components:
         type: string
         const: PONG
 
+    # ─── Server → Client (System-wide Broadcast, V14) ───
+    AnnouncementPublished:
+      name: AnnouncementPublished
+      title: 시스템 공지 발행
+      summary: 어드민이 시스템 공지를 발행함 (모든 클라이언트 수신)
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/AnnouncementPublishedPayload'
+
+    AnnouncementCancelled:
+      name: AnnouncementCancelled
+      title: 시스템 공지 취소
+      summary: 어드민이 발행된 시스템 공지를 취소함 (모든 클라이언트 수신)
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/AnnouncementCancelledPayload'
+
+    MaintenanceStarted:
+      name: MaintenanceStarted
+      title: 점검 시작
+      summary: 예약된 점검 윈도가 시작됨 (모든 클라이언트 수신)
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/MaintenanceStartedPayload'
+
   schemas:
     # ─── Common Metadata ───
     BroadcastMetadata:
@@ -546,6 +617,10 @@ components:
         - CREW_GRADE_CHANGED
         - CREW_PENALIZED
         - CREW_PROFILE_CHANGED
+        # V14 시스템 공지 (system-wide)
+        - ANNOUNCEMENT_PUBLISHED
+        - ANNOUNCEMENT_CANCELLED
+        - MAINTENANCE_STARTED
 
     # ─── Client → Server Payloads ───
     IncomingGroupChatPayload:
@@ -981,3 +1056,118 @@ components:
         - SINGLE_BODY: 단일 바디 (얼굴 없음)
         - BODY_WITH_FACE: 바디 + 얼굴 합성
       enum: [SINGLE_BODY, BODY_WITH_FACE]
+
+    # ─── V14 System Announcement Payloads ───
+    # System-wide broadcast (no partyroomId).
+    SystemBroadcastMetadata:
+      type: object
+      description: 시스템 전역 브로드캐스트 공통 메타데이터 (partyroomId 없음)
+      properties:
+        eventType:
+          $ref: '#/components/schemas/EventType'
+        id:
+          type: string
+          format: uuid
+          description: 메시지 고유 ID
+        timestamp:
+          type: integer
+          format: int64
+          description: 메시지 발행 시각 (Unix epoch ms)
+      required: [eventType, id, timestamp]
+
+    AnnouncementType:
+      type: string
+      description: |
+        시스템 공지 유형
+        - SYSTEM_NOTIFICATION: 일반 시스템 알림
+        - MAINTENANCE_NOTICE: 점검 안내 (scheduled_start/end_at 필수)
+      enum: [SYSTEM_NOTIFICATION, MAINTENANCE_NOTICE]
+
+    AnnouncementSeverity:
+      type: string
+      description: 공지 심각도
+      enum: [INFO, NOTICE, WARNING, CRITICAL]
+
+    AnnouncementPublishedPayload:
+      type: object
+      description: 시스템 공지 발행 브로드캐스트
+      allOf:
+        - $ref: '#/components/schemas/SystemBroadcastMetadata'
+        - type: object
+          properties:
+            eventType:
+              type: string
+              const: ANNOUNCEMENT_PUBLISHED
+            announcementId:
+              type: integer
+              format: int64
+            type:
+              $ref: '#/components/schemas/AnnouncementType'
+            severity:
+              $ref: '#/components/schemas/AnnouncementSeverity'
+            titleKo:
+              type: string
+            titleEn:
+              type: string
+            messageKo:
+              type: string
+            messageEn:
+              type: string
+            scheduledStartAt:
+              type: string
+              format: date-time
+              nullable: true
+              description: MAINTENANCE_NOTICE인 경우 필수
+            scheduledEndAt:
+              type: string
+              format: date-time
+              nullable: true
+              description: MAINTENANCE_NOTICE인 경우 필수
+            expiresAt:
+              type: string
+              format: date-time
+              nullable: true
+            sentAt:
+              type: string
+              format: date-time
+          required: [announcementId, type, severity, titleKo, titleEn, messageKo, messageEn, sentAt]
+
+    AnnouncementCancelledPayload:
+      type: object
+      description: 시스템 공지 취소 브로드캐스트
+      allOf:
+        - $ref: '#/components/schemas/SystemBroadcastMetadata'
+        - type: object
+          properties:
+            eventType:
+              type: string
+              const: ANNOUNCEMENT_CANCELLED
+            announcementId:
+              type: integer
+              format: int64
+            cancelledAt:
+              type: string
+              format: date-time
+          required: [announcementId, cancelledAt]
+
+    MaintenanceStartedPayload:
+      type: object
+      description: 예약된 점검 윈도가 시작됨
+      allOf:
+        - $ref: '#/components/schemas/SystemBroadcastMetadata'
+        - type: object
+          properties:
+            eventType:
+              type: string
+              const: MAINTENANCE_STARTED
+            announcementId:
+              type: integer
+              format: int64
+            maintenanceStartedAt:
+              type: string
+              format: date-time
+            scheduledEndAt:
+              type: string
+              format: date-time
+              nullable: true
+          required: [announcementId, maintenanceStartedAt]
