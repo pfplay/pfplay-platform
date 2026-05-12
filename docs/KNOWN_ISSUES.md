@@ -49,15 +49,22 @@
 
 ## 2. Prod 임시 유저 엔드포인트 노출 여부 미검증
 
-**상태**: 검증 outstanding
+**상태**: 검증 outstanding (코드 가드는 적용 완료, 운영 검증만 남음)
 
 ### 현상
-`user` 모듈의 `TemporaryUserInitializeService` / `EasyUserManagementController`는 dev/stg 환경 편의용입니다. prod에서 `/temporary/full-member`류 임시 엔드포인트가 노출되면 안 됩니다.
+`user` 모듈의 `TemporaryUserInitializeService` / `EasyUserManagementController`는 dev/stg 환경 편의용입니다. prod에서 `/api/v1/users/members/sign/temporary/full-member`류 임시 엔드포인트가 노출되면 안 됩니다.
 
-차단 가드가 백엔드에 들어가 있어야 하지만, prod ship 후 실제로 `/temporary/full-member` 호출 시 404가 반환되는지 직접 검증한 기록이 없습니다.
+### 가드 메커니즘 (적용 완료)
+- `EasyUserManagementController` 클래스에 **`@Profile("!prod")`** (PR #196 commit `9fcc4637`)
+- prod profile에서는 controller bean 자체가 생성되지 않아 endpoint 매칭 없음 → 404
+- SecurityConfig matcher는 유지하지만 핸들러 부재로 무해
 
-### 액션
-prod 환경에 대해 `curl -i https://<prod-api>/temporary/full-member` → 404 확인 + 검증 결과를 본 문서에 기록.
+### 액션 (운영 검증)
+prod ship 완료(2026-05-09) 이후 다음을 수동 확인 후 본 이슈 종결:
+```bash
+curl -i -X POST https://api.pfplay.xyz/api/v1/users/members/sign/temporary/full-member
+# expect: HTTP/2 404
+```
 
 ### 관련 파일
 - `user/.../adapter/in/web/EasyUserManagementController.java`

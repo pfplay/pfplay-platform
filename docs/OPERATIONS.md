@@ -194,16 +194,31 @@ PR이 머지 순서대로 들어오지 않으면 마이그레이션 버전 슬�
 
 ## 10. 임시 유저(Temporary User) 운영
 
-> 참고: 메모리에서 한때 "V15 = temp user 호환"으로 기록되어 있었지만 **잘못된 매핑**입니다. V15는 위 §9의 UNIQUE 제약이고, 임시 유저는 별도 운영 정책입니다.
-
 ### 시스템
 - 도메인: `user` 모듈 — `TemporaryUserInitializeService`, `EasyUserManagementController`
-- 풀 멤버 전환 흐름: `/temporary/full-member` 유사 엔드포인트
+- 풀 멤버 전환 흐름: `/api/v1/users/members/sign/temporary/full-member` 류 엔드포인트
 - 목적: dev/stg 환경에서 빠른 사용자 생성/전환을 위한 운영 편의 기능
 
-### Prod 가드
-- **prod에서 임시 엔드포인트(`/temporary/full-member`)가 노출되면 안 됩니다** → 백엔드 측 차단 가드 필요
-- **검증 outstanding**: prod ship 이후 `/temporary/full-member` → 404 확인 필요
+### V15 UNIQUE 제약과의 호환 fix (PR #196 / #198)
+V15가 `user_profile.nickname` UNIQUE를 추가(§9)하면서 기존 `TemporaryUserInitializeService.upgradeMember`가 `'nickname'` 리터럴을 사용하던 흐름이 **두 번째 호출부터 USR-001로 실패**. PR #196 (develop `1a307e30`) → PR #198 (release `2d95bda3`)에서 호환되도록 fix:
+
+- `nickname = 'nickname-' + UUID 8자` (Guest의 `generateUniqueGuestNickname` 패턴, `existsByNickname` 검사 + 최대 5회 재시도)
+- default avatar 자동 부착 (broadcaster / 응답 빌더 NPE 방지)
+
+2026-05-09 prod ship 묶음(PR #205)에 포함되어 prod 진입 완료.
+
+### Prod 가드 (PR #196 commit `9fcc4637`)
+- `EasyUserManagementController` 클래스에 **`@Profile("!prod")`** 적용
+- prod profile에서는 controller bean이 생성되지 않아 endpoint 매칭이 발생하지 않음 → 404
+- SecurityConfig matcher는 그대로 유지 (핸들러 부재로 무해)
+
+### 검증 outstanding
+prod ship 이후 다음을 수동 확인 후 본 항목 종결:
+
+```bash
+curl -i -X POST https://api.pfplay.xyz/api/v1/users/members/sign/temporary/full-member
+# expect: HTTP/2 404
+```
 
 ## 11. dev/stg DB reset 정책
 
