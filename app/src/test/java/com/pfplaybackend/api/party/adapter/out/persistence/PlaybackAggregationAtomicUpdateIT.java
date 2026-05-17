@@ -49,4 +49,28 @@ class PlaybackAggregationAtomicUpdateIT extends AbstractIntegrationTest {
         int affected = repository.applyAggregationDelta(new PlaybackId(999_999_999L), 1, 0, 0);
         assertThat(affected).isZero();
     }
+
+    @Test
+    @DisplayName("applyAggregationDelta — E/#6 floor 가드: 0 미만으로 떨어뜨리는 delta 는 0 으로 clamp (음수 금지)")
+    void apply_floorGuardClampsToZero() {
+        PlaybackId pid = new PlaybackId(80003L);
+        repository.saveAndFlush(PlaybackAggregationData.createFor(pid));
+        // 카운터를 (like=2, dislike=1, grab=0) 으로 만든 뒤,
+        repository.applyAggregationDelta(pid, 2, 1, 0);
+
+        // 각 카운터를 0 미만으로 떨어뜨리는 큰 음수 delta 적용
+        int affected = repository.applyAggregationDelta(pid, -5, -3, -4);
+
+        assertThat(affected).isEqualTo(1);
+        PlaybackAggregationData reloaded = repository.findById(pid).orElseThrow();
+        assertThat(reloaded.getLikeCount())
+                .as("like_count 는 GREATEST(0,...) 로 음수 대신 0 으로 floor")
+                .isZero();
+        assertThat(reloaded.getDislikeCount())
+                .as("dislike_count floor")
+                .isZero();
+        assertThat(reloaded.getGrabCount())
+                .as("grab_count floor")
+                .isZero();
+    }
 }
