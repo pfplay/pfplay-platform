@@ -42,6 +42,26 @@ class RedisUserSessionStoreAdapterIntegrationTest extends AbstractIntegrationTes
     }
 
     @Test
+    @DisplayName("bindSession 후 두 키 모두 양수 TTL 을 갖는다 (missed-DISCONNECT self-heal 백스톱)")
+    void bindSessionAppliesPositiveTtlToBothKeys() {
+        sessionStore.bindSession("sid-ttl", "9009");
+
+        Long sessionTtl = stringRedisTemplate.getExpire("presence:session:sid-ttl");
+        Long userSetTtl = stringRedisTemplate.getExpire("presence:usersessions:9009");
+
+        assertThat(sessionTtl)
+                .as("session 키는 양수 TTL 을 가져야 한다")
+                .isNotNull()
+                .isGreaterThan(0L)
+                .isLessThanOrEqualTo(86400L);
+        assertThat(userSetTtl)
+                .as("usersessions 키는 양수 TTL 을 가져야 한다")
+                .isNotNull()
+                .isGreaterThan(0L)
+                .isLessThanOrEqualTo(86400L);
+    }
+
+    @Test
     @DisplayName("같은 유저의 두 세션 중 하나를 unbind 하면 남은 세션 수는 1 (마지막 아님)")
     void unbindOneOfTwoReturnsRemainingCount() {
         sessionStore.bindSession("sid-a", "2002");

@@ -1,14 +1,15 @@
 package com.pfplaybackend.api.party.adapter.out.persistence;
 
 import com.pfplaybackend.api.party.application.service.UserSessionRegistry;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Redis-backed {@link UserSessionRegistry.SessionStore} adapter (Cluster A PR-1).
@@ -27,10 +28,23 @@ import java.util.List;
  * {@code SREM usersessions} then {@code SCARD usersessions}, executed as a single
  * server-side Lua script so two concurrent disconnects for the same user cannot
  * both observe a non-empty set (exactly one sees {@code 0} ⇒ wasLastSession).
+ *
+ * <p><b>Self-healing TTL backstop.</b> The authoritative cleanup is
+ * {@link #unbindSessionAndCount} on STOMP DISCONNECT. But DISCONNECT is not
+ * guaranteed (network partition, pod kill, broker crash, ungraceful client
+ * teardown); a missed DISCONNECT would otherwise leave an orphan sid in
+ * {@code presence:usersessions:{uid}} forever, permanently keeping that user's
+ * {@code SCARD} ≥ 1 so {@code wasLastSession} can never again be true and the
+ * presence grace timer can never fire for them again. The DB-crew
+ * reconcile-cron sweeps {@code crew.pending_exit_at} rows only — it does NOT
+ * touch this Redis user-session registry, so the registry must bound its own
+ * leak. Therefore both keys carry a (configurable, default 24h) TTL refreshed
+ * on every {@link #bindSession} (a reconnect re-CONNECT naturally refreshes it);
+ * the TTL is deliberately far longer than any realistic continuous live session
+ * so it never expires an actually-live tab, while still self-expiring orphans.
  */
 @Slf4j
 @Repository
-@RequiredArgsConstructor
 public class RedisUserSessionStoreAdapter implements UserSessionRegistry.SessionStore {
 
     private static final String SESSION_KEY_PREFIX = "presence:session:";
@@ -50,10 +64,29 @@ public class RedisUserSessionStoreAdapter implements UserSessionRegistry.Session
 
     private final StringRedisTemplate stringRedisTemplate;
 
+    /**
+     * Self-healing backstop TTL (seconds) applied to both registry keys on every
+     * {@link #bindSession}. Default 24h — generously longer than any realistic
+     * continuous live session so a live tab is never expired, while bounding a
+     * missed-DISCONNECT orphan to at most this window.
+     */
+    private final long ttlSeconds;
+
+    public RedisUserSessionStoreAdapter(
+            StringRedisTemplate stringRedisTemplate,
+            @Value("${presence.user-session.ttl-seconds:86400}") long ttlSeconds) {
+        this.stringRedisTemplate = stringRedisTemplate;
+        this.ttlSeconds = ttlSeconds;
+    }
+
     @Override
     public void bindSession(String sessionId, String userId) {
-        stringRedisTemplate.opsForValue().set(sessionKey(sessionId), userId);
-        stringRedisTemplate.opsForSet().add(userSessionsKey(userId), sessionId);
+        // Refresh TTL on every bind: a reconnect re-CONNECT re-binds and thus
+        // naturally pushes the self-heal expiry forward for a still-live session.
+        stringRedisTemplate.opsForValue().set(sessionKey(sessionId), userId, ttlSeconds, TimeUnit.SECONDS);
+        String userSetKey = userSessionsKey(userId);
+        stringRedisTemplate.opsForSet().add(userSetKey, sessionId);
+        stringRedisTemplate.expire(userSetKey, ttlSeconds, TimeUnit.SECONDS);
     }
 
     @Override
