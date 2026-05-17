@@ -1,7 +1,5 @@
 package com.pfplaybackend.realtime.event;
 
-import com.pfplaybackend.realtime.port.SessionCachePort;
-import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationListener;
@@ -13,10 +11,8 @@ import org.springframework.web.socket.messaging.SessionUnsubscribeEvent;
 import java.security.Principal;
 
 @Component
-@RequiredArgsConstructor
 public class UnsubscriptionEventListener implements ApplicationListener<SessionUnsubscribeEvent> {
     private static final Logger logger = LoggerFactory.getLogger(UnsubscriptionEventListener.class);
-    private final SessionCachePort sessionCachePort;
 
     @Override
     public void onApplicationEvent(SessionUnsubscribeEvent event) {
@@ -27,8 +23,8 @@ public class UnsubscriptionEventListener implements ApplicationListener<SessionU
             logger.warn("Unauthorized session requested, UserId is null, Session ID: {}", sessionId);
             throw new AuthenticationServiceException("Unauthorized Session Requested");
         }
-        sessionCachePort.deleteSessionCache(sessionId);
-
+        // 세션캐시 디커미션 (#209 #31): UNSUBSCRIBE에서 deleteSessionCache를 더 이상
+        // 호출하지 않는다. 세션 정리는 WS DISCONNECT가 권위. 인증 가드와 로깅만 남긴다.
         logger.info("Session has unsubscribed, sessionId : {}", sessionId);
     }
 }

@@ -31,6 +31,8 @@ public class PartyroomChatCommandService {
     private final ObjectMapper objectMapper;
 
     public void sendMessage(String sessionId, String content) {
+        // 세션캐시 read는 채팅(비-presence) 용도로만 생존한다. presence는 WS CONNECT/DISCONNECT가
+        // 권위이며(#209 #31) SUBSCRIBE 트리거는 디커미션됨. (write 경로 부재는 PR-1 범위 밖)
         Optional<Object> optional = sessionCachePort.getSessionCache(sessionId);
 
         if (optional.isEmpty()) {

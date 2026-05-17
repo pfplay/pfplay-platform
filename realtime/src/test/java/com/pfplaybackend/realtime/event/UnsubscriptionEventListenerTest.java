@@ -10,7 +10,7 @@ import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.security.authentication.AuthenticationServiceException;
-import org.springframework.web.socket.messaging.SessionSubscribeEvent;
+import org.springframework.web.socket.messaging.SessionUnsubscribeEvent;
 
 import java.security.Principal;
 
@@ -19,31 +19,27 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
 @ExtendWith(MockitoExtension.class)
-@DisplayName("SubscriptionEventListener 단위 테스트")
-class SubscriptionEventListenerTest {
+@DisplayName("UnsubscriptionEventListener 단위 테스트")
+class UnsubscriptionEventListenerTest {
 
     @InjectMocks
-    private SubscriptionEventListener listener;
+    private UnsubscriptionEventListener listener;
 
     @Test
-    @DisplayName("유효한 Principal이면 인증을 통과하고 부수효과 없이 정상 처리된다 (presence·세션캐시 디커미션)")
-    void onApplicationEventValidPrincipalPassesAuthWithoutSideEffects() {
+    @DisplayName("유효한 Principal이면 세션캐시 삭제 없이 정상 처리된다 (세션캐시 디커미션)")
+    void onApplicationEventValidPrincipalPassesWithoutSessionCacheDelete() {
         // given
         String sessionId = "session-abc";
-        String userId = "user-123";
-        String destination = "/topic/partyroom/1";
 
-        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.UNSUBSCRIBE);
         accessor.setSessionId(sessionId);
-        accessor.setDestination(destination);
         Principal principal = mock(Principal.class);
-        org.mockito.Mockito.when(principal.getName()).thenReturn(userId);
         accessor.setUser(principal);
 
         Message<byte[]> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
-        SessionSubscribeEvent event = new SessionSubscribeEvent(this, message);
+        SessionUnsubscribeEvent event = new SessionUnsubscribeEvent(this, message);
 
-        // when & then — SUBSCRIBE는 더 이상 presence/세션캐시를 건드리지 않는다 (CONNECT가 presence 권위)
+        // when & then — UNSUBSCRIBE는 더 이상 deleteSessionCache를 호출하지 않는다
         assertThatCode(() -> listener.onApplicationEvent(event)).doesNotThrowAnyException();
     }
 
@@ -51,13 +47,12 @@ class SubscriptionEventListenerTest {
     @DisplayName("Principal이 null이면 AuthenticationServiceException을 던진다")
     void onApplicationEventNullPrincipalThrowsException() {
         // given
-        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.SUBSCRIBE);
+        StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.UNSUBSCRIBE);
         accessor.setSessionId("session-xyz");
-        accessor.setDestination("/topic/partyroom/1");
         // principal은 설정하지 않음 (null)
 
         Message<byte[]> message = MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
-        SessionSubscribeEvent event = new SessionSubscribeEvent(this, message);
+        SessionUnsubscribeEvent event = new SessionUnsubscribeEvent(this, message);
 
         // when & then
         assertThatThrownBy(() -> listener.onApplicationEvent(event))
