@@ -13,12 +13,14 @@ import com.pfplaybackend.api.party.domain.enums.AccessType;
 import com.pfplaybackend.api.party.domain.event.*;
 import com.pfplaybackend.api.user.application.dto.shared.ProfileSettingDto;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.util.UUID;
 
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class DomainEventRedisRelay {
@@ -44,26 +46,31 @@ public class DomainEventRedisRelay {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void on(DjQueueChangedEvent event) {
-        messagePublisher.publish(MessageTopic.DJ_QUEUE_CHANGED.topic(),
-                DjQueueChangeMessage.create(
-                        event.getPartyroomId(),
-                        partyroomQueryService.getDjs(event.getPartyroomId())
-                ));
+        DjQueueChangeMessage message = DjQueueChangeMessage.create(
+                event.getPartyroomId(),
+                partyroomQueryService.getDjs(event.getPartyroomId()));
+        log.info("[relay] DJ_QUEUE_CHANGED - partyroomId={}, messageId={}",
+                event.getPartyroomId().getId(), message.id());
+        messagePublisher.publish(MessageTopic.DJ_QUEUE_CHANGED.topic(), message);
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void on(PlaybackStartedEvent event) {
-        messagePublisher.publish(MessageTopic.PLAYBACK_STARTED.topic(),
-                new PlaybackStartMessage(event.getPartyroomId(), MessageTopic.PLAYBACK_STARTED,
-                        UUID.randomUUID().toString(), System.currentTimeMillis(),
-                        event.getCrewId().getId(), event.getPlayback()));
+        PlaybackStartMessage message = new PlaybackStartMessage(event.getPartyroomId(), MessageTopic.PLAYBACK_STARTED,
+                UUID.randomUUID().toString(), System.currentTimeMillis(),
+                event.getCrewId().getId(), event.getPlayback());
+        log.info("[relay] PLAYBACK_STARTED - partyroomId={}, messageId={}",
+                event.getPartyroomId().getId(), message.id());
+        messagePublisher.publish(MessageTopic.PLAYBACK_STARTED.topic(), message);
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void on(PlaybackDeactivatedEvent event) {
-        messagePublisher.publish(MessageTopic.PLAYBACK_DEACTIVATED.topic(),
-                new PartyroomDeactivationMessage(event.getPartyroomId(), MessageTopic.PLAYBACK_DEACTIVATED,
-                        UUID.randomUUID().toString(), System.currentTimeMillis()));
+        PartyroomDeactivationMessage message = new PartyroomDeactivationMessage(event.getPartyroomId(),
+                MessageTopic.PLAYBACK_DEACTIVATED, UUID.randomUUID().toString(), System.currentTimeMillis());
+        log.info("[relay] PLAYBACK_DEACTIVATED - partyroomId={}, messageId={}",
+                event.getPartyroomId().getId(), message.id());
+        messagePublisher.publish(MessageTopic.PLAYBACK_DEACTIVATED.topic(), message);
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)

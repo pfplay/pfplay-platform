@@ -7,10 +7,12 @@ import com.pfplaybackend.api.party.domain.port.PartyroomAggregatePort;
 import com.pfplaybackend.api.party.domain.value.CrewId;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class PartyroomAggregateService {
@@ -64,6 +66,8 @@ public class PartyroomAggregateService {
         playbackState.deactivate();
         aggregatePort.savePlaybackState(playbackState);
         List<DjData> queuedDjs = aggregatePort.findDjsOrdered(partyroomId);
+        log.warn("[deactivatePlayback] partyroomId={} - removing {} DJ(s) from queue",
+                partyroomId.getId(), queuedDjs.size());
         aggregatePort.removeDjs(queuedDjs);
         return playbackState.pollDomainEvents();
     }

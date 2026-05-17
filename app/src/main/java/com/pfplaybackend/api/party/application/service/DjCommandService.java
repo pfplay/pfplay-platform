@@ -1,6 +1,7 @@
 package com.pfplaybackend.api.party.application.service;
 
 import com.pfplaybackend.api.common.ThreadLocalContext;
+import com.pfplaybackend.api.common.adapter.in.web.RequestIdInterceptor;
 import com.pfplaybackend.api.common.aspect.context.AuthContext;
 import com.pfplaybackend.api.common.domain.value.PlaylistId;
 import com.pfplaybackend.api.common.exception.ExceptionCreator;
@@ -19,12 +20,14 @@ import com.pfplaybackend.api.party.domain.value.CrewId;
 import com.pfplaybackend.api.party.domain.value.DjId;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class DjCommandService {
@@ -39,6 +42,8 @@ public class DjCommandService {
     @Transactional
     public Long enqueueDj(PartyroomId partyroomId, PlaylistId playlistId)  {
         AuthContext authContext = ThreadLocalContext.getAuthContext();
+        log.info("[enqueueDj] ENTER - requestId={}, partyroomId={}, userId={}, playlistId={}",
+                RequestIdInterceptor.current(), partyroomId.getId(), authContext.getUserId().getUid(), playlistId.getId());
         PartyroomData partyroom = partyroomQueryService.getPartyroomById(partyroomId);
         PartyroomPlaybackData playbackState = aggregatePort.findPlaybackState(partyroomId);
         DjQueueData djQueue = aggregatePort.findDjQueueState(partyroomId);
@@ -48,10 +53,19 @@ public class DjCommandService {
         // Find crew
         CrewData crew = partyroomQueryService.getCrewOrThrow(partyroomId, authContext.getUserId());
         CrewId crewId = new CrewId(crew.getId());
+        log.info("[enqueueDj] CREW_FOUND - requestId={}, partyroomId={}, userId={}, crewId={}, isActive={}, grade={}",
+                RequestIdInterceptor.current(), partyroomId.getId(), authContext.getUserId().getUid(),
+                crew.getId(), crew.isActive(), crew.getGradeType());
 
         boolean isAlreadyRegistered = aggregatePort.isDjRegistered(partyroomId, crewId);
+        if (isAlreadyRegistered) {
+            log.info("[enqueueDj] ALREADY_REGISTERED - requestId={}, partyroomId={}, crewId={}",
+                    RequestIdInterceptor.current(), partyroomId.getId(), crew.getId());
+        }
         boolean isEmptyPlaylist = playlistQueryPort.isEmptyPlaylist(playlistId.getId());
         new DjEnqueueSpecification().validate(djQueue, isAlreadyRegistered, isEmptyPlaylist);
+        log.info("[enqueueDj] VALIDATION_PASSED - requestId={}, partyroomId={}, crewId={}",
+                RequestIdInterceptor.current(), partyroomId.getId(), crew.getId());
 
         // Calculate next order number
         List<DjData> queuedDjs = aggregatePort.findDjsOrdered(partyroomId);
@@ -60,6 +74,8 @@ public class DjCommandService {
         // Create and save DJ
         DjData dj = DjData.create(partyroom.getPartyroomId(), playlistId, crewId, nextOrder);
         DjData saved = aggregatePort.saveDj(dj);
+        log.info("[enqueueDj] SAVED - requestId={}, partyroomId={}, crewId={}, djId={}, orderNumber={}",
+                RequestIdInterceptor.current(), partyroomId.getId(), crew.getId(), saved.getId(), nextOrder);
 
         if (isPostActivationProcessingRequired) {
             playbackState.activate(null, null);
