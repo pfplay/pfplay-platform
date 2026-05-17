@@ -65,6 +65,16 @@ public class RedisSessionCacheAdapter implements SessionCachePort {
                     return;
                 }
                 PartyroomSessionDto sessionData = partyroomSessionDto.get();
+                // #30 단일룸 가드 (백엔드 방어): 구독한 룸 id가 사용자의 권위 활성 룸
+                // (REST tryEnter로 입장한 룸, getActivePartyroomByUserId)과 다르면
+                // cross-room 거부 — 서버 측 연관(세션 캐시)을 기록하지 않는다.
+                // STOMP는 negative-ACK가 없으므로 reject = silent non-registration.
+                long authoritativeRoomId = sessionData.partyroomId().getId();
+                if (!String.valueOf(authoritativeRoomId).equals(separator)) {
+                    logger.warn("[guard] cross-room SUBSCRIBE rejected — userId={}, subscribedRoom={}, authoritativeRoom={}",
+                            userId, separator, authoritativeRoomId);
+                    return;
+                }
                 // TTL 백스톱: clean path는 UNSUBSCRIBE에서 delete하지만, 비정상 종료
                 // orphan(1006, UNSUBSCRIBE 없음)은 이 TTL로만 self-heal된다.
                 redisTemplate.opsForValue().set(sessionId, sessionData, ttlSeconds, TimeUnit.SECONDS);
