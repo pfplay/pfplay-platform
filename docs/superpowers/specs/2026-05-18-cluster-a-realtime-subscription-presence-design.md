@@ -50,8 +50,10 @@
 
 **C2 리스너 재배선**
 - `ConnectionEventListener`(현 passive): `SessionConnectEvent`에서 Principal=uid+sessionId 레지스트리 등록. 유저 pending이면 `clearPending`(**CONNECT 시점 — SE4 fix, SUBSCRIBE 비의존**).
+  - **왜 CONNECT에 Principal이 있나(load-bearing 근거)**: `WebSocketConfig`의 `determineUser`가 handshake 단계에서 `attributes.get("uid")`로 Principal을 바인딩한다. 따라서 `SessionConnectEvent`(CONNECT 프레임)에 이미 `Principal=uid` 존재 — SUBSCRIBE를 기다릴 필요 없음. (현 `ConnectionEventListener`는 sessionId 로깅만 하고 `getUser()` 미사용이라 "CONNECT엔 인증 없음"으로 오해 금지.) 이 사실이 PR-1의 가장 load-bearing한 전제.
 - `DisconnectionEventListener`: 레지스트리에서 sessionId 제거. 유저의 **마지막** 세션이면 → 유저 active 룸을 `aggregatePort.findActiveRoomByUser`(DB 권위)로 resolve → `markPending`. resolve-before-cache-delete 순서 유지.
 - `SubscriptionEventListener`: presence 트리거 제거. **서버 단일룸 가드** 추가: SUBSCRIBE `/sub/partyrooms/{id}`의 id가 유저 권위 active 룸과 불일치 → 등록 거부(no-op, 로그). presence용 세션캐시 기록 제거.
+  - **거부 시 클라 관측 계약(명시)**: STOMP 브로커엔 SUBSCRIBE negative-ACK가 없으므로 거부=조용히 미등록(클라는 구독했다 믿지만 메시지 0). 클라는 **SUBSCRIBE 에러에 의존하지 않고** REST `tryEnter` 권위 + replace 정책으로 자신의 룸을 판단(E2 stale 탭은 tryEnter 시 prior auto-exit로 자연 정리, 메시지 미수신은 부차 신호). PR-2(서버 가드)와 PR-3(클라)이 이 계약으로 정렬 — 클라가 SUBSCRIBE 실패를 에러 처리하려 들지 말 것.
 - `UnsubscriptionEventListener`: presence 무관(연결 생존 기준). 세션캐시 정리만 잔존(타 용도 있으면 유지).
 
 **C3 REST 재입장 clearPending (SE4 이중방어)**
@@ -104,6 +106,7 @@
 - **E6 서버 가드 오거부 방지**: DB 권위 active 룸 일치시 통과, 크로스룸 불일치만 거부.
 - **E7 sign-out**: 명시 exit 경로 유지(impl PR 배선 검증).
 - **E8 호스트 끊김**: SE7 — 특수처리 없음(룸 지속, 호스트 슬롯 grace만료시 일반 crew처럼 비움). 기존 설계.
+- **E9 하드 unload 텔레메트리 갭(인지)**: C9 착수 전까지 하드 unload는 `trackPartyroomExited` 미발행(현재도 best-effort라 회귀 아님). C9 follow-up 담당자가 인지하도록 명시 — exit 이벤트·세션길이 분석 일시 누락.
 
 ## 7. 테스트 전략
 
@@ -134,6 +137,8 @@
 4. **PR-4 web L2**: exit() 분리 `useTeardownPartyroom`(C8) + unload/unmount backend-exit 제거 + `exitedOnBackend` 정리. 회귀: #225a, #30 증폭. (web#298)
 
 순서: PR-1→PR-2(platform 순차, 같은 presence 코드) ‖ PR-3→PR-4(web 순차). platform·web 트랙 병렬 가능. 4개 모두 §2 invariant로 수렴, 각 PR 회귀잠금 동반. 머지=develop(한글 PR), main 진입은 별도 release 게이트.
+
+**배포 인터리빙 안전성(병렬 트랙 명시)**: PR-2(서버 가드 live) 가 PR-3(클라 단일원천) 보다 먼저 떠 클라 누수가 아직 있는 상태여도 — reconnect 후 leaked stale-room SUBSCRIBE는 서버 가드가 조용히 거부(= 바라던 최종상태, benign). 역순(PR-3 먼저)도 안전(클라가 이미 단일룸). 따라서 platform/web 트랙 배포 순서 무관.
 
 ## 9. 트레이드오프 (수용 확정)
 
