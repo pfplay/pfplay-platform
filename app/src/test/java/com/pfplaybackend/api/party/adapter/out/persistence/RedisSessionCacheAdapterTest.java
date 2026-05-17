@@ -98,6 +98,64 @@ class RedisSessionCacheAdapterTest {
     }
 
     @Test
+    @DisplayName("saveSessionCache — 구독한 룸이 권위 활성 룸과 다르면(cross-room) 세션 캐시를 저장하지 않는다 (#30 가드)")
+    void saveSessionCacheCrossRoomMismatchRejected() {
+        // given — 사용자의 권위 활성 룸은 1번이지만 99번 룸을 구독
+        String sessionId = "session-123";
+        String userIdStr = "1";
+        String destination = "/sub/partyrooms/99";
+        UserId userId = UserId.fromString(userIdStr);
+        ActivePartyroomDto activeDto = new ActivePartyroomDto(
+                1L, false, 10L, true, new PlaybackId(1L), new CrewId(5L)
+        );
+        when(partyroomQueryPort.getActivePartyroomByUserId(userId)).thenReturn(Optional.of(activeDto));
+
+        // when
+        redisSessionCacheAdapter.saveSessionCache(sessionId, userIdStr, destination);
+
+        // then — cross-room 거부: 서버 측 연관(세션 캐시) 미기록
+        verify(valueOperations, never()).set(any(), any(), anyLong(), any(TimeUnit.class));
+        verify(valueOperations, never()).set(any(), any());
+    }
+
+    @Test
+    @DisplayName("saveSessionCache — 권위 활성 룸과 구독 룸이 일치하면 세션 캐시를 저장한다 (clean-path)")
+    void saveSessionCacheSameRoomWrites() {
+        // given — 권위 활성 룸 1번, 구독도 1번
+        String sessionId = "session-123";
+        String userIdStr = "1";
+        String destination = "/sub/partyrooms/1";
+        UserId userId = UserId.fromString(userIdStr);
+        ActivePartyroomDto activeDto = new ActivePartyroomDto(
+                1L, false, 10L, true, new PlaybackId(1L), new CrewId(5L)
+        );
+        when(partyroomQueryPort.getActivePartyroomByUserId(userId)).thenReturn(Optional.of(activeDto));
+
+        // when
+        redisSessionCacheAdapter.saveSessionCache(sessionId, userIdStr, destination);
+
+        // then
+        verify(valueOperations).set(eq(sessionId), any(), eq(TTL_SECONDS), eq(TimeUnit.SECONDS));
+    }
+
+    @Test
+    @DisplayName("saveSessionCache — id 세그먼트 없는 malformed destination이면 fail-closed: 저장 안 하고 예외도 던지지 않는다")
+    void saveSessionCacheMalformedDestinationFailsClosed() {
+        // given — id 세그먼트가 없는 비정상 destination (split 결과 length 3, parts[3] AIOOBE 위험)
+        String sessionId = "session-123";
+        String userIdStr = "1";
+        String destination = "/sub/partyrooms";
+
+        // when / then — 예외 없이 fail-closed
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+                () -> redisSessionCacheAdapter.saveSessionCache(sessionId, userIdStr, destination));
+
+        // then — 어떤 set(...) 오버로드도 호출되지 않는다
+        verify(valueOperations, never()).set(any(), any(), anyLong(), any(TimeUnit.class));
+        verify(valueOperations, never()).set(any(), any());
+    }
+
+    @Test
     @DisplayName("deleteSessionCache — 세션이 삭제된다")
     void deleteSessionCacheDeletesFromRedis() {
         // given

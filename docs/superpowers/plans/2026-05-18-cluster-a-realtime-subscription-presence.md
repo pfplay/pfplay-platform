@@ -17,7 +17,8 @@
 ### PR-1 platform L1 (서버 권위)
 - Create `app/.../party/application/service/UserSessionRegistry.java` — Redis 백킹 sessionId↔userId / userId→Set<sessionId>. 책임: STOMP 세션 생존 추적, "마지막 세션" 판정.
 - Presence 룸 resolve: 기존 `PartyroomQueryPort.getActivePartyroomByUserId(UserId): Optional<ActivePartyroomDto>` 재사용(adapter `PartyroomAggregateAdapter:182`). **신규 포트 메서드 불요** — presence 경로에서 이 query port 호출 후 `dto.id()` → `new PartyroomId(...)` 매핑. (subscribe-타이밍 무관하게 DB crew 권위.)
-- Modify `realtime/.../event/ConnectionEventListener.java` — passive→레지스트리 등록 + reconnect clearPending(CONNECT 시점).
+- **신규(모듈 경계 seam 보정)** Create `realtime/.../port/SessionRegistryPort.java` — realtime 포트 `void register(String sessionId, String userId)` (realtime는 app/common 역참조 불가, raw uid String만 가짐). Create app-side adapter `app/.../party/adapter/out/realtime/SessionRegistryPortAdapter.java` — `UserSessionRegistry.register(sessionId, UserId.fromString(userId))` 위임. (unregister는 신규 포트 불요 — 기존 `PresencePortAdapter.onSessionDisconnected`가 app측에서 `UserSessionRegistry.unregister` 직접 수행, T1.3 완료.) `PresencePort`/`PresencePortAdapter`/`ClusterAPresenceIntegrationTest` 계약 무변경.
+- Modify `realtime/.../event/ConnectionEventListener.java` — passive→`sessionRegistryPort.register(sid, principal.getName())` + `presencePort.onSessionConnected(sid)` (CONNECT 시점, register 선행 후 clearPending resolve 성립).
 - Modify `realtime/.../event/DisconnectionEventListener.java` — 레지스트리 제거 + 마지막세션→markPending(DB resolve).
 - Modify `realtime/.../event/SubscriptionEventListener.java` — presence 트리거(onSessionConnected/세션캐시) 제거.
 - Modify `app/.../party/adapter/out/realtime/PresencePortAdapter.java` — resolve를 세션캐시→레지스트리/DB 권위로 전환.
@@ -89,15 +90,17 @@ class UserSessionRegistryTest {
 - [ ] **Step 4: 통과 확인** — PASS + XML.
 - [ ] **Step 5: 커밋** — `refactor(presence): PresencePortAdapter resolve를 레지스트리·DB 권위로 (#209)`
 
-### Task 1.4: ConnectionEventListener — 등록 + reconnect clearPending(CONNECT 시점)
+### Task 1.4: SessionRegistryPort seam + ConnectionEventListener 등록 + CONNECT clearPending
 
-**Files:** Modify `realtime/.../event/ConnectionEventListener.java`; Test `ConnectionEventListenerTest`(신규).
+**모듈 경계 사실(검증됨):** `app→realtime` 단방향 의존. `realtime`는 `app`/`common` 미의존(역참조 시 사이클). 따라서 realtime 리스너는 `UserSessionRegistry`(app) 직접 호출·`UserId`(common) 생성 불가 → raw uid `String`만 보유. register는 등록이 `onSessionConnected`(uid resolve) *선행*돼야 하므로 app측에서 일어나야 함 → 최소 신규 포트 필요(Option 3, 기존 PresencePort/Adapter 무변경).
 
-- [ ] **Step 1: 실패 테스트** — `SessionConnectEvent`(Principal=uid, sessionId) → `registry.register(sid,uid)` 호출 + `presencePort.onSessionConnected(sid)` 호출. Principal null이면 무시(로그).
-- [ ] **Step 2: 실패 확인** FAIL.
-- [ ] **Step 3: 구현** — `ConnectionEventListener implements ApplicationListener<SessionConnectEvent>`: `StompHeaderAccessor`에서 `getUser()`(Principal=uid, WebSocketConfig.determineUser가 handshake서 바인딩)·sessionId 추출 → register + onSessionConnected.
-- [ ] **Step 4: 통과 확인** PASS + XML.
-- [ ] **Step 5: 커밋** — `feat(presence): ConnectionEventListener 레지스트리 등록 + CONNECT 시점 clearPending (#209 SE4)`
+**Files:** Create `realtime/src/main/java/com/pfplaybackend/realtime/port/SessionRegistryPort.java`; Create `app/src/main/java/com/pfplaybackend/api/party/adapter/out/realtime/SessionRegistryPortAdapter.java`; Modify `realtime/src/main/java/com/pfplaybackend/realtime/event/ConnectionEventListener.java`; Test `app/src/test/.../SessionRegistryPortAdapterTest.java` + `realtime/src/test/.../event/ConnectionEventListenerTest.java`(신규).
+
+- [ ] **Step 1: 실패 테스트** — (a) `ConnectionEventListenerTest`(realtime, Mockito): `SessionConnectEvent`(Principal name=uid string, sessionId) → `sessionRegistryPort.register(sessionId, uid)` 호출 후 `presencePort.onSessionConnected(sessionId)` 호출(순서). Principal null → 둘 다 미호출 + warn 로그. (b) `SessionRegistryPortAdapterTest`(app, Mockito): `register(sid, "123")` → `userSessionRegistry.register(sid, UserId.fromString("123"))` 위임.
+- [ ] **Step 2: 실패 확인** — `JAVA_HOME="C:/Users/Eisen/.jdks/ms-21.0.7" ./gradlew :realtime:test --tests "*ConnectionEventListenerTest" :app:test --tests "*SessionRegistryPortAdapterTest" --console=plain` FAIL.
+- [ ] **Step 3: 구현** — `SessionRegistryPort` 인터페이스(`void register(String sessionId, String userId)`). `SessionRegistryPortAdapter`(@Component, app): `userSessionRegistry.register(sessionId, UserId.fromString(userId))`. `ConnectionEventListener implements ApplicationListener<SessionConnectEvent>`: `StompHeaderAccessor.wrap(event.getMessage())`로 sessionId·`getUser()` 추출, Principal null이면 `logger.warn`+return; 아니면 `sessionRegistryPort.register(sessionId, principal.getName())` 후 `presencePort.onSessionConnected(sessionId)`. 기존 connection 로깅 보존. `DisconnectionEventListener` 패턴(Lombok/logger/wrap) 따름.
+- [ ] **Step 4: 통과 확인** — 두 모듈 테스트 PASS, XML(`realtime`·`app`) tests>0 failures=0 errors=0.
+- [ ] **Step 5: 커밋** — `git add` 4파일; `git commit -m "feat(presence): SessionRegistryPort seam + ConnectionEventListener 등록·CONNECT clearPending (#209 SE4)"`
 
 ### Task 1.5: DisconnectionEventListener — 레지스트리 제거 + 마지막세션 markPending
 
