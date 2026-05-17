@@ -31,6 +31,8 @@ public class SubscriptionEventListener implements ApplicationListener<SessionSub
         String userId = principal.getName();
         // 세션캐시 write는 채팅(비-presence) 라이프사이클이다: PartyroomChatCommandService가
         // getSessionCache로 read하는 sessionId→(partyroom,user,crew) source를 여기서 채운다.
+        // 이 write는 24h TTL 백스톱을 함께 건다 — clean path는 UNSUBSCRIBE에서 delete하지만
+        // 비정상 종료 orphan은 그 TTL로 self-heal된다 (RedisSessionCacheAdapter).
         // presence 트리거(onSessionConnected)는 디커플링됨 — presence는 WS CONNECT/DISCONNECT가
         // 권위이며 SUBSCRIBE 타이밍에 의존하지 않는다 (#209 #31, Task 1.4/1.6).
         sessionCachePort.saveSessionCache(sessionId, userId, destination);
