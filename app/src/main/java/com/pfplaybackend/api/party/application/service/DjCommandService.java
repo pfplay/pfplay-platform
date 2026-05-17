@@ -59,7 +59,7 @@ public class DjCommandService {
 
         boolean isAlreadyRegistered = aggregatePort.isDjRegistered(partyroomId, crewId);
         if (isAlreadyRegistered) {
-            log.info("[enqueueDj] ALREADY_REGISTERED - requestId={}, partyroomId={}, crewId={}",
+            log.warn("[enqueueDj] ALREADY_REGISTERED - requestId={}, partyroomId={}, crewId={}",
                     RequestIdInterceptor.current(), partyroomId.getId(), crew.getId());
         }
         boolean isEmptyPlaylist = playlistQueryPort.isEmptyPlaylist(playlistId.getId());
