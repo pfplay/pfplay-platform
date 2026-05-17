@@ -1,9 +1,14 @@
 package com.pfplaybackend.api.party.application.service;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.pfplaybackend.api.common.ThreadLocalContext;
 import com.pfplaybackend.api.common.aspect.context.AuthContext;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.enums.AuthorityTier;
+import com.pfplaybackend.api.common.exception.http.ConflictException;
 import com.pfplaybackend.api.common.exception.http.ForbiddenException;
 import com.pfplaybackend.api.party.adapter.out.persistence.PlaybackReactionHistoryRepository;
 import com.pfplaybackend.api.party.application.dto.partyroom.ActivePartyroomDto;
@@ -26,7 +31,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -41,7 +49,6 @@ class PlaybackReactionCommandServiceTest {
     @Mock PlaybackReactionDomainService playbackReactionDomainService;
     @Mock PartyroomQueryService partyroomQueryService;
     @Mock PlaybackReactionPostProcessCommandService playbackReactionPostProcessCommandService;
-    @Mock PlaybackReactionQueryService playbackReactionQueryService;
 
     @InjectMocks PlaybackReactionCommandService playbackReactionCommandService;
 
@@ -49,16 +56,26 @@ class PlaybackReactionCommandServiceTest {
     private final PartyroomId partyroomId = new PartyroomId(10L);
     private final PlaybackId playbackId = new PlaybackId(100L);
 
+    private Logger logger;
+    private ListAppender<ILoggingEvent> appender;
+
     @BeforeEach
     void setUp() {
         AuthContext authContext = mock(AuthContext.class);
         lenient().when(authContext.getUserId()).thenReturn(userId);
         lenient().when(authContext.getAuthorityTier()).thenReturn(AuthorityTier.FM);
         ThreadLocalContext.setContext(authContext);
+
+        logger = (Logger) LoggerFactory.getLogger(PlaybackReactionCommandService.class);
+        appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        logger.setLevel(Level.WARN);
     }
 
     @AfterEach
     void tearDown() {
+        logger.detachAppender(appender);
         ThreadLocalContext.clearContext();
     }
 
@@ -71,8 +88,9 @@ class PlaybackReactionCommandServiceTest {
         when(partyroomQueryService.getMyActivePartyroom()).thenReturn(Optional.of(activePartyroom));
 
         PlaybackReactionHistoryData historyData = new PlaybackReactionHistoryData(userId, playbackId);
-        when(playbackReactionQueryService.findPrevHistoryData(playbackId, userId))
+        when(playbackReactionHistoryRepository.findByPlaybackIdAndUserIdForUpdate(playbackId, userId))
                 .thenReturn(Optional.empty());
+        when(playbackReactionHistoryRepository.saveAndFlush(any())).thenReturn(historyData);
 
         ReactionState baseState = ReactionState.createBaseState();
         ReactionState targetState = new ReactionState(true, false, false);
@@ -111,8 +129,9 @@ class PlaybackReactionCommandServiceTest {
         when(partyroomQueryService.getMyActivePartyroom()).thenReturn(Optional.of(activePartyroom));
 
         PlaybackReactionHistoryData historyData = new PlaybackReactionHistoryData(userId, playbackId);
-        when(playbackReactionQueryService.findPrevHistoryData(playbackId, userId))
+        when(playbackReactionHistoryRepository.findByPlaybackIdAndUserIdForUpdate(playbackId, userId))
                 .thenReturn(Optional.empty());
+        when(playbackReactionHistoryRepository.saveAndFlush(any())).thenReturn(historyData);
 
         ReactionState baseState = ReactionState.createBaseState();
         ReactionState targetState = new ReactionState(true, false, true);
@@ -154,7 +173,7 @@ class PlaybackReactionCommandServiceTest {
         PlaybackReactionHistoryData historyData = mock(PlaybackReactionHistoryData.class);
         when(historyData.getId()).thenReturn(99L);
         when(historyData.applyReactionState(any())).thenReturn(historyData);
-        when(playbackReactionQueryService.findPrevHistoryData(playbackId, userId))
+        when(playbackReactionHistoryRepository.findByPlaybackIdAndUserIdForUpdate(playbackId, userId))
                 .thenReturn(Optional.of(historyData));
 
         // already-grabbed → GRAB toggle leaves grab false (per ReactionStateResolver: (true,false,true) -GRAB-> (true,false,true);
@@ -209,7 +228,7 @@ class PlaybackReactionCommandServiceTest {
         PlaybackReactionHistoryData historyData = mock(PlaybackReactionHistoryData.class);
         when(historyData.getId()).thenReturn(99L);
         when(historyData.applyReactionState(any())).thenReturn(historyData);
-        when(playbackReactionQueryService.findPrevHistoryData(playbackId, userId))
+        when(playbackReactionHistoryRepository.findByPlaybackIdAndUserIdForUpdate(playbackId, userId))
                 .thenReturn(Optional.of(historyData));
 
         ReactionState existingState = new ReactionState(true, false, false);
@@ -234,5 +253,44 @@ class PlaybackReactionCommandServiceTest {
         // then
         assertThat(result.isLiked()).isFalse();
         verify(playbackReactionDomainService).getReactionStateByHistory(historyData);
+    }
+
+    @Test
+    @DisplayName("동시 첫-INSERT 패자(saveAndFlush unique 위반) — 409 ConflictException 으로 매핑되고 WARN 이 emit 된다")
+    void concurrentFirstInsertLoserMapsToConflictAndWarns() {
+        // given — FOR-UPDATE 가 행을 못 찾는 첫 반응 경로에서 saveAndFlush 가 unique 제약 위반
+        ActivePartyroomDto activePartyroom = new ActivePartyroomDto(
+                partyroomId.getId(), false, 5L, true, playbackId, new CrewId(5L));
+        when(partyroomQueryService.getMyActivePartyroom()).thenReturn(Optional.of(activePartyroom));
+
+        when(playbackReactionHistoryRepository.findByPlaybackIdAndUserIdForUpdate(playbackId, userId))
+                .thenReturn(Optional.empty());
+        when(playbackReactionHistoryRepository.saveAndFlush(any()))
+                .thenThrow(new DataIntegrityViolationException(
+                        "could not execute statement; constraint [uk_reaction_user_playback]"));
+
+        // when & then — 원시 500/SQL 누출이 아니라 도메인 409 ConflictException 으로 변환
+        assertThatThrownBy(() ->
+                playbackReactionCommandService.reactToCurrentPlayback(partyroomId, ReactionType.LIKE))
+                .isInstanceOf(ConflictException.class);
+
+        // delta 적용(save)·후처리는 일어나지 않는다 — 패자 반응은 드롭
+        verify(playbackReactionHistoryRepository, never()).save(any());
+        verify(playbackReactionPostProcessCommandService, never())
+                .postProcess(any(), any(), any(), any(), any());
+
+        // WARN 한 줄이 playbackId/userId + 재시도 안내와 함께 관측 가능하게 emit
+        List<ILoggingEvent> events = appender.list;
+        ILoggingEvent warn = events.stream()
+                .filter(e -> e.getLevel() == Level.WARN)
+                .filter(e -> e.getFormattedMessage().contains("CONCURRENT_FIRST_INSERT_LOST"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                        "CONCURRENT_FIRST_INSERT_LOST WARN not emitted. Captured: " +
+                                events.stream().map(ILoggingEvent::getFormattedMessage).toList()));
+        assertThat(warn.getFormattedMessage())
+                .contains("playbackId=" + playbackId)
+                .contains("userId=" + userId)
+                .contains("client should retry");
     }
 }
