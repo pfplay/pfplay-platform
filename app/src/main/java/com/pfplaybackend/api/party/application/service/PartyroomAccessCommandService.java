@@ -100,6 +100,16 @@ public class PartyroomAccessCommandService {
                         ExceptionCreator.create(CrewException.INVALID_ACTIVE_ROOM));
                 crew.updateCountryCode(countryCode);
                 CrewData saved = aggregatePort.saveCrew(crew);
+                // SE4 defense-in-depth — REST same-room re-entry cancels grace: a page
+                // refresh sets pending_exit_at on STOMP DISCONNECT, and "REST enter = user
+                // is here" so we clear it immediately rather than relying solely on the
+                // STOMP CONNECT-time clearPending (closes the SE4 race even if the reconnect
+                // is delayed). DB-only clear via the already-injected aggregatePort keeps
+                // this cycle-free (injecting PartyroomPresenceService would form a
+                // constructor cycle via forceOffline→exitInternal). Any stale Redis
+                // presence-timer key is safely no-op'd by forceOffline's
+                // !isPendingExit() guard, which also deletes the leftover key.
+                aggregatePort.clearCrewPending(partyroomId, userId);
                 enforceHostInvariant(partyroom, userId, saved);
                 return saved;
             }
