@@ -95,6 +95,59 @@ class RequestIdInterceptorTest {
     }
 
     @Test
+    @DisplayName("클라 헤더의 제어문자 제거(log-forging/헤더 인젝션 방어)")
+    void sanitizes_control_chars_in_client_header() {
+        when(request.getHeader(RequestIdInterceptor.REQUEST_ID_HEADER)).thenReturn("a\r\nINJECTED\tx");
+
+        boolean result = interceptor.preHandle(request, response, new Object());
+
+        assertThat(result).isTrue();
+
+        ArgumentCaptor<String> attrCaptor = ArgumentCaptor.forClass(String.class);
+        verify(request).setAttribute(eq(RequestIdInterceptor.REQUEST_ID_ATTR), attrCaptor.capture());
+        String sanitized = attrCaptor.getValue();
+
+        assertThat(sanitized)
+                .isEqualTo("aINJECTEDx")
+                .doesNotContain("\r", "\n", "\t")
+                .doesNotMatch(".*\\p{Cntrl}.*");
+        verify(response).setHeader(RequestIdInterceptor.REQUEST_ID_HEADER, "aINJECTEDx");
+        assertThat(RequestIdInterceptor.current())
+                .isEqualTo("aINJECTEDx")
+                .doesNotMatch(".*\\p{Cntrl}.*");
+    }
+
+    @Test
+    @DisplayName("과도하게 긴 클라 헤더는 64자로 절단(log 증폭 방어)")
+    void caps_overlong_client_header() {
+        String overlong = "x".repeat(200);
+        when(request.getHeader(RequestIdInterceptor.REQUEST_ID_HEADER)).thenReturn(overlong);
+
+        interceptor.preHandle(request, response, new Object());
+
+        ArgumentCaptor<String> attrCaptor = ArgumentCaptor.forClass(String.class);
+        verify(request).setAttribute(eq(RequestIdInterceptor.REQUEST_ID_ATTR), attrCaptor.capture());
+
+        assertThat(attrCaptor.getValue()).hasSize(64);
+        assertThat(RequestIdInterceptor.current()).hasSize(64);
+    }
+
+    @Test
+    @DisplayName("sanitize 후 공백만 남으면 8자 id 생성으로 폴백")
+    void blank_after_sanitize_regenerates() {
+        when(request.getHeader(RequestIdInterceptor.REQUEST_ID_HEADER)).thenReturn("\n\t\r");
+
+        interceptor.preHandle(request, response, new Object());
+
+        ArgumentCaptor<String> attrCaptor = ArgumentCaptor.forClass(String.class);
+        verify(request).setAttribute(eq(RequestIdInterceptor.REQUEST_ID_ATTR), attrCaptor.capture());
+        String generated = attrCaptor.getValue();
+
+        assertThat(generated).isNotBlank().hasSize(8);
+        assertThat(RequestIdInterceptor.current()).isEqualTo(generated);
+    }
+
+    @Test
     @DisplayName("preHandle 호출 없는 스레드에서 current() 는 null")
     void current_is_null_without_preHandle_on_other_thread() throws InterruptedException {
         AtomicReference<String> seen = new AtomicReference<>("sentinel");
