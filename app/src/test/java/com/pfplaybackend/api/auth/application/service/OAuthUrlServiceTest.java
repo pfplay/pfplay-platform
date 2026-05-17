@@ -153,6 +153,28 @@ class OAuthUrlServiceTest {
     }
 
     @Test
+    @DisplayName("generateAuthUrl — Twitter scope는 공백을 %20으로 인코딩한다 (리터럴 + 금지: X가 +를 리터럴 처리해 무효 스코프가 되어 /2/users/me 403)")
+    void generateAuthUrlTwitterScopeIsSpaceEncodedNotPlus() {
+        // given
+        OAuth2Properties.Provider twitterConfig = new OAuth2Properties.Provider();
+        twitterConfig.setClientId("twitter-client-id");
+        twitterConfig.setRedirectUri("http://localhost/twitter/callback");
+        twitterConfig.setAuthorizationUri("https://twitter.com/i/oauth2/authorize");
+        twitterConfig.setScopes(java.util.List.of("users.read", "tweet.read"));
+
+        when(oAuth2Properties.getProviders()).thenReturn(Map.of(TWITTER, twitterConfig));
+        when(stateStorePort.generateAndStoreState(TWITTER)).thenReturn("twitter-state");
+
+        // when
+        OAuthUrlResult result = oAuthUrlService.generateAuthUrl(OAuthProvider.TWITTER, TEST_VERIFIER);
+
+        // then
+        assertThat(result.authUrl())
+                .contains("scope=users.read%20tweet.read")
+                .doesNotContain("scope=users.read+tweet.read");
+    }
+
+    @Test
     @DisplayName("generateAuthUrl — 설정되지 않은 provider이면 예외가 발생한다")
     void generateAuthUrlUnconfiguredProviderThrows() {
         // given
