@@ -55,7 +55,15 @@ public class RedisSessionCacheAdapter implements SessionCachePort {
     public void saveSessionCache(String sessionId, String userId, String destination) {
         UserId userIdObj = UserId.fromString(userId);
         String[] parts = destination.split("/");
-        if(parts[1].equals("sub")) {
+        // fail-closed: id 세그먼트 없는 malformed destination(예: "/sub/partyrooms",
+        // split 결과 length 3)이면 parts[3]가 AIOOBE. #30 가드가 parts[3](룸 id)에
+        // 의미상 의존하므로, 룸 id 판정 불가 시 캐시를 쓰지 않고 거부한다.
+        if (parts.length <= 3) {
+            logger.warn("[guard] malformed destination — no id segment, fail-closed (no cache write); userId={}, sessionId={}, destination={}",
+                    userId, sessionId, destination);
+            return;
+        }
+        if (parts[1].equals("sub")) {
             String topic = parts[2];
             String separator = parts[3];
             if (topic.equals("partyrooms")) {
@@ -69,6 +77,9 @@ public class RedisSessionCacheAdapter implements SessionCachePort {
                 // (REST tryEnter로 입장한 룸, getActivePartyroomByUserId)과 다르면
                 // cross-room 거부 — 서버 측 연관(세션 캐시)을 기록하지 않는다.
                 // STOMP는 negative-ACK가 없으므로 reject = silent non-registration.
+                // 이 가드가 채팅 세션캐시 adapter에 있는 이유: 모듈 경계상 realtime이
+                // 권위 판정 불가, SUBSCRIBE의 유일한 app-side side-effect가 이 write라
+                // #30(presence 방어)의 유일한 서버 가로채기 지점이기 때문.
                 long authoritativeRoomId = sessionData.partyroomId().getId();
                 if (!String.valueOf(authoritativeRoomId).equals(separator)) {
                     logger.warn("[guard] cross-room SUBSCRIBE rejected — userId={}, subscribedRoom={}, authoritativeRoom={}",

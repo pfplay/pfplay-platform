@@ -139,6 +139,23 @@ class RedisSessionCacheAdapterTest {
     }
 
     @Test
+    @DisplayName("saveSessionCache — id 세그먼트 없는 malformed destination이면 fail-closed: 저장 안 하고 예외도 던지지 않는다")
+    void saveSessionCacheMalformedDestinationFailsClosed() {
+        // given — id 세그먼트가 없는 비정상 destination (split 결과 length 3, parts[3] AIOOBE 위험)
+        String sessionId = "session-123";
+        String userIdStr = "1";
+        String destination = "/sub/partyrooms";
+
+        // when / then — 예외 없이 fail-closed
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+                () -> redisSessionCacheAdapter.saveSessionCache(sessionId, userIdStr, destination));
+
+        // then — 어떤 set(...) 오버로드도 호출되지 않는다
+        verify(valueOperations, never()).set(any(), any(), anyLong(), any(TimeUnit.class));
+        verify(valueOperations, never()).set(any(), any());
+    }
+
+    @Test
     @DisplayName("deleteSessionCache — 세션이 삭제된다")
     void deleteSessionCacheDeletesFromRedis() {
         // given
