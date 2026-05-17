@@ -4,9 +4,12 @@ import com.pfplaybackend.api.administration.adapter.out.persistence.SystemAnnoun
 import com.pfplaybackend.api.administration.domain.entity.data.SystemAnnouncementData;
 import com.pfplaybackend.api.administration.domain.event.AnnouncementCancelledEvent;
 import com.pfplaybackend.api.administration.domain.event.AnnouncementPublishedEvent;
+import com.pfplaybackend.api.administration.domain.event.MaintenanceEndedEvent;
 import com.pfplaybackend.api.administration.domain.exception.AnnouncementException;
+import com.pfplaybackend.api.administration.domain.port.EdgeConfigPort;
 import com.pfplaybackend.api.administration.domain.value.AnnouncementSeverity;
 import com.pfplaybackend.api.administration.domain.value.AnnouncementType;
+import com.pfplaybackend.api.administration.domain.value.MaintenancePhase;
 import com.pfplaybackend.api.common.exception.ExceptionCreator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -38,6 +41,7 @@ public class SystemAnnouncementCommandService {
     private final SystemAnnouncementRepository repository;
     private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
+    private final EdgeConfigPort edgeConfigPort;
 
     @Transactional
     public Long publish(AnnouncementType type, AnnouncementSeverity severity,
@@ -64,5 +68,21 @@ public class SystemAnnouncementCommandService {
                 .orElseThrow(() -> ExceptionCreator.create(AnnouncementException.ANNOUNCEMENT_NOT_FOUND));
         entity.cancel(administratorId, clock);
         eventPublisher.publishEvent(new AnnouncementCancelledEvent(entity));
+    }
+
+    @Transactional
+    public void complete(Long id, Long administratorId) {
+        SystemAnnouncementData entity = repository.findById(id)
+                .orElseThrow(() -> ExceptionCreator.create(AnnouncementException.ANNOUNCEMENT_NOT_FOUND));
+        entity.markCompleted(clock);
+        eventPublisher.publishEvent(new MaintenanceEndedEvent(entity));
+    }
+
+    @Transactional
+    public void adjustEndTime(Long id, LocalDateTime newEnd, Long administratorId) {
+        SystemAnnouncementData entity = repository.findById(id)
+                .orElseThrow(() -> ExceptionCreator.create(AnnouncementException.ANNOUNCEMENT_NOT_FOUND));
+        entity.adjustScheduledEndTime(newEnd, clock);
+        edgeConfigPort.writeMaintenance(entity, MaintenancePhase.ACTIVE);
     }
 }
