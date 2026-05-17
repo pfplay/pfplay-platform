@@ -206,6 +206,100 @@ class PlaybackCommandServiceTest {
         verify(userActivityPort).updateDjPointScore(userId, 1);
     }
 
+    // ── #222 회귀 잠금: skip(자의/타의) 시 DJ큐 회전 + 본인 플레이리스트 회전이 함께 wiring 되는지 ──
+    // DJ큐 산술(#1→맨뒤)은 PartyroomAggregateServiceTest.rotatesCorrectly,
+    // 트랙 회전 SQL(orderNumber=1→total)은 TrackRepositoryReorderIntegrationTest 가 별도로 잠금.
+    // 여기서는 "skip 경로가 rotateDjQueue + getFirstTrack(현재 DJ 플레이리스트) 양쪽을 호출한다"는
+    // 수렴 지점의 invariant 를 잠근다.
+
+    private DjData stubDoStartWithQueuedDj(PlaybackTimeLimit timeLimit, Duration trackDuration) {
+        PartyroomData partyroom = PartyroomData.builder()
+                .id(partyroomId.getId()).partyroomId(partyroomId)
+                .playbackTimeLimit(timeLimit)
+                .build();
+        when(partyroomQueryService.getPartyroomById(partyroomId)).thenReturn(partyroom);
+
+        PlaylistId playlistId = new PlaylistId(100L);
+        DjData djData = DjData.builder()
+                .id(1L).partyroomId(partyroomId).crewId(new CrewId(1L))
+                .playlistId(playlistId).orderNumber(1).build();
+        when(aggregatePort.findDjsOrdered(partyroomId)).thenReturn(List.of(djData));
+        when(partyroomAggregateService.rotateDjQueue(partyroomId)).thenReturn(List.of(djData));
+
+        CrewData djCrew = CrewData.builder()
+                .id(1L).partyroomId(partyroomId).userId(userId).gradeType(GradeType.CLUBBER).build();
+        when(aggregatePort.findCrewById(1L)).thenReturn(Optional.of(djCrew));
+
+        PlaybackTrackDto trackDto = new PlaybackTrackDto("linkId", "Song", "thumb.jpg", trackDuration, 1);
+        when(playlistCommandPort.getFirstTrack(playlistId)).thenReturn(trackDto);
+        return djData;
+    }
+
+    @Test
+    @DisplayName("#222 skipPlayback — 큐에 DJ가 있으면 DJ큐 회전과 현재 DJ 플레이리스트 회전(getFirstTrack)이 함께 호출된다")
+    void skipPlaybackWithQueuedDjRotatesQueueAndPlaylist() {
+        // given — 트랙 길이가 제한 이내(재생됨)
+        DjData dj = stubDoStartWithQueuedDj(PlaybackTimeLimit.ofMinutes(10), Duration.fromString("3:30"));
+
+        PlaybackData savedPlayback = mock(PlaybackData.class);
+        lenient().when(savedPlayback.getId()).thenReturn(1L);
+        lenient().when(savedPlayback.getDuration()).thenReturn(Duration.ofSeconds(210));
+        when(playbackRepository.save(any(PlaybackData.class))).thenReturn(savedPlayback);
+        when(aggregatePort.findPlaybackState(partyroomId)).thenReturn(PartyroomPlaybackData.createFor(partyroomId));
+
+        // when — 자의 skip (DELETE /playbacks/current → skipPlayback)
+        playbackCommandService.skipPlayback(partyroomId);
+
+        // then — 스케줄 취소 + DJ큐 밀림 + 트랙 회전 양쪽 wiring
+        verify(expirationTaskPort).cancelExpiration(String.valueOf(partyroomId.getId()));
+        verify(partyroomAggregateService).rotateDjQueue(partyroomId);
+        verify(playlistCommandPort).getFirstTrack(dj.getPlaylistId());
+    }
+
+    @Test
+    @DisplayName("#222 skipByManager — MODERATOR 타의 skip 도 DJ큐 회전 + 플레이리스트 회전을 함께 호출한다")
+    void skipByManagerWithQueuedDjRotatesQueueAndPlaylist() {
+        // given — MODERATOR 권한 컨텍스트
+        ActivePartyroomDto activeDto = new ActivePartyroomDto(partyroomId.getId(), false, 1L, true, new PlaybackId(1L), new CrewId(1L));
+        CrewData adjuster = CrewData.builder().id(1L).userId(userId).gradeType(GradeType.MODERATOR).build();
+        when(partyroomQueryService.getMyActivePartyroom(userId)).thenReturn(Optional.of(activeDto));
+        when(partyroomQueryService.getCrewOrThrow(new PartyroomId(activeDto.id()), userId)).thenReturn(adjuster);
+
+        DjData dj = stubDoStartWithQueuedDj(PlaybackTimeLimit.ofMinutes(10), Duration.fromString("3:30"));
+
+        PlaybackData savedPlayback = mock(PlaybackData.class);
+        lenient().when(savedPlayback.getId()).thenReturn(1L);
+        lenient().when(savedPlayback.getDuration()).thenReturn(Duration.ofSeconds(210));
+        when(playbackRepository.save(any(PlaybackData.class))).thenReturn(savedPlayback);
+        when(aggregatePort.findPlaybackState(partyroomId)).thenReturn(PartyroomPlaybackData.createFor(partyroomId));
+
+        // when — 타의 skip
+        playbackCommandService.skipByManager(partyroomId);
+
+        // then
+        verify(expirationTaskPort).cancelExpiration(String.valueOf(partyroomId.getId()));
+        verify(partyroomAggregateService).rotateDjQueue(partyroomId);
+        verify(playlistCommandPort).getFirstTrack(dj.getPlaylistId());
+    }
+
+    @Test
+    @DisplayName("#222 time-limit edge — 트랙이 제한을 초과하면 재생되지 않아도 getFirstTrack(플레이리스트 회전)은 이미 호출된다 (의도된 동작)")
+    void timeLimitExceededStillRotatesPlaylistBeforeCheck() {
+        // given — 단일 DJ, 트랙 길이(3:30=210s)가 제한(1분=60s)을 초과 → 재생 안 됨
+        // doStart 는 getFirstTrack(플레이리스트 회전) 호출 '후' time-limit 검사 → 회전은 이미 발생.
+        // remainingAttempts(=큐 size=1) <= 1 이므로 deactivate. 첫 DJ silent deactivate 패턴과 정렬된 의도 동작.
+        DjData dj = stubDoStartWithQueuedDj(PlaybackTimeLimit.ofMinutes(1), Duration.fromString("3:30"));
+
+        // when — 자의 skip
+        playbackCommandService.skipPlayback(partyroomId);
+
+        // then — 트랙은 재생 안 됨(save 미호출)이나 플레이리스트 회전은 이미 발생, 큐도 회전, 이후 deactivate
+        verify(playlistCommandPort).getFirstTrack(dj.getPlaylistId());
+        verify(partyroomAggregateService).rotateDjQueue(partyroomId);
+        verify(playbackRepository, never()).save(any(PlaybackData.class));
+        verify(partyroomAggregateService).deactivatePlayback(partyroomId);
+    }
+
     @Test
     @DisplayName("updatePlaybackAggregation — atomic delta 적용 후 reload된 aggregation 반환")
     void updatePlaybackAggregationUpdatesSuccessfully() {
