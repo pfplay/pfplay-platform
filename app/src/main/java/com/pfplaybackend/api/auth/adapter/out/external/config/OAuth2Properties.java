@@ -86,12 +86,17 @@ public class OAuth2Properties {
         // ===== 헬퍼 메서드 =====
 
         /**
-         * 스코프를 +로 구분된 문자열로 반환 (URL 파라미터용)
+         * 스코프를 공백(%20) 으로 구분된 URL 인코딩 문자열로 반환 (authorize URL scope 파라미터용).
          *
-         * @return 예: "openid+email+profile"
+         * 주의: 리터럴 '+' 로 join 하면 안 된다 — X(Twitter) OAuth2 authorize 는 query 의
+         * '+' 를 공백으로 디코딩하지 않고 리터럴 처리하므로 "a+b" 가 단일 무효 스코프가 되어
+         * 토큰 스코프 실효 0 → /2/users/me 403. 공백은 '%20' 으로 인코딩한다.
+         * (bugs/2026-05-17-twitter-oauth-login-401.md, pfplay-platform#214)
+         *
+         * @return 예: "users.read%20tweet.read"
          */
         public String getScopesAsUrlEncoded() {
-            return scopes != null ? String.join("+", scopes) : "";
+            return scopes != null ? String.join("%20", scopes) : "";
         }
 
         /**
