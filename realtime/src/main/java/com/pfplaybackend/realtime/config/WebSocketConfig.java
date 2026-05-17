@@ -22,10 +22,15 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
-    // STOMP heartbeat — used for fast disconnect detection only. Server expects a
-    // client heartbeat every 5s; with the STOMP 1.5x grace this means a disconnect
-    // is detected within ~7.5s, leaving headroom inside the 10s default
-    // listener_grace_seconds before forceOffline fires.
+    // STOMP heartbeat — a FAST-PATH for the common case only, NOT the ghost
+    // upper bound. It detects a missed client heartbeat (5s interval), but a
+    // dead client with no TCP FIN (mobile network death, app killed) only
+    // surfaces after ~2 missed heartbeats → ~15-20s worst case (framework-
+    // dependent), and can fail to ever fire. The AUTHORITATIVE upper bound on a
+    // ghost crew is the PartyroomPresenceService reconcile cron
+    // (@Scheduled fixedDelay 60s; threshold = now - maxGrace -
+    // RECONCILE_BUFFER_SECONDS → forceOffline). Heartbeat just shortens the
+    // common case; the cron — not heartbeat — guarantees eventual OFFLINE.
     //
     // NOTE: this does NOT replace the existing application-level heartbeat
     // (`/pub/heartbeat`, 4s interval) which is responsible for keeping the GCP
