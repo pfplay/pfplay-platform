@@ -44,9 +44,18 @@ public class PresencePortAdapter implements PresencePort {
 
     @Override
     public void onSessionConnected(String sessionId) {
-        userSessionRegistry.findUserBySession(sessionId).ifPresent(userId ->
-                resolveActiveRoom(userId).ifPresent(roomId ->
-                        presenceService.clearPending(roomId, userId)));
+        Optional<UserId> user = userSessionRegistry.findUserBySession(sessionId);
+        if (user.isEmpty()) {
+            log.debug("[presence] onSessionConnected no-op: no user for sessionId={}", sessionId);
+            return;
+        }
+        UserId userId = user.get();
+        Optional<PartyroomId> roomId = resolveActiveRoom(userId);
+        if (roomId.isEmpty()) {
+            log.debug("[presence] onSessionConnected no-op: no active room for userId={}", userId);
+            return;
+        }
+        presenceService.clearPending(roomId.get(), userId);
     }
 
     @Override
@@ -55,16 +64,28 @@ public class PresencePortAdapter implements PresencePort {
         if (!result.wasLastSession()) {
             // Multi-tab: another live session for this user remains (or the session
             // was unknown). Closing one tab must not start the grace timer.
+            log.debug("[presence] onSessionDisconnected no-op: not last session, sessionId={}", sessionId);
             return;
         }
-        result.userId().ifPresent(userId ->
-                resolveActiveRoom(userId).ifPresent(roomId ->
-                        presenceService.markPending(roomId, userId)));
+        if (result.userId().isEmpty()) {
+            log.debug("[presence] onSessionDisconnected no-op: last session but no userId, sessionId={}", sessionId);
+            return;
+        }
+        UserId userId = result.userId().get();
+        Optional<PartyroomId> roomId = resolveActiveRoom(userId);
+        if (roomId.isEmpty()) {
+            log.debug("[presence] onSessionDisconnected no-op: last session but no active room, userId={}", userId);
+            return;
+        }
+        presenceService.markPending(roomId.get(), userId);
     }
 
     private Optional<PartyroomId> resolveActiveRoom(UserId userId) {
         return partyroomQueryPort.getActivePartyroomByUserId(userId)
                 .map(ActivePartyroomDto::id)
-                .map(PartyroomId::new);
+                // ActivePartyroomDto.id() is the partyroom PK — non-null by query contract
+                // (locked by ClusterAPresenceIntegrationTest); a null here is a broken
+                // invariant and must fail loudly, not be silently filtered.
+                .map(PartyroomId::of);
     }
 }
