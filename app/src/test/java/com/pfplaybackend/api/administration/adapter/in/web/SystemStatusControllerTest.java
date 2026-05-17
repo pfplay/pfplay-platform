@@ -52,11 +52,11 @@ class SystemStatusControllerTest {
         AnnouncementSummaryResponse event = new AnnouncementSummaryResponse(
                 10L, AnnouncementType.EVENT, AnnouncementSeverity.INFO,
                 "행사", "Event", "본문", "body",
-                null, null, null, now, 1L, null, null);
+                null, null, null, now, 1L, null, null, null);
         AnnouncementSummaryResponse emergency = new AnnouncementSummaryResponse(
                 11L, AnnouncementType.EMERGENCY, AnnouncementSeverity.CRITICAL,
                 "긴급", "Emergency", "긴급 본문", "emergency body",
-                null, null, null, now, 1L, null, null);
+                null, null, null, now, 1L, null, null, null);
         MaintenanceInfo planned = new MaintenanceInfo(
                 "PLANNED", now.plusHours(2), now.plusHours(3), "예정", "Planned");
         given(queryService.getSystemStatus()).willReturn(

@@ -27,6 +27,7 @@ import static org.mockito.BDDMockito.willThrow;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -166,5 +167,61 @@ class AdminAnnouncementControllerTest extends AbstractAdminWebMvcTest {
                         .with(csrf()))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.errorCode").value("ANN-001"));
+    }
+
+    // ============================== adjustSchedule ==============================
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("PATCH /{id}/schedule 200 — happy")
+    void adjustSchedule_returns200() throws Exception {
+        mockMvc.perform(patch("/api/v1/admin/announcements/{id}/schedule", ANNOUNCEMENT_ID)
+                        .with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"scheduledEndAt\":\"2026-05-04T05:00:00\"}"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("PATCH /{id}/schedule 409 — ANN-007 비-ACTIVE")
+    void adjustSchedule_notActive_returns409() throws Exception {
+        willThrow(ExceptionCreator.create(AnnouncementException.NOT_ACTIVE_MAINTENANCE))
+                .given(systemAnnouncementCommandService).adjustEndTime(eq(ANNOUNCEMENT_ID), any(), anyLong());
+        mockMvc.perform(patch("/api/v1/admin/announcements/{id}/schedule", ANNOUNCEMENT_ID)
+                        .with(csrf()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"scheduledEndAt\":\"2026-05-04T05:00:00\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.errorCode").value("ANN-007"));
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("PATCH /{id}/schedule 400 — scheduledEndAt 누락(@NotNull)")
+    void adjustSchedule_missingBody_returns400() throws Exception {
+        mockMvc.perform(patch("/api/v1/admin/announcements/{id}/schedule", ANNOUNCEMENT_ID)
+                        .with(csrf()).contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    // ============================== complete ==============================
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("POST /{id}/complete 200 — happy")
+    void complete_returns200() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/announcements/{id}/complete", ANNOUNCEMENT_ID)
+                        .with(csrf())).andExpect(status().isOk());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    @DisplayName("POST /{id}/complete 409 — ANN-008 이미 완료")
+    void complete_alreadyCompleted_returns409() throws Exception {
+        willThrow(ExceptionCreator.create(AnnouncementException.ALREADY_COMPLETED))
+                .given(systemAnnouncementCommandService).complete(eq(ANNOUNCEMENT_ID), anyLong());
+        mockMvc.perform(post("/api/v1/admin/announcements/{id}/complete", ANNOUNCEMENT_ID)
+                        .with(csrf()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.errorCode").value("ANN-008"));
     }
 }

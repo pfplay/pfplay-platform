@@ -9,7 +9,7 @@ import java.time.LocalDateTime;
 /**
  * GET /api/v1/admin/announcements 페이지 요소 / 단건 응답.
  *
- * <p>14 fields — entity의 모든 user-facing 필드(cancelledByAdministratorId 제외).
+ * <p>15 fields — entity의 모든 user-facing 필드(cancelledByAdministratorId 제외).
  *
  * <p>Spec: docs/superpowers/specs/2026-05-03-system-announcement-design.md §4.2
  */
@@ -27,7 +27,8 @@ public record AnnouncementSummaryResponse(
         LocalDateTime sentAt,
         Long sentByAdministratorId,
         LocalDateTime maintenanceStartedAt,
-        LocalDateTime cancelledAt
+        LocalDateTime cancelledAt,
+        LocalDateTime completedAt
 ) {
     public static AnnouncementSummaryResponse from(SystemAnnouncementData e) {
         return new AnnouncementSummaryResponse(
@@ -44,6 +45,7 @@ public record AnnouncementSummaryResponse(
                 e.getSentAt(),
                 e.getSentByAdministratorId(),
                 e.getMaintenanceStartedAt(),
-                e.getCancelledAt());
+                e.getCancelledAt(),
+                e.getCompletedAt());
     }
 }

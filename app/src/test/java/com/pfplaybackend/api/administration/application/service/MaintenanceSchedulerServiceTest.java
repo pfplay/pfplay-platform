@@ -2,6 +2,7 @@ package com.pfplaybackend.api.administration.application.service;
 
 import com.pfplaybackend.api.administration.adapter.out.persistence.SystemAnnouncementRepository;
 import com.pfplaybackend.api.administration.domain.entity.data.SystemAnnouncementData;
+import com.pfplaybackend.api.administration.domain.event.MaintenanceEndedEvent;
 import com.pfplaybackend.api.administration.domain.event.MaintenanceStartedEvent;
 import com.pfplaybackend.api.administration.domain.value.AnnouncementSeverity;
 import com.pfplaybackend.api.administration.domain.value.AnnouncementType;
@@ -100,5 +101,57 @@ class MaintenanceSchedulerServiceTest {
                 "점검", "M", "안내", "N",
                 start, end, null,
                 start, 1L);
+    }
+
+    /** ACTIVE maintenance: 이미 markMaintenanceStarted 가 호출된 entity (completedAt=null). */
+    private SystemAnnouncementData newActiveMaintenance(LocalDateTime start, LocalDateTime end) {
+        SystemAnnouncementData entity = newDueMaintenance(start, end);
+        entity.markMaintenanceStarted(clock);
+        return entity;
+    }
+
+    @Test
+    @DisplayName("completeExpiredMaintenance — due 2건: 각각 markCompleted + 2건 MaintenanceEndedEvent 발행")
+    void completeExpiredMaintenance_due_marksAndPublishes() {
+        // entities that are ACTIVE (started) and whose scheduledEndAt has passed
+        SystemAnnouncementData a = newActiveMaintenance(NOW.minusMinutes(65), NOW.minusMinutes(5));
+        SystemAnnouncementData b = newActiveMaintenance(NOW.minusMinutes(90), NOW.minusMinutes(10));
+        // sanity: started but not yet completed
+        assertThat(a.getMaintenanceStartedAt()).isEqualTo(NOW);
+        assertThat(a.getCompletedAt()).isNull();
+        assertThat(b.getCompletedAt()).isNull();
+
+        given(repository.findDueForMaintenanceCompletion(NOW)).willReturn(List.of(a, b));
+
+        MaintenanceSchedulerService service =
+                new MaintenanceSchedulerService(repository, eventPublisher, clock);
+
+        service.completeExpiredMaintenance();
+
+        // both entities are marked completed at NOW
+        assertThat(a.getCompletedAt()).isEqualTo(NOW);
+        assertThat(b.getCompletedAt()).isEqualTo(NOW);
+
+        ArgumentCaptor<MaintenanceEndedEvent> captor =
+                ArgumentCaptor.forClass(MaintenanceEndedEvent.class);
+        verify(eventPublisher, times(2)).publishEvent(captor.capture());
+        Set<SystemAnnouncementData> emitted = Set.copyOf(
+                captor.getAllValues().stream().map(MaintenanceEndedEvent::entity).toList());
+        assertThat(emitted).containsExactlyInAnyOrder(a, b);
+    }
+
+    @Test
+    @DisplayName("completeExpiredMaintenance — due 0건: 이벤트 발행 없음")
+    void completeExpiredMaintenance_none_noop() {
+        given(repository.findDueForMaintenanceCompletion(NOW)).willReturn(List.of());
+
+        MaintenanceSchedulerService service =
+                new MaintenanceSchedulerService(repository, eventPublisher, clock);
+
+        service.completeExpiredMaintenance();
+
+        verify(repository).findDueForMaintenanceCompletion(eq(NOW));
+        verify(eventPublisher, never()).publishEvent(any());
+        verify(repository, never()).save(any());
     }
 }

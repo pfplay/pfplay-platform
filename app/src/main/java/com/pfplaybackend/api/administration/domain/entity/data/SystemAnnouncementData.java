@@ -30,6 +30,7 @@ public class SystemAnnouncementData extends BaseEntity {
     @Column(name = "maintenance_started_at") private LocalDateTime maintenanceStartedAt;
     @Column(name = "cancelled_at") private LocalDateTime cancelledAt;
     @Column(name = "cancelled_by_administrator_id") private Long cancelledByAdministratorId;
+    @Column(name = "completed_at") private LocalDateTime completedAt;
 
     public static SystemAnnouncementData create(
             AnnouncementType type, AnnouncementSeverity severity,
@@ -68,6 +69,23 @@ public class SystemAnnouncementData extends BaseEntity {
     }
 
     public boolean isMaintenancePhaseActive() {
-        return type == AnnouncementType.MAINTENANCE_NOTICE && maintenanceStartedAt != null && cancelledAt == null;
+        return type == AnnouncementType.MAINTENANCE_NOTICE
+                && maintenanceStartedAt != null && cancelledAt == null && completedAt == null;
+    }
+
+    public void markCompleted(Clock clock) {
+        if (completedAt != null)
+            throw ExceptionCreator.create(AnnouncementException.ALREADY_COMPLETED);
+        if (!isMaintenancePhaseActive())
+            throw ExceptionCreator.create(AnnouncementException.NOT_ACTIVE_MAINTENANCE);
+        this.completedAt = LocalDateTime.now(clock);
+    }
+
+    public void adjustScheduledEndTime(LocalDateTime newEnd, Clock clock) {
+        if (!isMaintenancePhaseActive())
+            throw ExceptionCreator.create(AnnouncementException.NOT_ACTIVE_MAINTENANCE);
+        if (newEnd == null || !newEnd.isAfter(LocalDateTime.now(clock)))
+            throw ExceptionCreator.create(AnnouncementException.INVALID_END_ADJUSTMENT);
+        this.scheduledEndAt = newEnd;
     }
 }
