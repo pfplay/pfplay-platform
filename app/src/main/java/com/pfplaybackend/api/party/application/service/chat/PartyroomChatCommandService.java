@@ -31,6 +31,9 @@ public class PartyroomChatCommandService {
     private final ObjectMapper objectMapper;
 
     public void sendMessage(String sessionId, String content) {
+        // 세션캐시는 채팅 전용 source다: SUBSCRIBE에서 sessionId→(partyroom,user,crew)를
+        // write(24h TTL 백스톱 포함)하고 UNSUBSCRIBE에서 delete한다. 비정상 종료 orphan은
+        // 그 TTL로 self-heal된다. presence는 WS CONNECT/DISCONNECT가 권위로 분리됨 (#209 #31).
         Optional<Object> optional = sessionCachePort.getSessionCache(sessionId);
 
         if (optional.isEmpty()) {
