@@ -1,5 +1,7 @@
 package com.pfplaybackend.realtime.event;
 
+import com.pfplaybackend.realtime.port.SessionCachePort;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationListener;
@@ -11,8 +13,10 @@ import org.springframework.web.socket.messaging.SessionSubscribeEvent;
 import java.security.Principal;
 
 @Component
+@RequiredArgsConstructor
 public class SubscriptionEventListener implements ApplicationListener<SessionSubscribeEvent> {
     private static final Logger logger = LoggerFactory.getLogger(SubscriptionEventListener.class);
+    private final SessionCachePort sessionCachePort;
 
     @Override
     public void onApplicationEvent(SessionSubscribeEvent event) {
@@ -25,9 +29,12 @@ public class SubscriptionEventListener implements ApplicationListener<SessionSub
             throw new AuthenticationServiceException("Unauthorized Session Requested");
         }
         String userId = principal.getName();
-        // PRESENCE/세션캐시 디커미션 (#209 #31): subscribe-타이밍 의존을 종결한다.
-        // presence는 WS CONNECT/DISCONNECT가 권위(Task 1.4/1.5), 세션캐시 write도 더 이상
-        // SUBSCRIBE에서 수행하지 않는다. 여기서는 인증 가드와 로깅만 남긴다.
+        // 세션캐시 write는 채팅(비-presence) 라이프사이클이다: PartyroomChatCommandService가
+        // getSessionCache로 read하는 sessionId→(partyroom,user,crew) source를 여기서 채운다.
+        // presence 트리거(onSessionConnected)는 디커플링됨 — presence는 WS CONNECT/DISCONNECT가
+        // 권위이며 SUBSCRIBE 타이밍에 의존하지 않는다 (#209 #31, Task 1.4/1.6).
+        sessionCachePort.saveSessionCache(sessionId, userId, destination);
+
         logger.info("Session has subscribed, sessionId : {}, userId : {}, destination : {}", sessionId, userId, destination);
     }
 }
