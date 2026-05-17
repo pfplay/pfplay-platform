@@ -76,21 +76,15 @@ public class PartyroomAccessCommandService {
 
         new PartyroomEntrySpecification().validate(partyroom, activeCrewCount, existingCrew);
 
-        // Validate Crew Condition
-        Optional<ActivePartyroomDto> optActiveRoomInfo = partyroomQueryService.getMyActivePartyroom(userId);
-        log.info("[tryEnter] Active room check - userId={}, hasActiveRoom={}, activeRoomId={}",
-                userId,
-                optActiveRoomInfo.isPresent(),
-                optActiveRoomInfo.map(ActivePartyroomDto::id).orElse(null));
+        // Validate Crew Condition — 다른 룸에서 옮겨오는 중이면 helper가 기존 룸을 auto-exit한다.
+        // helper는 resolve한 active 룸 DTO를 그대로 반환(같은-룸 재입장 분기는 tryEnter 고유 흐름이라
+        // 여기서 처리). 다른 룸이었다면 helper 내부에서 이미 exit 완료 → fall-through.
+        Optional<ActivePartyroomDto> optActiveRoomInfo =
+                autoExitPriorActiveRoomIfDifferent(userId, partyroomId);
 
         if (optActiveRoomInfo.isPresent()) {
             ActivePartyroomDto activeRoomInfo = optActiveRoomInfo.get();
-            if (!partyroomId.equals(new PartyroomId(activeRoomInfo.id()))) {
-                // 다른 룸에서 옮겨오는 중 — 기존 룸 exit 후 진입 흐름으로 fall-through
-                log.info("[tryEnter] Auto-exit from another room - userId={}, exitingRoomId={}, enteringRoomId={}",
-                        userId, activeRoomInfo.id(), partyroomId.getId());
-                exit(new PartyroomId(activeRoomInfo.id()));
-            } else {
+            if (partyroomId.equals(new PartyroomId(activeRoomInfo.id()))) {
                 // 같은 룸 재입장 (websocket 재연결 등) — 이미 active인 경로.
                 // ⚠️ 이전 코드는 여기서도 ENTER 이벤트 발행 → counter inflate.
                 // PR 7: countryCode만 갱신, 이벤트 발행 금지 (spec §7.2 spurious ENTER 차단).
@@ -225,8 +219,57 @@ public class PartyroomAccessCommandService {
     @Transactional
     public void enterByHost(UserId hostId, PartyroomData partyroom) {
         assertHasProfile(hostId);
+        // B/T1-3 (#212): one-active-room invariant. enterByHost는 HOST crew를 무조건
+        // active INSERT하므로, host가 이미 다른 룸에 active(예: 다른 방 DJ/listener)면
+        // 두 룸 동시 active → getActivePartyroomByUserId .fetchOne() 폭발(wedge)이 된다.
+        // HOST crew INSERT 전에 tryEnter와 동일한 active-room 체크 + auto-exit을 수행
+        // (exit→handleDjQueueOnLeave로 기존 룸 DJ큐 정리 + playback skip). 방금 생성한
+        // 신규 룸은 partyroomId 비교로 제외되므로 self-exit 위험 없음. createMainStage는
+        // enterByHost를 거치지 않고 tryEnter가 처리하므로 이중 exit 없음.
+        autoExitPriorActiveRoomIfDifferent(hostId, partyroom.getPartyroomId());
         CrewData crew = CrewData.create(partyroom.getPartyroomId(), hostId, GradeType.HOST, null, LocalDateTime.now(clock));
         aggregatePort.saveCrew(crew);
+    }
+
+    /**
+     * one-active-room invariant 강제용 공유 helper (tryEnter / enterByHost 양쪽 사용 — DRY).
+     *
+     * <p>사용자의 권위 있는 active 룸을 resolve하고, 그것이 {@code target}과 다르면
+     * (= 다른 룸에서 옮겨오는 중) 그 기존 룸을 {@link #exitInternal} 경로로 auto-exit한다.
+     * exitInternal은 {@code handleDjQueueOnLeave}를 호출하므로 기존 룸의 DJ큐 정리 +
+     * (현재 DJ였다면) playback skip이 함께 일어난다.
+     *
+     * <p>PENDING_EXIT(V16 grace) 상태의 기존 룸도 의도적으로 여기서 auto-exit된다 —
+     * markCrewPending은 pending_exit_at만 SET하고 is_active=true를 유지하므로
+     * getMyActivePartyroom(is_active=true 필터)에 그대로 잡힌다. 진행 중인 forceOffline과도
+     * idempotent하다: 양쪽 모두 deactivateCrew의 atomic {@code WHERE is_active=true} toggle을
+     * 거치므로 누가 이기든 EXIT 이벤트와 DJ큐 정리는 정확히 1회만 발생한다.
+     *
+     * <p>resolve한 DTO를 그대로 반환한다(부작용 없이) — tryEnter는 같은-룸 재입장 분기에서
+     * 이 DTO가 필요하다. tryEnter 호출 측 동작은 추출 전과 byte-identical:
+     * "active 룸 있고 target과 다름 → log + exit, fall-through". 같은-룸 재입장 분기와
+     * PR-1 clearPending은 tryEnter 본문에 그대로 남겨 동작을 보존한다.
+     *
+     * @return 사용자의 active 룸 DTO(있으면). exit 수행 여부와 무관하게 resolve된 값을 반환.
+     */
+    private Optional<ActivePartyroomDto> autoExitPriorActiveRoomIfDifferent(UserId userId, PartyroomId target) {
+        Optional<ActivePartyroomDto> optActiveRoomInfo = partyroomQueryService.getMyActivePartyroom(userId);
+        log.info("[autoExitPriorActiveRoom] Active room check - userId={}, hasActiveRoom={}, activeRoomId={}, targetRoomId={}",
+                userId,
+                optActiveRoomInfo.isPresent(),
+                optActiveRoomInfo.map(ActivePartyroomDto::id).orElse(null),
+                target.getId());
+
+        if (optActiveRoomInfo.isPresent()) {
+            ActivePartyroomDto activeRoomInfo = optActiveRoomInfo.get();
+            if (!target.equals(new PartyroomId(activeRoomInfo.id()))) {
+                // 다른 룸에서 옮겨오는 중 — 기존 룸 exit (DJ큐 정리 + playback skip 포함)
+                log.info("[autoExitPriorActiveRoom] Auto-exit from another room - userId={}, exitingRoomId={}, enteringRoomId={}",
+                        userId, activeRoomInfo.id(), target.getId());
+                exitInternal(new PartyroomId(activeRoomInfo.id()), userId);
+            }
+        }
+        return optActiveRoomInfo;
     }
 
     /**
