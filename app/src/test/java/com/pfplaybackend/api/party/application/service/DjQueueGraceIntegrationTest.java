@@ -87,6 +87,7 @@ class DjQueueGraceIntegrationTest extends AbstractIntegrationTest {
                     return result;
                 });
         // registry/presence Redis 키는 tx 밖이므로 케이스 간 격리를 위해 비운다.
+        // 주의: flushAll 은 단일 fork(integrationTest 직렬 실행) 전제 — 병렬 fork 시 키 간섭 가능.
         stringRedisTemplate.getConnectionFactory().getConnection().serverCommands().flushAll();
     }
 
