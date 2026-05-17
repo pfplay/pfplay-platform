@@ -9,6 +9,12 @@ package com.pfplaybackend.realtime.port;
  *
  * <p>This MUST be called before any presence resolution for the same session —
  * the resolver reads back the very mapping written here.
+ *
+ * <p>There is intentionally no {@code unregister} on this port: the disconnect
+ * path needs the unregister result (was-this-the-last-session) fused with the
+ * presence decision app-side, so it is handled inside
+ * {@code PresencePortAdapter.onSessionDisconnected} rather than split across the
+ * realtime↔app seam.
  */
 public interface SessionRegistryPort {
 

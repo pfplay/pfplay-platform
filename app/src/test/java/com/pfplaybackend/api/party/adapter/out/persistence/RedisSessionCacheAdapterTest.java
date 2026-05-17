@@ -9,7 +9,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -77,9 +76,8 @@ class RedisSessionCacheAdapterTest {
         redisSessionCacheAdapter.saveSessionCache(sessionId, userIdStr, destination);
 
         // then — clean path는 UNSUBSCRIBE에서 delete하지만, 비정상 종료(1006, UNSUBSCRIBE 없음)
-        // orphan은 이 TTL로만 만료된다. TTL은 양수이며 24h 백스톱 이내여야 한다.
+        // orphan은 이 TTL로만 만료된다. set(...) 에 TTL 인자가 실제로 전달되는지 검증한다.
         verify(valueOperations).set(eq(sessionId), any(), eq(TTL_SECONDS), eq(TimeUnit.SECONDS));
-        assertThat(TTL_SECONDS).isPositive().isLessThanOrEqualTo(86400L);
     }
 
     @Test

@@ -5,7 +5,7 @@ import com.pfplaybackend.api.party.application.service.UserSessionRegistry;
 import com.pfplaybackend.realtime.port.SessionRegistryPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Service;
 
 /**
  * Bridges the realtime CONNECT event (in the realtime module) to the live
@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
  * to its user.
  */
 @Slf4j
-@Component
+@Service
 @RequiredArgsConstructor
 public class SessionRegistryPortAdapter implements SessionRegistryPort {
 

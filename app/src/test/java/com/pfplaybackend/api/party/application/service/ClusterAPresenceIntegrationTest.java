@@ -98,6 +98,7 @@ class ClusterAPresenceIntegrationTest extends AbstractIntegrationTest {
                     return result;
                 });
         // registry/presence Redis 키는 tx 밖이므로 케이스 간 격리를 위해 비운다.
+        // 주의: flushAll 은 단일 fork(integrationTest 직렬 실행) 전제 — 병렬 fork 시 키 간섭 가능.
         stringRedisTemplate.getConnectionFactory().getConnection().serverCommands().flushAll();
     }
 
@@ -224,6 +225,7 @@ class ClusterAPresenceIntegrationTest extends AbstractIntegrationTest {
         assertThat(refetchCrew(partyroomId, userId).isPendingExit()).isFalse();
 
         // when — CONNECT 시 세션 등록(STOMP SUBSCRIBE 는 한 번도 없음) → 그 단일 세션 DISCONNECT
+        // String uid 인자는 realtime CONNECT-frame Principal 계약(리스너가 넘기는 형태)을 그대로 미러링.
         String sid = "sid-31-only";
         sessionRegistryPort.register(sid, String.valueOf(userId.getUid()));
         presencePort.onSessionDisconnected(sid);

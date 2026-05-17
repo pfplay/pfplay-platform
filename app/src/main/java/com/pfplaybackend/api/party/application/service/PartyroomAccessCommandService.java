@@ -109,7 +109,11 @@ public class PartyroomAccessCommandService {
                 // constructor cycle via forceOffline→exitInternal). Any stale Redis
                 // presence-timer key is safely no-op'd by forceOffline's
                 // !isPendingExit() guard, which also deletes the leftover key.
-                aggregatePort.clearCrewPending(partyroomId, userId);
+                int graceCancelled = aggregatePort.clearCrewPending(partyroomId, userId);
+                if (graceCancelled > 0) {
+                    log.debug("[presence] grace cancelled via REST same-room re-entry — userId={}, partyroomId={}",
+                            userId, partyroomId.getId());
+                }
                 enforceHostInvariant(partyroom, userId, saved);
                 return saved;
             }

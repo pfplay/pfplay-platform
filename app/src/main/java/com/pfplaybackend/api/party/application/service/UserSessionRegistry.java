@@ -33,9 +33,15 @@ public class UserSessionRegistry {
 
     private final SessionStore sessionStore;
 
-    /** Binds a live STOMP session to its user. */
+    /**
+     * Binds a live STOMP session to its user. Encodes the uid with
+     * {@link UserId#toString()} so it is exactly symmetric with the
+     * {@link UserId#fromString(String)} decode used by {@link #unregister} /
+     * {@link #findUserBySession} ({@code UserId.toString()} returns
+     * {@code String.valueOf(uid)} — same stored form as before).
+     */
     public void register(String sessionId, UserId userId) {
-        sessionStore.bindSession(sessionId, String.valueOf(userId.getUid()));
+        sessionStore.bindSession(sessionId, userId.toString());
     }
 
     /**
