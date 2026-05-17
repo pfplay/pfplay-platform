@@ -4,8 +4,11 @@ import com.pfplaybackend.api.administration.adapter.out.persistence.SystemAnnoun
 import com.pfplaybackend.api.administration.domain.entity.data.SystemAnnouncementData;
 import com.pfplaybackend.api.administration.domain.event.AnnouncementCancelledEvent;
 import com.pfplaybackend.api.administration.domain.event.AnnouncementPublishedEvent;
+import com.pfplaybackend.api.administration.domain.event.MaintenanceEndedEvent;
+import com.pfplaybackend.api.administration.domain.port.EdgeConfigPort;
 import com.pfplaybackend.api.administration.domain.value.AnnouncementSeverity;
 import com.pfplaybackend.api.administration.domain.value.AnnouncementType;
+import com.pfplaybackend.api.administration.domain.value.MaintenancePhase;
 import com.pfplaybackend.api.common.exception.http.BadRequestException;
 import com.pfplaybackend.api.common.exception.http.NotFoundException;
 import org.junit.jupiter.api.DisplayName;
@@ -29,6 +32,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 /**
  * Unit test for {@link SystemAnnouncementCommandService} (V14 system-announcement Task 5).
@@ -49,6 +53,7 @@ class SystemAnnouncementCommandServiceTest {
 
     @Mock SystemAnnouncementRepository repository;
     @Mock ApplicationEventPublisher eventPublisher;
+    @Mock EdgeConfigPort edgeConfigPort;
 
     private final Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
 
@@ -59,7 +64,7 @@ class SystemAnnouncementCommandServiceTest {
     @Test
     @DisplayName("publish EVENT — repo.save 호출 + AnnouncementPublishedEvent 발행 + saved.id 반환")
     void publish_event_publishesAnnouncementPublishedEvent() {
-        service = new SystemAnnouncementCommandService(repository, eventPublisher, clock);
+        service = new SystemAnnouncementCommandService(repository, eventPublisher, clock, edgeConfigPort);
 
         // repo.save returns saved entity with id assigned (simulate JPA IDENTITY)
         ArgumentCaptor<SystemAnnouncementData> saveCaptor = ArgumentCaptor.forClass(SystemAnnouncementData.class);
@@ -97,7 +102,7 @@ class SystemAnnouncementCommandServiceTest {
     @Test
     @DisplayName("publish MAINTENANCE_NOTICE — scheduledStartAt 과거 → SCHEDULED_START_IN_PAST ANN-005")
     void publish_maintenanceWithPastStart_throws() {
-        service = new SystemAnnouncementCommandService(repository, eventPublisher, clock);
+        service = new SystemAnnouncementCommandService(repository, eventPublisher, clock, edgeConfigPort);
 
         LocalDateTime pastStart = NOW.minusMinutes(1);
         LocalDateTime end = NOW.plusHours(1);
@@ -117,7 +122,7 @@ class SystemAnnouncementCommandServiceTest {
     @Test
     @DisplayName("publish MAINTENANCE_NOTICE — scheduledStartAt == now → SCHEDULED_START_IN_PAST ANN-005 (경계 — !isAfter)")
     void publish_maintenanceWithStartEqualsNow_throws() {
-        service = new SystemAnnouncementCommandService(repository, eventPublisher, clock);
+        service = new SystemAnnouncementCommandService(repository, eventPublisher, clock, edgeConfigPort);
 
         LocalDateTime end = NOW.plusHours(1);
 
@@ -135,7 +140,7 @@ class SystemAnnouncementCommandServiceTest {
     @Test
     @DisplayName("publish MAINTENANCE_NOTICE — 미래 start → 정상 publish (factory invariants OK)")
     void publish_maintenanceWithFutureStart_succeeds() {
-        service = new SystemAnnouncementCommandService(repository, eventPublisher, clock);
+        service = new SystemAnnouncementCommandService(repository, eventPublisher, clock, edgeConfigPort);
 
         LocalDateTime start = NOW.plusHours(1);
         LocalDateTime end = NOW.plusHours(2);
@@ -161,7 +166,7 @@ class SystemAnnouncementCommandServiceTest {
     @Test
     @DisplayName("cancel — 정상: entity.cancel 호출 + AnnouncementCancelledEvent 발행")
     void cancel_emitsCancelledEvent() {
-        service = new SystemAnnouncementCommandService(repository, eventPublisher, clock);
+        service = new SystemAnnouncementCommandService(repository, eventPublisher, clock, edgeConfigPort);
 
         // real entity (EVENT — no schedule complications)
         SystemAnnouncementData entity = SystemAnnouncementData.create(
@@ -186,7 +191,7 @@ class SystemAnnouncementCommandServiceTest {
     @Test
     @DisplayName("cancel — 부재 id → ANNOUNCEMENT_NOT_FOUND ANN-001")
     void cancel_notFound_throws() {
-        service = new SystemAnnouncementCommandService(repository, eventPublisher, clock);
+        service = new SystemAnnouncementCommandService(repository, eventPublisher, clock, edgeConfigPort);
 
         given(repository.findById(999L)).willReturn(Optional.empty());
 
@@ -195,5 +200,73 @@ class SystemAnnouncementCommandServiceTest {
                 .hasFieldOrPropertyWithValue("errorCode", "ANN-001");
 
         verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    // ============================== complete ==============================
+
+    @Test
+    @DisplayName("complete — 정상: completedAt 설정 + MaintenanceEndedEvent 발행")
+    void complete_emitsMaintenanceEndedEvent() {
+        service = new SystemAnnouncementCommandService(repository, eventPublisher, clock, edgeConfigPort);
+
+        LocalDateTime start = NOW.plusHours(1);
+        LocalDateTime end = NOW.plusHours(3);
+        SystemAnnouncementData entity = SystemAnnouncementData.create(
+                AnnouncementType.MAINTENANCE_NOTICE, AnnouncementSeverity.WARN,
+                "점검", "m", "본문", "b",
+                start, end, null,
+                NOW.minusHours(1), 1L);
+        org.springframework.test.util.ReflectionTestUtils.setField(entity, "id", 55L);
+        entity.markMaintenanceStarted(clock);
+        given(repository.findById(55L)).willReturn(Optional.of(entity));
+
+        service.complete(55L, ADMIN_ID);
+
+        assertThat(entity.getCompletedAt()).isEqualTo(NOW);
+
+        ArgumentCaptor<MaintenanceEndedEvent> evtCaptor =
+                ArgumentCaptor.forClass(MaintenanceEndedEvent.class);
+        verify(eventPublisher).publishEvent(evtCaptor.capture());
+        assertThat(evtCaptor.getValue().entity()).isSameAs(entity);
+    }
+
+    @Test
+    @DisplayName("complete — 부재 id → ANNOUNCEMENT_NOT_FOUND ANN-001")
+    void complete_notFound_throws() {
+        service = new SystemAnnouncementCommandService(repository, eventPublisher, clock, edgeConfigPort);
+
+        given(repository.findById(99L)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.complete(99L, ADMIN_ID))
+                .isInstanceOf(NotFoundException.class)
+                .hasFieldOrPropertyWithValue("errorCode", "ANN-001");
+
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    // ============================== adjustEndTime ==============================
+
+    @Test
+    @DisplayName("adjustEndTime — 정상: scheduledEndAt 변경 + edgeConfigPort.writeMaintenance(ACTIVE) 호출 (이벤트 없음)")
+    void adjustEndTime_updatesEndAndWritesEdgeConfig_noEvent() {
+        service = new SystemAnnouncementCommandService(repository, eventPublisher, clock, edgeConfigPort);
+
+        LocalDateTime start = NOW.plusHours(1);
+        LocalDateTime originalEnd = NOW.plusHours(3);
+        SystemAnnouncementData entity = SystemAnnouncementData.create(
+                AnnouncementType.MAINTENANCE_NOTICE, AnnouncementSeverity.WARN,
+                "점검", "m", "본문", "b",
+                start, originalEnd, null,
+                NOW.minusHours(1), 1L);
+        org.springframework.test.util.ReflectionTestUtils.setField(entity, "id", 77L);
+        entity.markMaintenanceStarted(clock);
+        given(repository.findById(77L)).willReturn(Optional.of(entity));
+
+        LocalDateTime newEnd = NOW.plusHours(5);
+        service.adjustEndTime(77L, newEnd, ADMIN_ID);
+
+        assertThat(entity.getScheduledEndAt()).isEqualTo(newEnd);
+        verify(edgeConfigPort).writeMaintenance(entity, MaintenancePhase.ACTIVE);
+        verifyNoInteractions(eventPublisher);
     }
 }
