@@ -54,26 +54,61 @@ reason=ALL_TRACKS_EXCEEDED` 등 로그만 추가, 구조·`DjQueueChangeMessage`
 ### 3-1. 백엔드 동작 재설계 (pfplay-platform, party 모듈) — 핵심 (PR-1)
 
 - **TrackCommandService**: `getFirstTrack`(rotate-then-take)의 회전 부작용을
-  분리.
+  분리. (유일 프로덕션 caller = `PlaybackCommandService.getNextPlaybackInPlaylist`
+  → `PlaylistCommandAdapter.getFirstTrack` → `TrackCommandService.getFirstTrack`;
+  다른 프로덕션 caller 없음 — split 가능.)
   - `peekOrderedTracks(playlistId)` — 회전 없이 orderNumber ASC 트랙 조회(부작용
-    0, 비-`@Transactional` 또는 read-only).
+    0, read-only).
   - `rotatePlayed(playlistId, playedTrack)` — *실제 재생된* 트랙만 tail 로,
-    나머지(스킵된 over-limit 포함) 상대순서 보존. 기존 `rotateTrackOrder`
-    (`orderNumber=1→total, rest -1`)는 position-1 가정이라, "선택된 트랙을
-    tail 로, 그 외 상대순서 유지" 형태로 재정의(스킵된 over-limit 트랙은
-    제자리).
+    나머지(스킵된 over-limit 포함) 상대순서 보존.
+
+  **`rotatePlayed` 알고리즘 (명시 — 기존 seam 재사용)**: 기존 `rotateTrackOrder`
+  SQL(`TrackRepository.java:23-28`, `WHEN orderNumber=1 THEN total ELSE -1`)은
+  played 트랙이 항상 position 1 이라는 가정이라, skip 으로 played 트랙이
+  position k>1 일 수 있는 본 설계엔 부적합. 신규 bespoke CASE SQL 대신
+  **기존 `shiftUpOrderByDelete` + tail append(`musicCount+1`) 패턴**
+  (`addTrackInPlaylist`/`moveTrackToPlaylist` 가 쓰는 검증된 seam)을 일반화:
+  played 트랙 orderNumber=k 일 때 → `orderNumber > k` 인 트랙 전부 `-1` 시프트
+  + played 트랙을 `orderNumber = total`(tail) 로. `orderNumber < k`(스킵된
+  over-limit 포함) 트랙은 **불변**(제자리). 갭/충돌 없음.
+  - 예: `[1:ol, 2:ol, 3:playable→played, 4, 5]` → `[1:ol, 2:ol, 4, 5, 3]`
+    (4→3, 5→4, 3→5; 1·2 불변). 다음 peek 첫 playable = 옛 4. over-limit
+    1·2 는 front 에 영구 "speed bump"(skip-in-place, 의도된 동작).
+  - **#222 불변식 정확한 스코프**: played 트랙이 position 1 인 *정상 흐름*
+    (over-limit 선행 트랙 없음)에서는 이 일반화가 옛 `orderNumber=1→total,
+    rest -1` 와 **산술적으로 정확히 동일** → #222(skip→트랙 최하단) 잠긴 동작
+    behaviorally identical 보존. 새 산술은 **over-limit 선행 트랙이 있을
+    때만** 옛 SQL 과 달라짐(= #222 도메인 밖, 본 기능의 신규 동작). 즉
+    "#222 불변" 은 *position-1 케이스 한정*이며, k>1 reorder 산술은 PR-1
+    in-scope 신규 설계(blanket invariance 주장 아님).
+  - **수정/신설 테스트 (TDD red 명확화)**: position-1 보존 어서션
+    (`TrackCommandServiceTest` getFirstTrack rotate ~L434,
+    `TrackRepositoryReorderIntegrationTest`, `PlaybackCommandServiceTest`
+    #222 ~L239/260/286)은 **행위보존**(position-1 경로 동일하므로 통과 유지
+    — 단 getFirstTrack→peek/rotatePlayed 분리로 *호출 와이어링* 갱신 필요).
+    k>1 skip reorder + 트랙스킵 + deactivate-조건은 **신규 테스트**.
 - **PlaybackCommandService.doStart**: rotation order 로 DJ 순회. 각 DJ 의
   `peekOrderedTracks` 에서 **limit 이내 첫 트랙** 선택:
   - 찾음 → 그 트랙 재생 + `rotatePlayed`.
   - 그 DJ 전 트랙 over-limit → 그 DJ 이번 사이클 **패스**(큐 잔류, 다음 DJ).
-  - **deactivate 조건 정정**: `remainingAttempts` 의미를 "DJ 수" → "이번 해소
-    패스에서 아직 시도 안 한 DJ". **큐의 모든 DJ 가 재생가능 트랙 0 일 때만**
+  - **deactivate 조건 정정 + 재귀/회전 정합**: 현재 `doStart` 는 진입마다
+    `rotateDjQueue(...)` 를 **무조건 1회** 호출(line ~111) 후
+    `remainingAttempts<=1` 면 deactivate, 아니면 `doStart(reloaded,
+    remainingAttempts-1)` 재귀(재진입마다 또 rotateDjQueue). 본 설계는
+    **DJ 큐 회전을 사이클당 1회로 유지**하고, "재생가능 DJ 탐색"을
+    *재귀 재진입(매번 rotateDjQueue)* 이 아니라 **이미 회전된 DJ 리스트
+    위의 내부 순회**로 구현: 회전된 큐를 orderNumber 순으로 스캔하며 첫
+    "재생가능 트랙 보유 DJ" 를 찾고, 그 DJ 의 첫 limit-이내 트랙 재생 +
+    `rotatePlayed`. **스캔이 큐 전체를 돌아도 재생가능 트랙이 0 일 때만**
     `deactivateAndNotify`(기존 `deactivatePlayback`→`removeDjs` 경로 그대로 =
-    정당 케이스). 1 해소 패스 내 각 DJ 최대 1회 시도 → 무한루프 가드.
+    정당 케이스). 각 DJ 1 스캔당 최대 1회 평가 → 무한루프·DJ큐 이중회전
+    가드. (`remainingAttempts`(=`queuedDjs.size()`) 카운터는 이 내부 스캔
+    상한으로 의미 재정의.)
 - 불변식: "DJ 1명 + 전 트랙 over-limit → deactivate"(정당) 보존 / "DJ 1명 +
-  재생가능 트랙 있음 → 그 트랙들 재생"(버그 해소) / over-limit 트랙 순서 보존.
+  재생가능 트랙 있음 → 그 트랙들 재생"(버그 해소) / over-limit 트랙 순서 보존 /
+  #222 position-1 정상흐름 behaviorally identical.
 - 범위밖: DJ 전 트랙 over-limit 인 DJ 의 큐 자동 제거(파괴적, 미채택 — 큐 잔류
-  패스). #222 skip→reorder 동작 불변(회귀 잠금).
+  패스). per-user `tryEnter` race 등 무관 영역.
 
 ### 3-2. UX 신호 백엔드 (pfplay-platform) — (PR-2)
 
@@ -119,6 +154,15 @@ reason=ALL_TRACKS_EXCEEDED` 등 로그만 추가, 구조·`DjQueueChangeMessage`
 - changeType 구·신 혼재: 프론트 미지값=무동작, 신규필드 부재=기존 경로 — 안전.
 - 리치 payload: 거부 트랙이 식별 불가한 극단(플레이리스트 동시삭제 등) →
   trackName/duration null 허용, 모달은 일반 문구로 폴백.
+- **롤링 배포 직렬화 윈도우 (명시 스코프)**: `DjQueueChangeMessage` 는
+  `Serializable` record. 필드 추가는 *신규 메시지 생산*·*소비자 필드 독해*
+  관점에선 backward-compat 이나, **롤링 배포 윈도우 중 Redis pub/sub 에 떠
+  있던 구 포맷 메시지를 신 인스턴스가 deserialize**(또는 역) 할 때 record
+  암묵 `serialVersionUID` 변경으로 실패 가능. Redis pub/sub 는 fire-and-forget
+  ·저블래스트라 **해당 메시지 1건 transient drop 으로 허용**(다음
+  dj-queue-changed 가 late-binding 전체 djs 재브로드캐스트로 self-heal).
+  스탠스 = 명시적 수용(별도 `serialVersionUID` 핀은 필드 변경 cross-compat
+  를 보장하지 못하므로 무의미 — 수용이 정직한 결정). 배포 윈도우 외 정상.
 
 ## 5. 테스트 (TDD)
 
