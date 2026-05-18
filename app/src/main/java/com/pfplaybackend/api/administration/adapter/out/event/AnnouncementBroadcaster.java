@@ -3,6 +3,7 @@ package com.pfplaybackend.api.administration.adapter.out.event;
 import com.pfplaybackend.api.administration.domain.entity.data.SystemAnnouncementData;
 import com.pfplaybackend.api.administration.domain.event.AnnouncementCancelledEvent;
 import com.pfplaybackend.api.administration.domain.event.AnnouncementPublishedEvent;
+import com.pfplaybackend.api.administration.domain.event.MaintenanceEndedEvent;
 import com.pfplaybackend.api.administration.domain.event.MaintenanceStartedEvent;
 import com.pfplaybackend.api.administration.domain.port.EdgeConfigPort;
 import com.pfplaybackend.api.administration.domain.value.AnnouncementType;
@@ -57,6 +58,17 @@ public class AnnouncementBroadcaster {
     public void on(MaintenanceStartedEvent event) {
         broadcast("MAINTENANCE_STARTED", event.entity(), null);
         tryWriteEdgeConfig(event.entity(), MaintenancePhase.ACTIVE);
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void on(MaintenanceEndedEvent event) {
+        SystemAnnouncementData e = event.entity();
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("eventType", "MAINTENANCE_ENDED");
+        payload.put("announcementId", e.getId());
+        payload.put("completedAt", e.getCompletedAt());
+        messagingTemplate.convertAndSend(TOPIC, payload);
+        tryWriteEdgeConfig(null, null);
     }
 
     private void broadcast(String eventType, SystemAnnouncementData e, Object extra) {

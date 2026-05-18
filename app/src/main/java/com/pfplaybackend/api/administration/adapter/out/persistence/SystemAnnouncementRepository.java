@@ -34,9 +34,18 @@ public interface SystemAnnouncementRepository extends JpaRepository<SystemAnnoun
     @Query("""
         SELECT a FROM SystemAnnouncementData a
         WHERE a.type = com.pfplaybackend.api.administration.domain.value.AnnouncementType.MAINTENANCE_NOTICE
-          AND a.maintenanceStartedAt IS NOT NULL AND a.cancelledAt IS NULL
+          AND a.maintenanceStartedAt IS NOT NULL AND a.cancelledAt IS NULL AND a.completedAt IS NULL
         """)
     Optional<SystemAnnouncementData> findCurrentMaintenance();
+
+    @Query("""
+        SELECT a FROM SystemAnnouncementData a
+        WHERE a.type = com.pfplaybackend.api.administration.domain.value.AnnouncementType.MAINTENANCE_NOTICE
+          AND a.maintenanceStartedAt IS NOT NULL
+          AND a.cancelledAt IS NULL AND a.completedAt IS NULL
+          AND a.scheduledEndAt <= :now
+        """)
+    List<SystemAnnouncementData> findDueForMaintenanceCompletion(@Param("now") LocalDateTime now);
 
     @Query("""
         SELECT a FROM SystemAnnouncementData a

@@ -2,6 +2,7 @@ package com.pfplaybackend.api.administration.application.service;
 
 import com.pfplaybackend.api.administration.adapter.out.persistence.SystemAnnouncementRepository;
 import com.pfplaybackend.api.administration.domain.entity.data.SystemAnnouncementData;
+import com.pfplaybackend.api.administration.domain.event.MaintenanceEndedEvent;
 import com.pfplaybackend.api.administration.domain.event.MaintenanceStartedEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -51,6 +52,20 @@ public class MaintenanceSchedulerService {
         for (SystemAnnouncementData entity : due) {
             entity.markMaintenanceStarted(clock);
             eventPublisher.publishEvent(new MaintenanceStartedEvent(entity));
+        }
+    }
+
+    @Scheduled(cron = "0 * * * * *")
+    @Transactional
+    public void completeExpiredMaintenance() {
+        LocalDateTime now = LocalDateTime.now(clock);
+        List<SystemAnnouncementData> due = repository.findDueForMaintenanceCompletion(now);
+        if (due.isEmpty()) {
+            return;
+        }
+        for (SystemAnnouncementData entity : due) {
+            entity.markCompleted(clock);
+            eventPublisher.publishEvent(new MaintenanceEndedEvent(entity));
         }
     }
 }
