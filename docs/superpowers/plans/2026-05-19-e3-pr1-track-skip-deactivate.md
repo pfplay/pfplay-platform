@@ -31,7 +31,17 @@
 
 ### Task 1: `rotatePlayed` 영속 계층 (TrackRepository + port + adapter)
 
-`rotatePlayed(playlistId, k)` 알고리즘: total=count → `shiftUpOrderByDelete(playlistId, k)`(orderNumber>k → -1) → 재생트랙(orderNumber=k, >k 아니라 미변경)을 orderNumber=total 로. orderNumber<k(over-limit 제자리) 불변. 갭/충돌 없음. k=1 이면 기존 `reorderTracks`(`1→total, rest -1`)와 산술 동일(#222 position-1 보존).
+`rotatePlayed(playlistId, k, total)` 알고리즘 = **단일 set-based CASE** (기존
+`reorderTracks` 가 이미 CASE 인 패턴의 일반화 — 코드베이스 정합·증명가능).
+~~두 문장 조합(shiftUpOrderByDelete+append)~~ 은 **부정확**: shift 가 old-(k+1)
+을 orderNumber=k 로 옮겨 `WHERE orderNumber=k` 가 재생행+old-(k+1) 둘 다
+매칭(중복/갭). 단일 CASE 는 pre-state 기준 atomic 평가라 충돌 없음:
+`WHEN orderNumber=k THEN total / WHEN orderNumber>k THEN -1 / ELSE 불변`.
+- k=1: `WHEN 1 THEN total / >1 THEN -1 / else(공집합)` = 기존
+  `reorderTracks`(`WHEN 1 THEN total ELSE -1`)와 **산술 동일** (#222
+  position-1 보존, 증명: 시작 `[1,2,3,4]` → 둘 다 `{4,1,2,3}`).
+- k=3,total=5 `[1,2,3✱,4,5]` → `{1,2,5,3,4}` = 정렬 시 1..5 갭없음, 재생행
+  tail, over-limit(<k) 제자리, >k −1. ✓
 
 **Files:**
 - Modify: `playlist/src/main/java/com/pfplaybackend/api/playlist/adapter/out/persistence/TrackRepository.java`
@@ -43,49 +53,46 @@
 
 ```java
 @Test
-@DisplayName("rotatePlayed: k>1 — 재생트랙만 tail, k 이전(over-limit 제자리) 불변, k 이후 -1")
-void rotatePlayed_k_gt_1_moves_played_to_tail_keeps_before_intact() {
-    // given: playlist P 에 트랙 5개 orderNumber 1..5 (헬퍼는 기존 테스트 방식 재사용)
-    Long pid = seedPlaylistWithTracks(5); // 기존 헬퍼 없으면 기존 seed 패턴대로 5개 삽입
-    // when: orderNumber=3 인 트랙을 재생했다고 가정
-    trackRepository.shiftUpOrderByDelete(pid, 3);   // 4->3, 5->4
-    trackRepository.appendOrderToTail(pid, 3, 5);   // 옛 orderNumber=3 → 5
-
-    // then: [1,2 불변], [옛4->3, 옛5->4], [옛3->5]
-    List<TrackData> ordered = trackRepository.findByPlaylistId... // 기존 조회 방식
-        .stream().sorted(comparingInt(t -> t.getOrderNumber())).toList();
-    assertThat(ordered).extracting(TrackData::getOrderNumber).containsExactly(1,2,3,4,5);
-    // 옛 orderNumber=1,2 트랙 식별자가 여전히 1,2 위치 (linkId 등으로 검증)
-    // 옛 orderNumber=3 트랙이 이제 orderNumber=5
+@DisplayName("rotatePlayedOrder: k>1 — 재생행 tail, <k(over-limit) 제자리, >k -1, 갭없음")
+void rotatePlayedOrder_k_gt_1() {
+    Long pid = seedPlaylistWithTracks(5); // 기존 파일의 seed 패턴 그대로(신규 헬퍼 금지)
+    // 옛 orderNumber 1..5 트랙의 linkId 를 사전 캡처(검증용)
+    trackRepository.rotatePlayedOrder(pid, 3, 5L);
+    List<TrackData> ordered = /* 기존 조회 방식 */ .stream()
+        .sorted(comparingInt(TrackData::getOrderNumber)).toList();
+    assertThat(ordered).extracting(TrackData::getOrderNumber).containsExactly(1,2,3,4,5); // 갭/중복 없음
+    // 옛1→1, 옛2→2 (불변), 옛4→3, 옛5→4, 옛3→5(tail) — linkId 로 매핑 검증
 }
 
 @Test
-@DisplayName("rotatePlayed: k=1 — 기존 reorderTracks(1→total, rest -1) 와 산술 동일 (#222 position-1 보존)")
-void rotatePlayed_k_eq_1_equivalent_to_legacy_reorder() {
+@DisplayName("rotatePlayedOrder: k=1 — 기존 reorderTracks 와 산술 동일 (#222 position-1 보존)")
+void rotatePlayedOrder_k_eq_1_equivalent_to_legacy_reorder() {
     Long pid = seedPlaylistWithTracks(4);
-    trackRepository.shiftUpOrderByDelete(pid, 1);  // 2->1,3->2,4->3
-    trackRepository.appendOrderToTail(pid, 1, 4);   // 옛1 -> 4
-    // == 기존 reorderTracks(pid,4) 결과와 동일: 옛[1,2,3,4] -> [4,1,2,3] 의 orderNumber 매핑
-    var ordered = ...; assertThat(...).containsExactly(1,2,3,4);
-    // 옛 orderNumber=1 트랙이 4, 옛2->1, 옛3->2, 옛4->3 (linkId 검증)
+    trackRepository.rotatePlayedOrder(pid, 1, 4L);
+    var ordered = /* 조회 */; assertThat(ordered).extracting(TrackData::getOrderNumber).containsExactly(1,2,3,4);
+    // 옛1→4, 옛2→1, 옛3→2, 옛4→3 (== reorderTracks(pid,4) 결과, linkId 검증)
 }
 ```
 
-> 구현자: 기존 `TrackRepositoryReorderIntegrationTest` 의 seed/조회 헬퍼·어노테이션을 그대로 사용. 위 의사코드의 `seedPlaylistWithTracks`/조회는 그 파일의 기존 패턴으로 치환(신규 헬퍼 만들지 말 것 — 기존 것 재사용).
+> 구현자: 기존 `TrackRepositoryReorderIntegrationTest` 의 seed/조회 헬퍼·어노테이션을 그대로 사용. `seedPlaylistWithTracks`/조회는 그 파일 기존 패턴으로 치환(신규 헬퍼 만들지 말 것). 옛 orderNumber↔linkId 매핑을 잡아 "어느 트랙이 어디로" 까지 검증(orderNumber 집합만이 아니라).
 
 - [ ] **Step 2: 실패 확인**
 
 Run: `JAVA_HOME="C:/Users/Eisen/.jdks/ms-21.0.7" ./gradlew :app:test --tests "com.pfplaybackend.api.playlist.adapter.out.persistence.TrackRepositoryReorderIntegrationTest"`
-Expected: FAIL — `appendOrderToTail` 메서드 없음(컴파일 에러).
+Expected: FAIL — `rotatePlayedOrder` 메서드 없음(컴파일 에러).
 
-- [ ] **Step 3: 구현** — `TrackRepository.java` 에 추가 (기존 `shiftUpOrderByDelete` 바로 아래, 동일 스타일):
+- [ ] **Step 3: 구현** — `TrackRepository.java` 에 추가 (기존 `reorderTracks`
+바로 아래, 동일 CASE 스타일 — `reorderTracks` 의 일반화):
 
 ```java
 @Modifying
-@Query("UPDATE TrackData pm SET pm.orderNumber = :totalElements " +
-        "WHERE pm.playlistId.id = :playlistId AND pm.orderNumber = :playedOrderNumber")
-void appendOrderToTail(@Param("playlistId") Long playlistId,
-                       @Param("playedOrderNumber") Integer playedOrderNumber,
+@Query("UPDATE TrackData pm SET pm.orderNumber = CASE " +
+        "WHEN pm.orderNumber = :playedOrderNumber THEN :totalElements " +
+        "WHEN pm.orderNumber > :playedOrderNumber THEN pm.orderNumber - 1 " +
+        "ELSE pm.orderNumber END " +
+        "WHERE pm.playlistId.id = :playlistId")
+void rotatePlayedOrder(@Param("playlistId") Long playlistId,
+                       @Param("playedOrderNumber") int playedOrderNumber,
                        @Param("totalElements") long totalElements);
 ```
 
@@ -95,17 +102,21 @@ void appendOrderToTail(@Param("playlistId") Long playlistId,
 void rotatePlayed(Long playlistId, int playedOrderNumber, long totalCount);
 ```
 
-`PlaylistAggregateAdapter.java` 에 구현 추가 (기존 `rotateTrackOrder` 구현 인근, 동일 위임 스타일):
+`PlaylistAggregateAdapter.java` 에 구현 추가 (기존 `rotateTrackOrder` 구현이
+repository/aggregatePort 어디로 위임하는지 **그 패턴 그대로** 따라):
 
 ```java
 @Override
 public void rotatePlayed(Long playlistId, int playedOrderNumber, long totalCount) {
-    trackRepository.shiftUpOrderByDelete(playlistId, playedOrderNumber);
-    trackRepository.appendOrderToTail(playlistId, playedOrderNumber, totalCount);
+    trackRepository.rotatePlayedOrder(playlistId, playedOrderNumber, totalCount);
 }
 ```
 
-> `shiftUpOrderByDelete` 의 파라미터 타입은 `Integer deleteOrderNumber`. `playedOrderNumber:int` 자동 박싱 OK. `trackRepository` 가 adapter에 주입돼 있는지 확인(기존 `rotateTrackOrder` 가 `aggregatePort`/repository 어디로 위임하는지 따라 일관되게 — adapter가 repository 직접 호출하면 위처럼, 아니면 기존 패턴 준수).
+> 단일 set-based UPDATE 라 pre-state 기준 atomic — old-(k+1) 충돌 없음.
+> `reorderTracks`(`WHEN orderNumber=1 THEN total ELSE orderNumber-1`)의
+> 파라미터화 일반화이며 k=1 시 산술 동일(기존 #222 회귀 그대로 통과).
+> 기존 `reorderTracks`·`shiftUpOrderByDelete` 는 **건드리지 않음**(다른 caller
+> 영향 0; 미사용 정리는 Task 5).
 
 - [ ] **Step 4: 통과 확인**
 
@@ -116,7 +127,7 @@ Expected: PASS (신규 2 + 기존 회귀 그린).
 
 ```bash
 git add playlist/src/main/java/com/pfplaybackend/api/playlist/adapter/out/persistence/TrackRepository.java playlist/src/main/java/com/pfplaybackend/api/playlist/domain/port/PlaylistAggregatePort.java playlist/src/main/java/com/pfplaybackend/api/playlist/adapter/out/persistence/PlaylistAggregateAdapter.java app/src/test/java/com/pfplaybackend/api/playlist/adapter/out/persistence/TrackRepositoryReorderIntegrationTest.java
-git commit -m "feat(E/#3): rotatePlayed 영속 — shiftUpOrderByDelete+appendOrderToTail (k>1 일반화, k=1 #222 보존)"
+git commit -m "feat(E/#3): rotatePlayedOrder 단일 CASE — reorderTracks 일반화 (k>1 갭없음·k=1 #222 산술동일)"
 ```
 
 ---
@@ -258,7 +269,21 @@ void multiDj_firstAllOverLimit_playsNextDj() {
 }
 ```
 
-기존 테스트 갱신: `getFirstTrack` mock → `peekOrderedTracks`/`rotatePlayed` mock 으로 와이어링 교체. **#222 관련(skip→재생 트랙 최하단·DJ큐 밀림) 어서션은 동작 보존**: position-1(over-limit 선행 없음) 케이스에서 재생트랙이 tail 로 가고 DJ큐 회전 동일 → 어서션 의미 유지(메서드명만 rotatePlayed 로). 정당 deactivate 케이스 보존.
+기존 테스트 갱신 (테스트별 처리 명시):
+- `skipPlaybackWithQueuedDjRotatesQueueAndPlaylist`, `skipByManager...` 류
+  (#222 정상 skip→재생트랙 최하단·DJ큐 밀림): **동작 보존**. position-1
+  (over-limit 선행 없음)에서 재생트랙이 tail·DJ큐 회전 동일 → 어서션 의미
+  유지, `getFirstTrack` mock → `peekOrderedTracks`(해당 DJ 트랙 리스트 반환)
+  + `rotatePlayed` verify 로 와이어링만 교체.
+- `timeLimitExceededStillRotatesPlaylistBeforeCheck`: 이 테스트의 *의도*
+  ("체크 전 회전이 이미 일어난다"는 부작용)는 본 설계가 **의도적으로 제거**.
+  relabel 금지 → **삭제하고 신규 테스트로 대체**: "DJ1 + 전 트랙 over-limit →
+  deactivate, `rotatePlayed` 미호출"(peek 부작용0 검증 포함). = Step1 의
+  `singleDj_allOverLimit_deactivates` 가 이를 대체.
+- 정당 deactivate(전 DJ 무재생) 케이스 어서션 보존.
+- `stubDoStartWithQueuedDj` 헬퍼가 `playlistCommandPort.getFirstTrack` 을
+  stub 하므로, 헬퍼를 `peekOrderedTracks` stub 으로 갱신(헬퍼 1곳 수정이 다
+  테스트에 전파 — 신규 헬퍼 만들지 말 것).
 
 - [ ] **Step 2: 실패 확인**
 

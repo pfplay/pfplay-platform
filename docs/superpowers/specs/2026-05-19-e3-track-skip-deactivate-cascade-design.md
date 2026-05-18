@@ -32,6 +32,15 @@ UX 갭: `DjQueueChangeMessage` 에 변경 사유(`DjChangeType`)가 없어
 reason=ALL_TRACKS_EXCEEDED` 등 로그만 추가, 구조·`DjQueueChangeMessage`
 무 changeType·`DjChangeType` 6값 enum 모두 노트와 일치.)
 
+> **개정 (2026-05-19, plan 리뷰 반영)**: §3-1 의 `rotatePlayed` 구현을
+> "`shiftUpOrderByDelete` + tail-append 두 문장 조합" 으로 권했으나 이는
+> **부정확**(shift 가 old-(k+1)→k 충돌 → append 가 2행 매칭, k=1 도 legacy
+> 불일치). 정정: **단일 set-based CASE `rotatePlayedOrder`**
+> (`WHEN orderNumber=k THEN total / WHEN >k THEN -1 / ELSE 불변`) — 기존
+> `reorderTracks` CASE 의 파라미터화 일반화(코드베이스 정합·k=1 시 legacy 와
+> 산술 동일·갭없음 증명). 본 §3-1 의 seam 문구는 이 정정으로 대체. 상세는
+> plan `2026-05-19-e3-pr1-*` Task 1 참조.
+
 ## 2. 결정 (사용자 확정)
 
 - **핵심 정책 = 트랙 단위 스킵**: over-limit 트랙은 재생 안 하고 같은 DJ
