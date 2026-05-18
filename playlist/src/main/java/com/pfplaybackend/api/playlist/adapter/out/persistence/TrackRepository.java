@@ -28,6 +28,16 @@ public interface TrackRepository extends JpaRepository<TrackData, Long>, TrackRe
     void reorderTracks(@Param("playlistId") Long playlistId, @Param("totalElements") long totalElements);
 
     @Modifying
+    @Query("UPDATE TrackData pm SET pm.orderNumber = CASE " +
+            "WHEN pm.orderNumber = :playedOrderNumber THEN :totalElements " +
+            "WHEN pm.orderNumber > :playedOrderNumber THEN pm.orderNumber - 1 " +
+            "ELSE pm.orderNumber END " +
+            "WHERE pm.playlistId.id = :playlistId")
+    void rotatePlayedOrder(@Param("playlistId") Long playlistId,
+                           @Param("playedOrderNumber") int playedOrderNumber,
+                           @Param("totalElements") long totalElements);
+
+    @Modifying
     @Query("UPDATE TrackData pm " +
             "SET pm.orderNumber =  pm.orderNumber - 1" +
             "WHERE pm.playlistId.id = :playlistId " +
