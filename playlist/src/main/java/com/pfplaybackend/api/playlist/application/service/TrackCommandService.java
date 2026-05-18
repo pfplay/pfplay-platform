@@ -37,6 +37,8 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class TrackCommandService {
 
+    private static final int MAX_PLAYLIST_TRACK_COUNT = 15;
+
     private final PlaylistAggregatePort aggregatePort;
     private final PlaylistQueryPort queryPort;
     private final PlaylistQueryService playlistQueryService;
@@ -53,7 +55,7 @@ public class TrackCommandService {
         if (optional.isPresent()) throw ExceptionCreator.create(TrackException.DUPLICATE_TRACK_IN_PLAYLIST);
         // 최대 보유 한계치 초과 검사
         PlaylistSummaryDto playlistSummary = playlistQueryService.getPlaylist(playlistId);
-        if (playlistSummary.musicCount() >= 15) throw ExceptionCreator.create(TrackException.EXCEEDED_TRACK_LIMIT);
+        if (playlistSummary.musicCount() >= MAX_PLAYLIST_TRACK_COUNT) throw ExceptionCreator.create(TrackException.EXCEEDED_TRACK_LIMIT);
 
         long nextMusicOrderNumber = playlistSummary.musicCount() == 0 ? 1 : playlistSummary.musicCount() + 1;
 
@@ -122,7 +124,7 @@ public class TrackCommandService {
         if (duplicate.isPresent()) throw ExceptionCreator.create(TrackException.DUPLICATE_TRACK_IN_PLAYLIST);
         // 타겟 트랙 개수 15개 제한 검사
         PlaylistSummaryDto targetSummary = playlistQueryService.getPlaylist(command.targetPlaylistId());
-        if (targetSummary.musicCount() >= 15) throw ExceptionCreator.create(TrackException.EXCEEDED_TRACK_LIMIT);
+        if (targetSummary.musicCount() >= MAX_PLAYLIST_TRACK_COUNT) throw ExceptionCreator.create(TrackException.EXCEEDED_TRACK_LIMIT);
         // 소스 orderNumber 재정렬
         aggregatePort.shiftUpTrackOrderByDelete(sourcePlaylistId, trackData.getOrderNumber());
         // 트랙을 타겟 플레이리스트로 이동
@@ -169,7 +171,7 @@ public class TrackCommandService {
 
     @Transactional(readOnly = true)
     public List<PlaybackTrackDto> peekOrderedTracks(Long playlistId) {
-        Pageable pageable = PageRequest.of(0, 15, Sort.by(Sort.Direction.ASC, "orderNumber"));
+        Pageable pageable = PageRequest.of(0, MAX_PLAYLIST_TRACK_COUNT, Sort.by(Sort.Direction.ASC, "orderNumber"));
         Page<PlaylistTrackDto> page = queryPort.getTracksWithPagination(new PlaylistId(playlistId), pageable);
         return page.getContent().stream()
                 .map(dto -> new PlaybackTrackDto(dto.linkId(), dto.name(),
