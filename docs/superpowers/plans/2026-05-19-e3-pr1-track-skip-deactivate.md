@@ -14,9 +14,9 @@
 
 ## File Structure
 
-- `playlist/.../adapter/out/persistence/TrackRepository.java` — Modify: `appendOrderToTail` 쿼리 추가 (rotatePlayed 용; 기존 `reorderTracks`·`shiftUpOrderByDelete` 보존).
-- `playlist/.../domain/port/PlaylistAggregatePort.java` — Modify: `appendOrderToTail` 선언 추가.
-- `playlist/.../adapter/out/persistence/PlaylistAggregateAdapter.java` — Modify: `appendOrderToTail` 구현.
+- `playlist/.../adapter/out/persistence/TrackRepository.java` — Modify: `rotatePlayedOrder` 단일 CASE 쿼리 추가 (rotatePlayed 용; 기존 `reorderTracks`·`shiftUpOrderByDelete` 보존·무변경).
+- `playlist/.../domain/port/PlaylistAggregatePort.java` — Modify: `rotatePlayed` 선언 추가.
+- `playlist/.../adapter/out/persistence/PlaylistAggregateAdapter.java` — Modify: `rotatePlayed` 구현(→ `rotatePlayedOrder` 위임).
 - `playlist/.../application/service/TrackCommandService.java` — Modify: `peekOrderedTracks(Long)`·`rotatePlayed(Long, int)` 신설. `getFirstTrack` 는 그대로 두되 사용 안 함(다른 caller 없음 → PR 말미 제거 여부 §Task6).
 - `app/.../party/application/port/out/PlaylistCommandPort.java` — Modify: `peekOrderedTracks(PlaylistId)`·`rotatePlayed(PlaylistId, int)` 선언, `getFirstTrack` 제거.
 - `app/.../party/adapter/out/external/PlaylistCommandAdapter.java` — Modify: 신규 2메서드 위임, `getFirstTrack` 제거.
