@@ -32,6 +32,6 @@ public class UnsubscriptionEventListener implements ApplicationListener<SessionU
         // self-heal되며 DisconnectionEventListener는 재추가하지 않는다 (#209 #31).
         sessionCachePort.deleteSessionCache(sessionId);
 
-        logger.info("Session has unsubscribed, sessionId : {}", sessionId);
+        logger.info("Session has unsubscribed, sessionId : {}, userId : {}", sessionId, principal.getName());
     }
 }

@@ -21,6 +21,8 @@ public class GroupBroadcastTopicListener<T extends GroupBroadcastMessage> implem
     public void onMessage(Message message, byte[] pattern) {
         try {
             T msg = objectMapper.readValue(new String(message.getBody()), messageType);
+            log.info("[listener.onMessage] topic={}, type={}, partyroomId={}, messageId={}",
+                    new String(pattern), messageType.getSimpleName(), msg.partyroomId().getId(), msg.id());
             messageSender.sendToGroup(msg.partyroomId().getId(), msg);
         } catch (JsonProcessingException e) {
             log.error("Failed to deserialize {} message: {}", messageType.getSimpleName(), new String(message.getBody()), e);

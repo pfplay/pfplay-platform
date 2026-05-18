@@ -10,6 +10,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 
+import java.security.Principal;
+
 @Component
 @RequiredArgsConstructor
 public class DisconnectionEventListener implements ApplicationListener<SessionDisconnectEvent> {
@@ -20,10 +22,12 @@ public class DisconnectionEventListener implements ApplicationListener<SessionDi
     public void onApplicationEvent(SessionDisconnectEvent event) {
         StompHeaderAccessor headerAccessor = StompHeaderAccessor.wrap(event.getMessage());
         String sessionId = headerAccessor.getSessionId();
+        Principal principal = headerAccessor.getUser();
+        String userId = principal != null ? principal.getName() : null;
         // PRESENCE: registry 권위로 위임. 세션 캐시 결합 제거 (Task 1.3에서 resolve가
         // user-session registry + DB authority로 전환됨).
         presencePort.onSessionDisconnected(sessionId);
-        logger.info("Web socket connection closed: {}", sessionId);
+        logger.info("Web socket connection closed: sessionId={}, userId={}", sessionId, userId);
 
         CloseStatus closeStatus = event.getCloseStatus();
         Integer closeStatusCode = closeStatus.getCode();

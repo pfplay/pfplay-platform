@@ -369,6 +369,8 @@ public class PartyroomAccessCommandService {
         PartyroomPlaybackData playbackState = aggregatePort.findPlaybackState(partyroom.getPartyroomId());
         boolean wasCurrentDj = playbackState.isActivated() && wasInDjQueue
                 && playbackState.isCurrentDj(crewId);
+        log.info("[handleDjQueueOnLeave] partyroomId={}, crewId={}, wasInDjQueue={}, wasCurrentDj={}",
+                partyroom.getPartyroomId().getId(), crewId.getId(), wasInDjQueue, wasCurrentDj);
 
         partyroomAggregateService.removeDjFromQueue(partyroom.getPartyroomId(), crewId);
 
