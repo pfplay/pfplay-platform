@@ -124,6 +124,9 @@ public class DjCommandService {
                 .orElseThrow(() -> ExceptionCreator.create(DjException.NOT_FOUND_DJ));
 
         boolean wasCurrentDj = playbackState.isActivated() && playbackState.isCurrentDj(targetDj.getCrewId());
+        log.info("[dequeueDj-admin] requestId={}, partyroomId={}, adjusterUserId={}, targetDjId={}, targetCrewId={}, wasCurrentDj={}",
+                RequestIdInterceptor.current(), partyroomId.getId(), authContext.getUserId().getUid(),
+                djId.getId(), targetDj.getCrewId().getId(), wasCurrentDj);
         partyroomAggregateService.removeDjFromQueue(partyroomId, targetDj.getCrewId());
 
         eventPublisher.publishEvent(new DjQueueChangedEvent(partyroom.getPartyroomId(), DjChangeType.DEQUEUE_ADMIN, targetDj.getCrewId()));
