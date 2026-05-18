@@ -135,30 +135,34 @@ public class PlaybackCommandService implements PlaybackControlPort {
             log.debug("[doStart] PLAYABLE_TRACK - partyroomId={}, djCrewId={}, trackName={}, durationSec={}, orderNumber={}, limitMin={}",
                     partyroomIdValue, djCrewId, chosen.name(), chosen.duration().toSeconds(), chosen.orderNumber(), limitMin);
 
-            PlaybackData nextPlayback = PlaybackData.create(partyroom.getPartyroomId(), djCrew.getUserId(),
-                    chosen.name(), chosen.duration(), chosen.linkId(), chosen.thumbnailImage(), clock.instant());
-            playlistCommandPort.rotatePlayed(dj.getPlaylistId(), chosen.orderNumber(), peeked.size());
-
-            PlaybackData playbackData = playbackRepository.save(nextPlayback);
-            playbackAggregationRepository.save(PlaybackAggregationData.createFor(new PlaybackId(playbackData.getId())));
-            // Update playback state in PARTYROOM_PLAYBACK
-            PartyroomPlaybackData playbackState = aggregatePort.findPlaybackState(partyroom.getPartyroomId());
-            playbackState.updatePlayback(new PlaybackId(playbackData.getId()), new CrewId(djCrew.getId()));
-            aggregatePort.savePlaybackState(playbackState);
-            // Schedule Task to wait for playback time
-            scheduleTask(nextPlayback);
-            // Propagation Websocket Event
-            PlaybackSnapshot snapshot = new PlaybackSnapshot(
-                    playbackData.getId(), playbackData.getLinkId(), playbackData.getName(),
-                    playbackData.getDuration().toDisplayString(), playbackData.getThumbnailImage(), playbackData.getEndTime());
-            eventPublisher.publishEvent(new PlaybackStartedEvent(partyroom.getPartyroomId(), new CrewId(djCrew.getId()), snapshot));
-            eventPublisher.publishEvent(new DjQueueChangedEvent(partyroom.getPartyroomId(), DjChangeType.ROTATE, new CrewId(djCrew.getId())));
+            startPlaybackFor(partyroom, dj, djCrew, chosen, peeked.size());
             return;
         }
 
         log.warn("[doStart] DEACTIVATE_TRIGGERED - partyroomId={}, reason=ALL_DJS_NO_PLAYABLE_TRACK, queueSize={}, limitMin={}",
                 partyroomIdValue, orderedDjs.size(), limitMin);
         deactivateAndNotify(partyroom);
+    }
+
+    private void startPlaybackFor(PartyroomData partyroom, DjData dj, CrewData djCrew, PlaybackTrackDto chosen, long total) {
+        PlaybackData nextPlayback = PlaybackData.create(partyroom.getPartyroomId(), djCrew.getUserId(),
+                chosen.name(), chosen.duration(), chosen.linkId(), chosen.thumbnailImage(), clock.instant());
+        playlistCommandPort.rotatePlayed(dj.getPlaylistId(), chosen.orderNumber(), total);
+
+        PlaybackData playbackData = playbackRepository.save(nextPlayback);
+        playbackAggregationRepository.save(PlaybackAggregationData.createFor(new PlaybackId(playbackData.getId())));
+        // Update playback state in PARTYROOM_PLAYBACK
+        PartyroomPlaybackData playbackState = aggregatePort.findPlaybackState(partyroom.getPartyroomId());
+        playbackState.updatePlayback(new PlaybackId(playbackData.getId()), new CrewId(djCrew.getId()));
+        aggregatePort.savePlaybackState(playbackState);
+        // Schedule Task to wait for playback time
+        scheduleTask(nextPlayback);
+        // Propagation Websocket Event
+        PlaybackSnapshot snapshot = new PlaybackSnapshot(
+                playbackData.getId(), playbackData.getLinkId(), playbackData.getName(),
+                playbackData.getDuration().toDisplayString(), playbackData.getThumbnailImage(), playbackData.getEndTime());
+        eventPublisher.publishEvent(new PlaybackStartedEvent(partyroom.getPartyroomId(), new CrewId(djCrew.getId()), snapshot));
+        eventPublisher.publishEvent(new DjQueueChangedEvent(partyroom.getPartyroomId(), DjChangeType.ROTATE, new CrewId(djCrew.getId())));
     }
 
     @Transactional
