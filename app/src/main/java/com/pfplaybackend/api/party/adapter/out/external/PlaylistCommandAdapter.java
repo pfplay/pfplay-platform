@@ -11,6 +11,8 @@ import com.pfplaybackend.api.playlist.application.service.TrackCommandService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
+
 @Service
 @RequiredArgsConstructor
 public class PlaylistCommandAdapter implements PlaylistCommandPort {
@@ -25,7 +27,12 @@ public class PlaylistCommandAdapter implements PlaylistCommandPort {
     }
 
     @Override
-    public PlaybackTrackDto getFirstTrack(PlaylistId playlistId) {
-        return trackCommandService.getFirstTrack(playlistId.getId());
+    public List<PlaybackTrackDto> peekOrderedTracks(PlaylistId playlistId) {
+        return trackCommandService.peekOrderedTracks(playlistId.getId());
+    }
+
+    @Override
+    public void rotatePlayed(PlaylistId playlistId, int playedOrderNumber, long totalCount) {
+        trackCommandService.rotatePlayed(playlistId.getId(), playedOrderNumber, totalCount);
     }
 }

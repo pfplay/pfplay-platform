@@ -93,7 +93,7 @@ public class PlaybackCommandService implements PlaybackControlPort {
         log.debug("[tryProceed] partyroomId={}, queueSize={}", partyroomId.getId(), queuedDjs.size());
 
         if(!queuedDjs.isEmpty()) {
-            doStart(partyroom, queuedDjs.size());
+            doStart(partyroom);
         }else{
             log.info("[tryProceed] EMPTY_QUEUE_DEACTIVATE - partyroomId={}", partyroomId.getId());
             deactivateAndNotify(partyroom);
@@ -102,68 +102,63 @@ public class PlaybackCommandService implements PlaybackControlPort {
 
     @Override
     public void startPlayback(PartyroomData partyroom) {
-        List<DjData> queuedDjs = aggregatePort.findDjsOrdered(partyroom.getPartyroomId());
-        doStart(partyroom, queuedDjs.size());
+        doStart(partyroom);
     }
 
-    private void doStart(PartyroomData partyroom, int remainingAttempts) {
+    private void doStart(PartyroomData partyroom) {
         long partyroomIdValue = partyroom.getPartyroomId().getId();
         List<DjData> rotatedDjs = partyroomAggregateService.rotateDjQueue(partyroom.getPartyroomId());
-        log.debug("[doStart] ENTER - partyroomId={}, remainingAttempts={}, queueSize={}",
-                partyroomIdValue, remainingAttempts, rotatedDjs.size());
-
-        DjData nextDj = rotatedDjs.stream()
-                .min(Comparator.comparingInt(DjData::getOrderNumber)).orElseThrow();
-        CrewData djCrew = aggregatePort.findCrewById(nextDj.getCrewId().getId()).orElseThrow();
-        PlaybackData nextPlayback = getNextPlaybackInPlaylist(partyroom.getPartyroomId(), nextDj, djCrew.getUserId());
-        long djCrewId = djCrew.getId();
-        String trackName = nextPlayback.getName();
-        long durationSec = nextPlayback.getDuration().toSeconds();
         int limitMin = partyroom.getPlaybackTimeLimit().getMinutes();
-        log.debug("[doStart] NEXT_TRACK - partyroomId={}, djCrewId={}, trackName={}, durationSec={}, limitMin={}",
-                partyroomIdValue, djCrewId, trackName, durationSec, limitMin);
+        log.debug("[doStart] ENTER - partyroomId={}, queueSize={}, limitMin={}",
+                partyroomIdValue, rotatedDjs.size(), limitMin);
 
-        if (partyroom.getPlaybackTimeLimit().exceedsDuration(nextPlayback.getDuration())) {
-            log.warn("[doStart] TRACK_EXCEEDS_LIMIT - partyroomId={}, djCrewId={}, trackName={}, durationSec={}, limitMin={}, remainingAttempts={}",
-                    partyroomIdValue, djCrewId, trackName, durationSec, limitMin, remainingAttempts);
-            if (remainingAttempts <= 1) {
-                log.warn("[doStart] DEACTIVATE_TRIGGERED - partyroomId={}, reason=ALL_TRACKS_EXCEEDED, lastTrackName={}, lastDurationSec={}, limitMin={}",
-                        partyroomIdValue, trackName, durationSec, limitMin);
-                deactivateAndNotify(partyroom);
-                return;
+        List<DjData> orderedDjs = rotatedDjs.stream()
+                .sorted(Comparator.comparingInt(DjData::getOrderNumber))
+                .toList();
+
+        for (DjData dj : orderedDjs) {
+            CrewData djCrew = aggregatePort.findCrewById(dj.getCrewId().getId()).orElseThrow();
+            long djCrewId = djCrew.getId();
+            List<PlaybackTrackDto> peeked = playlistCommandPort.peekOrderedTracks(dj.getPlaylistId());
+
+            PlaybackTrackDto chosen = peeked.stream()
+                    .filter(t -> !partyroom.getPlaybackTimeLimit().exceedsDuration(t.duration()))
+                    .findFirst()
+                    .orElse(null);
+
+            if (chosen == null) {
+                log.warn("[doStart] DJ_NO_PLAYABLE_TRACK - partyroomId={}, djCrewId={}, peekedCount={}, limitMin={} - skipping to next DJ",
+                        partyroomIdValue, djCrewId, peeked.size(), limitMin);
+                continue;
             }
-            PartyroomData reloaded = partyroomQueryService.getPartyroomById(partyroom.getPartyroomId());
-            List<DjData> remainingDjs = aggregatePort.findDjsOrdered(reloaded.getPartyroomId());
-            if (!remainingDjs.isEmpty()) {
-                log.debug("[doStart] RETRY_NEXT_DJ - partyroomId={}, remainingAttempts={}",
-                        partyroomIdValue, remainingAttempts - 1);
-                doStart(reloaded, remainingAttempts - 1);
-            } else {
-                deactivateAndNotify(reloaded);
-            }
+
+            log.debug("[doStart] PLAYABLE_TRACK - partyroomId={}, djCrewId={}, trackName={}, durationSec={}, orderNumber={}, limitMin={}",
+                    partyroomIdValue, djCrewId, chosen.name(), chosen.duration().toSeconds(), chosen.orderNumber(), limitMin);
+
+            PlaybackData nextPlayback = PlaybackData.create(partyroom.getPartyroomId(), djCrew.getUserId(),
+                    chosen.name(), chosen.duration(), chosen.linkId(), chosen.thumbnailImage(), clock.instant());
+            playlistCommandPort.rotatePlayed(dj.getPlaylistId(), chosen.orderNumber(), peeked.size());
+
+            PlaybackData playbackData = playbackRepository.save(nextPlayback);
+            playbackAggregationRepository.save(PlaybackAggregationData.createFor(new PlaybackId(playbackData.getId())));
+            // Update playback state in PARTYROOM_PLAYBACK
+            PartyroomPlaybackData playbackState = aggregatePort.findPlaybackState(partyroom.getPartyroomId());
+            playbackState.updatePlayback(new PlaybackId(playbackData.getId()), new CrewId(djCrew.getId()));
+            aggregatePort.savePlaybackState(playbackState);
+            // Schedule Task to wait for playback time
+            scheduleTask(nextPlayback);
+            // Propagation Websocket Event
+            PlaybackSnapshot snapshot = new PlaybackSnapshot(
+                    playbackData.getId(), playbackData.getLinkId(), playbackData.getName(),
+                    playbackData.getDuration().toDisplayString(), playbackData.getThumbnailImage(), playbackData.getEndTime());
+            eventPublisher.publishEvent(new PlaybackStartedEvent(partyroom.getPartyroomId(), new CrewId(djCrew.getId()), snapshot));
+            eventPublisher.publishEvent(new DjQueueChangedEvent(partyroom.getPartyroomId(), DjChangeType.ROTATE, new CrewId(djCrew.getId())));
             return;
         }
 
-        PlaybackData playbackData = playbackRepository.save(nextPlayback);
-        playbackAggregationRepository.save(PlaybackAggregationData.createFor(new PlaybackId(playbackData.getId())));
-        // Update playback state in PARTYROOM_PLAYBACK
-        PartyroomPlaybackData playbackState = aggregatePort.findPlaybackState(partyroom.getPartyroomId());
-        playbackState.updatePlayback(new PlaybackId(playbackData.getId()), new CrewId(djCrew.getId()));
-        aggregatePort.savePlaybackState(playbackState);
-        // Schedule Task to wait for playback time
-        scheduleTask(nextPlayback);
-        // Propagation Websocket Event
-        PlaybackSnapshot snapshot = new PlaybackSnapshot(
-                playbackData.getId(), playbackData.getLinkId(), playbackData.getName(),
-                playbackData.getDuration().toDisplayString(), playbackData.getThumbnailImage(), playbackData.getEndTime());
-        eventPublisher.publishEvent(new PlaybackStartedEvent(partyroom.getPartyroomId(), new CrewId(djCrew.getId()), snapshot));
-        eventPublisher.publishEvent(new DjQueueChangedEvent(partyroom.getPartyroomId(), DjChangeType.ROTATE, new CrewId(djCrew.getId())));
-    }
-
-    PlaybackData getNextPlaybackInPlaylist(PartyroomId partyroomId, DjData dj, UserId djUserId) {
-        PlaybackTrackDto trackDto = playlistCommandPort.getFirstTrack(dj.getPlaylistId());
-        return PlaybackData.create(partyroomId, djUserId,
-                trackDto.name(), trackDto.duration(), trackDto.linkId(), trackDto.thumbnailImage(), clock.instant());
+        log.warn("[doStart] DEACTIVATE_TRIGGERED - partyroomId={}, reason=ALL_DJS_NO_PLAYABLE_TRACK, queueSize={}, limitMin={}",
+                partyroomIdValue, orderedDjs.size(), limitMin);
+        deactivateAndNotify(partyroom);
     }
 
     @Transactional
