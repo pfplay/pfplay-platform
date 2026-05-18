@@ -29,6 +29,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -164,5 +165,20 @@ public class TrackCommandService {
 
     public void rotateTrackOrder(Long playlistId, long totalCount) {
         aggregatePort.rotateTrackOrder(playlistId, totalCount);
+    }
+
+    @Transactional(readOnly = true)
+    public List<PlaybackTrackDto> peekOrderedTracks(Long playlistId) {
+        Pageable pageable = PageRequest.of(0, 15, Sort.by(Sort.Direction.ASC, "orderNumber"));
+        Page<PlaylistTrackDto> page = queryPort.getTracksWithPagination(new PlaylistId(playlistId), pageable);
+        return page.getContent().stream()
+                .map(dto -> new PlaybackTrackDto(dto.linkId(), dto.name(),
+                        dto.thumbnailImage(), dto.duration(), dto.orderNumber()))
+                .toList();
+    }
+
+    @Transactional
+    public void rotatePlayed(Long playlistId, int playedOrderNumber, long totalCount) {
+        aggregatePort.rotatePlayed(playlistId, playedOrderNumber, totalCount);
     }
 }
