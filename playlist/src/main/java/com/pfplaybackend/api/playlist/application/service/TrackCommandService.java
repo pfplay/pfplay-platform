@@ -150,25 +150,6 @@ public class TrackCommandService {
         eventPublisher.publishEvent(new TrackRemovedEvent(new PlaylistId(playlistId), trackId, trackData.getLinkId(), trackData.getName()));
     }
 
-    @Transactional
-    public PlaybackTrackDto getFirstTrack(Long playlistId) {
-        Pageable pageable = PageRequest.of(0, 5, Sort.by(Sort.Direction.ASC, "orderNumber"));
-        Page<PlaylistTrackDto> page = queryPort.getTracksWithPagination(new PlaylistId(playlistId), pageable);
-        rotateTrackOrder(playlistId, page.getTotalElements());
-        PlaylistTrackDto dto = page.getContent().get(0);
-        return new PlaybackTrackDto(
-                dto.linkId(),
-                dto.name(),
-                dto.thumbnailImage(),
-                dto.duration(),
-                dto.orderNumber()
-        );
-    }
-
-    public void rotateTrackOrder(Long playlistId, long totalCount) {
-        aggregatePort.rotateTrackOrder(playlistId, totalCount);
-    }
-
     @Transactional(readOnly = true)
     public List<PlaybackTrackDto> peekOrderedTracks(Long playlistId) {
         Pageable pageable = PageRequest.of(0, MAX_PLAYLIST_TRACK_COUNT, Sort.by(Sort.Direction.ASC, "orderNumber"));

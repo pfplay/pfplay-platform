@@ -96,11 +96,6 @@ public class PlaylistAggregateAdapter implements PlaylistAggregatePort, Playlist
     // ===== Track Reordering =====
 
     @Override
-    public void rotateTrackOrder(Long playlistId, long totalCount) {
-        trackRepository.reorderTracks(playlistId, totalCount);
-    }
-
-    @Override
     public void rotatePlayed(Long playlistId, int playedOrderNumber, long totalCount) {
         trackRepository.rotatePlayedOrder(playlistId, playedOrderNumber, totalCount);
     }
