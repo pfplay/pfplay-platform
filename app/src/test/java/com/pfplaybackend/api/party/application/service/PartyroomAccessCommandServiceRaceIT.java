@@ -6,27 +6,57 @@ import com.pfplaybackend.api.common.ThreadLocalContext;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.enums.AuthorityTier;
 import com.pfplaybackend.api.party.adapter.out.persistence.PartyroomRepository;
+import com.pfplaybackend.api.party.application.port.out.UserProfileQueryPort;
 import com.pfplaybackend.api.party.domain.entity.data.PartyroomData;
 import com.pfplaybackend.api.party.domain.enums.StageType;
 import com.pfplaybackend.api.party.domain.value.CountryCode;
 import com.pfplaybackend.api.party.domain.value.LinkDomain;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import com.pfplaybackend.api.party.domain.value.PlaybackTimeLimit;
+import com.pfplaybackend.api.user.application.dto.shared.ProfileSettingDto;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.mock.mockito.MockBean;
 
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 
 class PartyroomAccessCommandServiceRaceIT extends AbstractIntegrationTest {
 
     @Autowired private PartyroomAccessCommandService accessCommandService;
     @Autowired private PartyroomRepository partyroomRepository;
+
+    /**
+     * tryEnter → assertHasProfile(PA-7.1) 게이트만 무력화 — race invariant 검증과 직교.
+     * (실제 ProfileData 행 구성은 fragile — ClusterAPresenceIntegrationTest 와 동일 패턴.)
+     */
+    @MockBean
+    private UserProfileQueryPort userProfileQueryPort;
+
+    @BeforeEach
+    void seedProfileGate() {
+        // 어떤 userId 든 프로필 보유 상태로 — assertHasProfile 통과.
+        lenient().when(userProfileQueryPort.getUsersProfileSetting(any()))
+                .thenAnswer(inv -> {
+                    List<UserId> ids = inv.getArgument(0);
+                    Map<UserId, ProfileSettingDto> result = new java.util.HashMap<>();
+                    for (UserId id : ids) {
+                        result.put(id, mock(ProfileSettingDto.class));
+                    }
+                    return result;
+                });
+    }
 
     private long createActiveRoom(long hostUid) {
         PartyroomData p = PartyroomData.create(
