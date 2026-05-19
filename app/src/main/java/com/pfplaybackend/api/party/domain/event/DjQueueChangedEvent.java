@@ -11,11 +11,18 @@ public class DjQueueChangedEvent extends DomainEvent {
     private final PartyroomId partyroomId;
     private final DjChangeType changeType;
     private final CrewId affectedCrewId;
+    private final Integer playbackTimeLimitMinutes; // DEACTIVATE 한정 limit-only, 그 외 null
 
     public DjQueueChangedEvent(PartyroomId partyroomId, DjChangeType changeType, CrewId affectedCrewId) {
+        this(partyroomId, changeType, affectedCrewId, null);
+    }
+
+    public DjQueueChangedEvent(PartyroomId partyroomId, DjChangeType changeType, CrewId affectedCrewId,
+                               Integer playbackTimeLimitMinutes) {
         this.partyroomId = partyroomId;
         this.changeType = changeType;
         this.affectedCrewId = affectedCrewId;
+        this.playbackTimeLimitMinutes = playbackTimeLimitMinutes;
     }
 
     @Override
