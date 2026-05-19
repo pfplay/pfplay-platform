@@ -14,7 +14,9 @@ import com.pfplaybackend.api.party.application.port.out.ExpirationTaskPort;
 import com.pfplaybackend.api.party.application.port.out.PlaylistCommandPort;
 import com.pfplaybackend.api.party.application.port.out.UserActivityPort;
 import com.pfplaybackend.api.party.domain.entity.data.*;
+import com.pfplaybackend.api.party.domain.enums.DjChangeType;
 import com.pfplaybackend.api.party.domain.enums.GradeType;
+import com.pfplaybackend.api.party.domain.event.DjQueueChangedEvent;
 import com.pfplaybackend.api.party.domain.event.PlaybackStartedEvent;
 import com.pfplaybackend.api.party.domain.port.PartyroomAggregatePort;
 import com.pfplaybackend.api.party.domain.service.PartyroomAggregateService;
@@ -84,7 +86,8 @@ class PlaybackCommandServiceTest {
     @DisplayName("complete — 완료 시 DJ 점수가 1 증가한다")
     void completeUpdatesDjScore() {
         // given — tryProceed에서 DJ가 없으면 deactivate
-        PartyroomData partyroom = PartyroomData.builder().id(partyroomId.getId()).partyroomId(partyroomId).build();
+        PartyroomData partyroom = PartyroomData.builder().id(partyroomId.getId()).partyroomId(partyroomId)
+                .playbackTimeLimit(PlaybackTimeLimit.ofMinutes(10)).build();
         when(partyroomQueryService.getPartyroomById(partyroomId)).thenReturn(partyroom);
         when(aggregatePort.findDjsOrdered(partyroomId)).thenReturn(List.of());
 
@@ -99,7 +102,8 @@ class PlaybackCommandServiceTest {
     @DisplayName("complete — 대기열에 DJ가 없으면 재생이 비활성화된다")
     void completeNoDjsDeactivates() {
         // given
-        PartyroomData partyroom = PartyroomData.builder().id(partyroomId.getId()).partyroomId(partyroomId).build();
+        PartyroomData partyroom = PartyroomData.builder().id(partyroomId.getId()).partyroomId(partyroomId)
+                .playbackTimeLimit(PlaybackTimeLimit.ofMinutes(10)).build();
         when(partyroomQueryService.getPartyroomById(partyroomId)).thenReturn(partyroom);
         when(aggregatePort.findDjsOrdered(partyroomId)).thenReturn(List.of());
 
@@ -117,7 +121,8 @@ class PlaybackCommandServiceTest {
         ActivePartyroomDto activeDto = new ActivePartyroomDto(partyroomId.getId(), false, 1L, true, new PlaybackId(1L), new CrewId(1L));
         CrewData adjuster = CrewData.builder()
                 .id(1L).userId(userId).gradeType(GradeType.MODERATOR).build();
-        PartyroomData partyroom = PartyroomData.builder().id(partyroomId.getId()).partyroomId(partyroomId).build();
+        PartyroomData partyroom = PartyroomData.builder().id(partyroomId.getId()).partyroomId(partyroomId)
+                .playbackTimeLimit(PlaybackTimeLimit.ofMinutes(10)).build();
 
         when(partyroomQueryService.getMyActivePartyroom(userId)).thenReturn(Optional.of(activeDto));
         when(partyroomQueryService.getCrewOrThrow(new PartyroomId(activeDto.id()), userId)).thenReturn(adjuster);
@@ -152,7 +157,8 @@ class PlaybackCommandServiceTest {
     @DisplayName("skipPlayback — 스케줄 태스크를 취소하고 tryProceed를 실행한다")
     void skipPlaybackCancelsTaskAndProceeds() {
         // given
-        PartyroomData partyroom = PartyroomData.builder().id(partyroomId.getId()).partyroomId(partyroomId).build();
+        PartyroomData partyroom = PartyroomData.builder().id(partyroomId.getId()).partyroomId(partyroomId)
+                .playbackTimeLimit(PlaybackTimeLimit.ofMinutes(10)).build();
         when(partyroomQueryService.getPartyroomById(partyroomId)).thenReturn(partyroom);
         when(aggregatePort.findDjsOrdered(partyroomId)).thenReturn(List.of());
 
@@ -322,6 +328,18 @@ class PlaybackCommandServiceTest {
         verify(partyroomAggregateService).deactivatePlayback(partyroomId);
         verify(playbackRepository, never()).save(any(PlaybackData.class));
         verify(playlistCommandPort, never()).rotatePlayed(any(PlaylistId.class), anyInt(), anyLong());
+
+        // and — DEACTIVATE 이벤트에 changeType + 룸 limit 분(1)이 실린다
+        ArgumentCaptor<Object> eventCaptor = ArgumentCaptor.forClass(Object.class);
+        verify(eventPublisher, atLeastOnce()).publishEvent(eventCaptor.capture());
+        DjQueueChangedEvent deactivateEvent = eventCaptor.getAllValues().stream()
+                .filter(DjQueueChangedEvent.class::isInstance)
+                .map(DjQueueChangedEvent.class::cast)
+                .filter(e -> e.getChangeType() == DjChangeType.DEACTIVATE)
+                .findFirst()
+                .orElseThrow();
+        assertThat(deactivateEvent.getChangeType()).isEqualTo(DjChangeType.DEACTIVATE);
+        assertThat(deactivateEvent.getPlaybackTimeLimitMinutes()).isEqualTo(1);
     }
 
     @Test
