@@ -16,6 +16,7 @@ public record DjQueueChangeMessage(
         long timestamp,
         List<DjWithProfileDto> djs,
         DjChangeType changeType,
+        // DEACTIVATE 한정 limit-only(분), 그 외 null
         Integer playbackTimeLimitMinutes
 ) implements Serializable, GroupBroadcastMessage {
 
