@@ -41,6 +41,15 @@ reason=ALL_TRACKS_EXCEEDED` 등 로그만 추가, 구조·`DjQueueChangeMessage`
 > 산술 동일·갭없음 증명). 본 §3-1 의 seam 문구는 이 정정으로 대체. 상세는
 > plan `2026-05-19-e3-pr1-*` Task 1 참조.
 
+> **개정 (2026-05-19, PR-1 머지 후 PR-2 착수)**: PR-1 재설계로 `deactivateAndNotify`
+> 발화 조건 = "회전된 큐의 **모든 DJ가 재생가능 트랙 0**" → 단일 "거부 트랙"이
+> 존재하지 않음(여러 DJ/트랙/빈 플레이리스트 혼재 가능). 따라서 §3-2 리치(b)의
+> "거부 트랙명·durationSec" 는 **드롭**, **DEACTIVATE payload = `playbackTimeLimit`
+> (분) limit-only** 로 확정(사용자 결정). §3-3 프론트 DEACTIVATE 모달 문구도
+> 트랙명 없이 "재생 시간 제한(N분)을 초과하는 곡으로 재생이 중단되었습니다" 로
+> 조정(PR-3). 나머지 changeType(ADMIN/EXIT) 처리·additive·backward-compat·
+> 직렬화 윈도우(§4)는 불변.
+
 ## 2. 결정 (사용자 확정)
 
 - **핵심 정책 = 트랙 단위 스킵**: over-limit 트랙은 재생 안 하고 같은 DJ
