@@ -214,6 +214,21 @@ public class MaskingJsonGeneratorDecorator implements JsonGeneratorDecorator {
             super.writeString(MASKABLE_FIELDS.contains(currentField) ? mask(text) : text);
         }
 
+        @Override
+        public void writeString(char[] text, int offset, int len) throws IOException {
+            if (MASKABLE_FIELDS.contains(currentField)) {
+                String masked = mask(new String(text, offset, len));
+                super.writeString(masked);
+            } else {
+                super.writeString(text, offset, len);
+            }
+        }
+
+        @Override
+        public void writeRawValue(String text) throws IOException {
+            super.writeRawValue(MASKABLE_FIELDS.contains(currentField) ? mask(text) : text);
+        }
+
         private String mask(String input) {
             if (input == null || input.isEmpty()) return input;
             String out = input;
@@ -241,6 +256,9 @@ public class MaskingJsonGeneratorDecorator implements JsonGeneratorDecorator {
 - **Logger name / MDC value 는 마스킹 적용 안 함** (이미 비-secret 필드만 들어가는 게 정책)
 - **Message 본문 + exception stackTrace** 에 적용
 - **새 secret 패턴 발견 시** `MaskingPatterns` 에 추가 + 단위 테스트 추가 (정규식 진화 위치 단일)
+- **IP_V4 의 accepted limitation**: pure regex 로 `from 1.2.3.4`(IP) 와 `version 1.2.3.4`(semver) 의 의미 구분 불가능 — 후자도 의도적으로 redact 됨. semver/build 번호는 비-PII 라 무해. 만약 운영 단계에서 디버깅 시 semver redaction 이 거슬리면 `MaskingPatterns.IP_V4` 를 `(?<=from |ip[:=] |addr[:=] |host[:=] )...` 같은 prefix-anchored 정규식으로 진화 가능
+- **MaskingJsonGenerator state 한계**: `currentField` 가 `writeFieldName` 으로만 갱신되어 *array 원소* 안에선 직전 필드 이름이 잔존. logstash-encoder 가 flat field 구조라 현재 무영향 — array 형태 필드 도입 시 재검토. 본 spec 범위에선 flat key→string 만 다룸
+- **string emit 메서드 coverage**: `writeString(String)` + `writeString(char[], int, int)` + `writeRawValue(String)` 3종 override. `writeRaw(String)` 은 logstash-encoder 가 거의 사용 안 함 — 운영 중 stack trace 누출 발견 시 추가 override
 
 ## 7. MDC
 
@@ -493,7 +511,7 @@ WebSocket Frame (CONNECT, SUBSCRIBE, SEND)
   - empty string 입력 → no-op (NPE 안 남)
   - multi-line stackTrace 안에 email 2개 + IP 2개 → 모두 마스킹
   - 1-char local-part email (`a@example.com`) → `a***@example.com` (leak 없음 — `{1}` 정합)
-  - IP false-positive: `version 1.2.3.4 build` → 변형 없음 (lookbehind 정합)
+  - IP boundary: `cluster 192.168.1.1.2.3` 처럼 5+ octet decimal sequence 에서 inner overlap 미매칭 (lookbehind/lookahead 정합). semver-like `1.2.3.4` 단일 시퀀스는 *의도적으로 redact* — §6.3 limitation 참조
   - cookie 형식: `Cookie: AdminAccessToken=abc.def; SharedSessionToken=xyz` → 둘 다 `<redacted>`
 - `MdcHelperTest`:
   - nested scope: outer `partyroomId=X` → inner `partyroomId=Y` → inner close → MDC.get("partyroomId")=="X"
