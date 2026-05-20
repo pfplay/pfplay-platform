@@ -56,15 +56,19 @@
 - `src/features/guests/ui/__tests__/guests-table.test.tsx`
 - `src/features/guests/ui/__tests__/guests-filter-form.test.tsx`
 - `src/features/guests/ui/__tests__/guest-detail-cards.test.tsx`
+- `src/test/mocks/fixtures/guests.ts` (또는 `guest-detail.ts`) — `members.ts` 의 `memberSummaryFixture` 대칭 — 단위테스트 공용 fixture
 - `src/widgets/guests-list.tsx`
-- `src/pages/guest-detail-page.tsx`
+- `src/widgets/guests-detail.tsx` — `widgets/members-detail.tsx` 대칭 FSD pattern (`useParams` + `useGuestDetail` + NotFoundView + `GuestDetailCards` 래핑). **mutation dropdown 없음**.
+- `src/pages/guest-detail-page.tsx` — `member-detail-page.tsx` 와 동일한 5줄 widget wrapper
 - `src/pages/__tests__/guest-detail-page.test.tsx`
+- `src/pages/__tests__/members-page.tabs.test.tsx` — 신규 파일 (Tabs 전환 로직 전용). 기존 `members-page.test.tsx` 는 *보존 무수정* — MEMBER 탭 회귀 가드
 
 **수정**:
-- `src/pages/members-page.tsx` — Tabs 컨테이너로 전환 (기존 5줄 wrapper → ~25줄)
-- `src/pages/__tests__/members-page.test.tsx` (기존이 있다면 확장, 없으면 신규) — 탭 ↔ URL sync, 회귀 가드
-- `src/app/routes.tsx` (또는 라우트 등록 파일) — `/guests/:guestId` route 추가
-- (필요 시) `src/shared/api/page.ts` import 재사용 — 무수정
+- `src/pages/members-page.tsx` — Tabs 컨테이너로 전환 (기존 5줄 wrapper → ~30줄)
+- `src/App.tsx` — `<Route path="/guests/:guestId" element={<GuestDetailPage />} />` 추가 + import. 정확한 위치: 현재 `<Route path="/members/:memberId" element={<MemberDetailPage />} />` (`App.tsx:28`) 바로 다음 줄 sibling.
+- `src/shared/lib/use-url-query-state.ts` — `preserveExternalKeys?: string[]` 옵션 추가 (Tabs 컨테이너 URL clash 해결, hook 의 후방호환 확장).
+- `src/widgets/members-list.tsx` — 단 1 줄 변경: `useUrlQueryState(membersListQuerySchema)` → `useUrlQueryState(membersListQuerySchema, { preserveExternalKeys: ["tab"] })`. 그 외 무수정. **이유**: MEMBER 탭에서 widget setQuery 호출 시 URL 의 `?tab=member` 가 사라지면 reload/북마크 시 tab default 복귀 — 정합성 깨짐. **이 1줄은 spec §3 "MEMBER 코드 변경 일체 X" 의 의미상 *예외* — features/members + entities/member 는 무수정, widgets 는 integration 영역이라 Tabs 컨테이너화와 함께 변경 허용. plan 명시.**
+- 기존 `src/pages/__tests__/members-page.test.tsx` — **수정 금지** (3 real MSW integration tests 보존 → MEMBER 회귀 가드 의무)
 
 ### 빌드/검증 명령 (Windows + Git Bash)
 
@@ -634,6 +638,17 @@ void findDetail_existing_guest_returns_row() {
 void findDetail_missing_guest_returns_empty() {
     assertThat(adminGuestQueryRepository.findDetail(9999999L)).isEmpty();
 }
+
+@Test
+@DisplayName("search: sort created_at_asc — 최오래 가입자부터 (Member IT 와 동등 sort enum 커버)")
+void search_sort_created_at_asc() {
+    AdminGuestListQuery query = new AdminGuestListQuery(null, null, null,
+            AdminGuestListQuery.SORT_CREATED_AT_ASC);
+    Page<AdminGuestSummaryRow> page = adminGuestQueryRepository.search(query, PageRequest.of(0, 50));
+
+    // FOO1(2025-12-01) 가 가장 오래 → 첫번째
+    assertThat(page.getContent().get(0).guestId()).isEqualTo(guestIdFoo1);
+}
 ```
 
 `seedGuest` 헬퍼 (Member IT 의 seedMember 와 동형, profile_data 동봉):
@@ -680,13 +695,13 @@ Expected: FAIL (`AdminGuestQueryRepository` bean 없음 또는 컴파일 에러)
 - [ ] **Step 4: PASS 확인**
 
 Run: `JAVA_HOME="C:/Users/Eisen/.jdks/ms-21.0.7" ./gradlew :app:test --tests "*AdminGuestQueryRepositoryImplIT*"`
-Expected: PASS (6 tests)
+Expected: PASS (7 tests — 6 + created_at_asc sort enum)
 
 - [ ] **Step 5: 커밋**
 
 ```bash
 git add app/src/test/java/com/pfplaybackend/api/administration/adapter/out/persistence/impl/AdminGuestQueryRepositoryImplIT.java
-git commit -m "test(d8): AdminGuestQueryRepositoryImpl IT — search/findDetail 6 cases (#8)"
+git commit -m "test(d8): AdminGuestQueryRepositoryImpl IT — search/findDetail 7 cases (#8)"
 ```
 
 ### Task 6: Service — `AdminGuestQueryService`
@@ -1401,33 +1416,39 @@ git commit -m "feat(d8): entities/guest 슬라이스 — AdminGuestSummary/Detai
 cat src/features/members/model/filter-schema.ts
 ```
 
-- [ ] **Step 2: `filter-schema.ts` 작성** (zod 또는 동등 검증 라이브러리 기존 패턴 따름. members 와 정확히 동형, `tier` 필드 제거):
+- [ ] **Step 2: `filter-schema.ts` 작성** — 기존 `members/model/filter-schema.ts` 와 정확히 동형 (zod 확정, **`superRefine` 포함**), `tier` 필드만 제거:
 
 ```typescript
 // src/features/guests/model/filter-schema.ts
 import { z } from "zod"
 
-export const guestSortValues = [
+export const GuestSortEnum = z.enum([
   "created_at_desc",
   "created_at_asc",
   "last_activity_desc",
-] as const
-
-export type GuestSort = (typeof guestSortValues)[number]
+])
+export type GuestSort = z.infer<typeof GuestSortEnum>
 
 export const guestsListQuerySchema = z.object({
   email: z.string().max(255).optional(),
   joined_from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   joined_to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  sort: z.enum(guestSortValues).default("created_at_desc"),
   page: z.coerce.number().int().min(0).default(0),
   size: z.coerce.number().int().min(1).max(200).default(50),
+  sort: GuestSortEnum.default("created_at_desc"),
+}).superRefine((v, ctx) => {
+  // members schema 의 동등 검증 — backend 가 400 으로 가드하나 UX parity 유지
+  if (v.joined_from && v.joined_to && v.joined_from > v.joined_to) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["joined_to"],
+      message: "가입일 종료가 시작보다 빨라요",
+    })
+  }
 })
 
 export type GuestsListQuery = z.infer<typeof guestsListQuerySchema>
 ```
-
-> 구현자: members `filter-schema.ts` 의 실제 import (zod vs valibot vs 자체) 와 export 형식에 정확히 맞춰 작성. 위 코드는 zod 가정이며 실제 도구는 기존 파일을 따른다.
 
 - [ ] **Step 3: schema 테스트 작성**
 
@@ -1463,6 +1484,17 @@ describe("guestsListQuerySchema", () => {
   it("does not have tier field", () => {
     const parsed = guestsListQuerySchema.parse({ tier: "FM" } as unknown as Record<string, unknown>)
     expect("tier" in parsed).toBe(false)
+  })
+
+  it("rejects joined_to earlier than joined_from (superRefine parity with members)", () => {
+    const result = guestsListQuerySchema.safeParse({
+      joined_from: "2026-12-31",
+      joined_to: "2026-01-01",
+    })
+    expect(result.success).toBe(false)
+    if (!result.success) {
+      expect(result.error.issues.some((i) => i.path[0] === "joined_to")).toBe(true)
+    }
   })
 })
 ```
@@ -1854,6 +1886,14 @@ export function GuestsTable({ rows, isLoading, isEmpty }: Props) {
 
 - [ ] **Step 2: 테스트 작성** (members-table.test.tsx 동형 — render rows / empty / loading / row click navigate)
 
+> **중요 단언**: row click → `useNavigate` mock 으로 호출 인자 검증 — **`/guests/{guestId}` 로 navigate** (절대 `/members/...` 아님, members-table 패턴 복사 시 실수 방지). 최소 1건 explicit:
+> ```typescript
+> const nav = vi.fn()
+> vi.mocked(useNavigate).mockReturnValue(nav)
+> // ... fireEvent.click(row)
+> expect(nav).toHaveBeenCalledWith(`/guests/${row.guestId}`)
+> ```
+
 - [ ] **Step 3: 테스트 PASS 확인**
 
 Run: `yarn vitest run src/features/guests/ui/__tests__/guests-table.test.tsx`
@@ -1872,38 +1912,164 @@ git commit -m "feat(d8): GuestsTable — tier 컬럼 부재 + agent 컬럼 + cli
 - Create: `src/features/guests/ui/guest-detail-cards.tsx`
 - Create: `src/features/guests/ui/__tests__/guest-detail-cards.test.tsx`
 
-기존 `member-detail-cards.tsx` 동형. mutation 영역 미렌더 (read-only invariant).
+기존 `member-detail-cards.tsx` 동형. mutation 영역 자체가 컴포넌트에 없음 (member-detail-cards 도 mutation dropdown 을 자체 렌더하지 않음 — widget level 에서 합성).
 
-- [ ] **Step 1: 컴포넌트 작성** (member-detail-cards 의 mutation dropdown 호출 부 제거, wallet/tier 카드는 agent/isProfileUpdated 로 대체. UserAccount 카드 + RecentActivityLog 영역은 동일 패턴)
+**중요**: `MembersActionsDropdown` 같은 mutation 컴포넌트의 **import 자체가 없어야 함** — 시각적 부재 검증과 함께 코드 레벨 invariant 보장.
 
-- [ ] **Step 2: 테스트 — mutation dropdown 부재 검증 포함**
+- [ ] **Step 1: fixture 파일 작성** (`src/test/mocks/fixtures/guests.ts` 또는 동등 위치 — 기존 `fixtures/members.ts` 의 `memberSummaryFixture` 패턴 따름)
+
+```typescript
+// src/test/mocks/fixtures/guests.ts
+import type { AdminGuestSummary, AdminGuestDetail } from "@/entities/guest"
+
+export const guestSummaryFixture: AdminGuestSummary = {
+  guestId: 5001,
+  userAccountId: 6001,
+  email: "guest-fixture@d8.local",
+  providerType: "GOOGLE",
+  nickname: "guestNick",
+  agent: "Mozilla/5.0 fixture-ua",
+  isProfileUpdated: true,
+  lastLoginAt: "2026-05-15T10:00:00",
+  createdAt: "2026-05-10T00:00:00",
+  withdrawn: false,
+  withdrawnAt: null,
+}
+
+export const guestDetailFixture: AdminGuestDetail = {
+  guestId: 5001,
+  userAccount: {
+    userAccountId: 6001,
+    email: "guest-fixture@d8.local",
+    providerType: "GOOGLE",
+    lastLoginAt: "2026-05-15T10:00:00",
+    withdrawnAt: null,
+  },
+  profile: { nickname: "guestNick", introduction: "Hello" },
+  agent: "Mozilla/5.0 fixture-ua",
+  isProfileUpdated: true,
+  createdAt: "2026-05-10T00:00:00",
+  withdrawn: false,
+  withdrawnAt: null,
+  recentActivityLog: [],
+}
+```
+
+- [ ] **Step 2: `guest-detail-cards.tsx` 작성**
+
+```typescript
+// src/features/guests/ui/guest-detail-cards.tsx
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { formatKst } from "@/shared/lib/format-kst"
+import type { AdminGuestDetail } from "@/entities/guest"
+
+interface Props {
+  detail: AdminGuestDetail
+}
+
+export function GuestDetailCards({ detail }: Props) {
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader><CardTitle>계정</CardTitle></CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          <div>이메일: {detail.userAccount.email}</div>
+          <div>가입 경로: {detail.userAccount.providerType}</div>
+          <div>마지막 로그인: {formatKst(detail.userAccount.lastLoginAt)}</div>
+          <div>
+            상태: {detail.withdrawn
+              ? <Badge variant="muted">탈퇴됨 ({formatKst(detail.withdrawnAt)})</Badge>
+              : <Badge variant="outline">활동 중</Badge>}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>게스트 프로필</CardTitle></CardHeader>
+        <CardContent className="space-y-2 text-sm">
+          <div>닉네임: {detail.profile.nickname ?? "-"}</div>
+          <div>소개: {detail.profile.introduction ?? "-"}</div>
+          <div className="break-all">agent: {detail.agent ?? "-"}</div>
+          <div>프로필 완료 여부: {detail.isProfileUpdated ? "Y" : "N"}</div>
+          <div>가입일: {formatKst(detail.createdAt)}</div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>최근 활동 로그 (상위 30건)</CardTitle></CardHeader>
+        <CardContent>
+          {detail.recentActivityLog.length === 0 ? (
+            <p className="text-sm text-muted-foreground">활동 기록 없음</p>
+          ) : (
+            <ul className="text-sm space-y-1">
+              {detail.recentActivityLog.map((log, i) => (
+                <li key={i}>
+                  <span className="font-medium">{log.eventType}</span>
+                  {log.partyroomId !== null && <span> · partyroom #{log.partyroomId}</span>}
+                  <span className="text-muted-foreground"> · {formatKst(log.occurredAt)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+```
+
+> 구현자: import 에 `MembersActionsDropdown`, `ChangeTierDialog`, `WithdrawDialog` 등 mutation 관련 컴포넌트 **절대 포함 금지**. Card/Badge/formatKst 같은 시각 primitives 만 사용.
+
+- [ ] **Step 3: 테스트 — mutation 부재 + 필드 표시 검증**
 
 ```typescript
 // src/features/guests/ui/__tests__/guest-detail-cards.test.tsx
+import { describe, it, expect } from "vitest"
+import { render, screen } from "@testing-library/react"
+import { GuestDetailCards } from "../guest-detail-cards"
+import { guestDetailFixture } from "@/test/mocks/fixtures/guests"
+
 describe("GuestDetailCards", () => {
   it("does NOT render mutation actions dropdown (read-only invariant)", () => {
-    render(<GuestDetailCards detail={fixtureDetail} />)
+    render(<GuestDetailCards detail={guestDetailFixture} />)
     expect(screen.queryByRole("button", { name: /작업/i })).not.toBeInTheDocument()
     expect(screen.queryByText("등급 변경")).not.toBeInTheDocument()
     expect(screen.queryByText("비식별화 탈퇴")).not.toBeInTheDocument()
   })
 
-  it("renders agent + isProfileUpdated fields", () => {
-    render(<GuestDetailCards detail={fixtureDetail} />)
-    expect(screen.getByText(/ua-string/)).toBeInTheDocument()
+  it("renders agent + isProfileUpdated + email + nickname", () => {
+    render(<GuestDetailCards detail={guestDetailFixture} />)
+    expect(screen.getByText(/Mozilla\/5\.0 fixture-ua/)).toBeInTheDocument()
+    expect(screen.getByText("Y")).toBeInTheDocument() // isProfileUpdated
+    expect(screen.getByText(/guest-fixture@d8.local/)).toBeInTheDocument()
+    expect(screen.getByText(/guestNick/)).toBeInTheDocument()
+  })
+
+  it("withdrawn=true → 탈퇴됨 배지 노출", () => {
+    render(<GuestDetailCards detail={{ ...guestDetailFixture, withdrawn: true, withdrawnAt: "2026-05-19T00:00:00" }} />)
+    expect(screen.getByText(/탈퇴됨/)).toBeInTheDocument()
+  })
+
+  it("recentActivityLog 빈 배열 → '활동 기록 없음' 노출", () => {
+    render(<GuestDetailCards detail={{ ...guestDetailFixture, recentActivityLog: [] }} />)
+    expect(screen.getByText(/활동 기록 없음/)).toBeInTheDocument()
   })
 })
 ```
 
-- [ ] **Step 3: 테스트 PASS 확인**
+- [ ] **Step 4: 테스트 PASS 확인**
 
 Run: `yarn vitest run src/features/guests/ui/__tests__/guest-detail-cards.test.tsx`
+Expected: PASS (4 tests)
 
-- [ ] **Step 4: 커밋**
+- [ ] **Step 5: 커밋**
 
 ```bash
-git add src/features/guests/ui/guest-detail-cards.tsx src/features/guests/ui/__tests__/guest-detail-cards.test.tsx
-git commit -m "feat(d8): GuestDetailCards — mutation dropdown 부재 + agent/isProfileUpdated (#8)"
+git add src/test/mocks/fixtures/guests.ts \
+        src/features/guests/ui/guest-detail-cards.tsx \
+        src/features/guests/ui/__tests__/guest-detail-cards.test.tsx
+git commit -m "feat(d8): GuestDetailCards + guests fixture — mutation 부재 invariant + agent/isProfileUpdated (#8)"
 ```
 
 ### Task 20: Chunk 2 frontend 슬라이스 전체 회귀 검증
@@ -1922,7 +2088,135 @@ Expected: 0 error
 
 ## Chunk 3: Frontend — widgets/guests-list + pages/members-page Tabs 컨테이너 + 회귀
 
-> 슬라이스를 통합해 사용자에게 보이는 화면 완성. **review 검증포인트**: ① MEMBER 탭 동작 무변경(회귀 가드 테스트), ② URL `?tab=*` ↔ active tab sync, ③ 두 탭 동시 마운트되지 않음 (TabsContent 의 force-mount false 동작), ④ 라우트 `/guests/{guestId}` 등록.
+> 슬라이스를 통합해 사용자에게 보이는 화면 완성. **review 검증포인트**: ① MEMBER 탭 동작 무변경(회귀 가드 — 기존 `members-page.test.tsx` 무수정 + 신규 `members-page.tabs.test.tsx` 분리), ② URL `?tab=*` ↔ active tab sync (Tabs onValueChange → useSearchParams), ③ **URL param namespace clash 해결** (widget setQuery 시 `tab` 키 보존), ④ `widgets/members-detail.tsx` 패턴 동형의 `widgets/guests-detail.tsx` 신설 (page 는 5줄 wrapper), ⑤ 라우트 `/guests/:guestId` 를 `src/App.tsx:28` 인접에 등록.
+>
+> **shadcn `Tabs` 동작 사실 확인**: Radix `@radix-ui/react-tabs` 의 `TabsContent` 는 `forceMount` 미설정 시 inactive 탭의 자식을 **unmount**. 두 widget 동시 마운트 없음 (이중 fetch 방지). plan 의 forceMount 관련 방어 노트는 불필요.
+
+### Task 21a: `useUrlQueryState` 에 `preserveExternalKeys` 옵션 추가 (shared lib 후방호환 확장)
+
+**Files:**
+- Modify: `src/shared/lib/use-url-query-state.ts`
+- Test: `src/shared/lib/__tests__/use-url-query-state.test.tsx` (기존 있다면 확장, 없으면 신규)
+
+**왜 필요한가**: 현 `useUrlQueryState` 의 `setQuery` 는 `serializeQuery(merged)` 로 **URLSearchParams 전체를 schema 키만으로 재구성**. 두 widget (MembersListWidget, GuestsListWidget) 이 같은 schema field 이름(`email`, `joined_from`, `sort`, `page`, `size`) 을 사용하면서 `members-page` Tabs 컨테이너의 `?tab=*` 도 URL 에 함께 있음 → widget 의 `setQuery` 한 번 호출에 `tab` 키가 날아가 **default tab=member 로 강제 복귀**. clash 의 본질은 schema 의 같은 이름이 아니라 **schema 외 키 (`tab`) 의 비-보존**.
+
+해결: hook 호출자가 보존하고 싶은 외부 키 목록을 옵션으로 전달. 옵션 미사용 호출처 (기존 partyrooms/reports 등) 무영향.
+
+- [ ] **Step 1: hook 시그니처 확장 + impl 수정**
+
+```typescript
+import { useEffect } from "react"
+import { useSearchParams } from "react-router-dom"
+import { toast } from "sonner"
+import type { ZodTypeAny, z } from "zod"
+import {
+  parseSearchParams,
+  stripInvalidParams,
+  serializeQuery,
+} from "@/shared/lib/url-state"
+
+/**
+ * @param options.preserveExternalKeys — schema 에 없는 URL 키 중 setQuery/reset 시 보존할 키 목록.
+ *   탭 컨테이너의 `tab` 같은 외부 상태가 widget 의 schema 와 무관하게 URL 에 공존할 때 사용.
+ */
+export function useUrlQueryState<T extends ZodTypeAny>(
+  schema: T,
+  options?: { preserveExternalKeys?: string[] }
+): {
+  query: z.infer<T> | null
+  setQuery: (next: Partial<z.infer<T>>) => void
+  reset: () => void
+} {
+  const [params, setParams] = useSearchParams()
+  const parsed = parseSearchParams(schema, params)
+  const preserveKeys = options?.preserveExternalKeys ?? []
+
+  useEffect(() => {
+    if (!parsed.success) {
+      const cleaned = stripInvalidParams(params, parsed.error)
+      setParams(cleaned, { replace: true })
+      toast.error("필터 일부가 잘못돼 무시했어요")
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parsed.success])
+
+  const buildOutWithPreserved = (base: URLSearchParams): URLSearchParams => {
+    for (const key of preserveKeys) {
+      const existing = params.get(key)
+      if (existing !== null) base.set(key, existing)
+    }
+    return base
+  }
+
+  return {
+    query: parsed.success ? (parsed.data as z.infer<T>) : null,
+    setQuery: (next) => {
+      const base = parsed.success ? parsed.data : {}
+      const merged = { ...base, ...next }
+      const out = serializeQuery(merged as Record<string, unknown>)
+      setParams(buildOutWithPreserved(out))
+    },
+    reset: () => setParams(buildOutWithPreserved(new URLSearchParams())),
+  }
+}
+```
+
+- [ ] **Step 2: 단위 테스트** — preserveExternalKeys 동작 검증
+
+```typescript
+// src/shared/lib/__tests__/use-url-query-state.test.tsx (신규 또는 확장)
+import { describe, it, expect } from "vitest"
+import { renderHook, act } from "@testing-library/react"
+import { MemoryRouter, useLocation } from "react-router-dom"
+import { z } from "zod"
+import { useUrlQueryState } from "../use-url-query-state"
+
+const schema = z.object({
+  email: z.string().max(255).optional(),
+  page: z.coerce.number().int().min(0).default(0),
+})
+
+describe("useUrlQueryState — preserveExternalKeys", () => {
+  it("setQuery 시 preserveExternalKeys 의 외부 키 (tab) 가 URL 에 보존", () => {
+    let currentSearch = ""
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <MemoryRouter initialEntries={["/x?tab=guest&email=foo"]}>
+        <SearchProbe onChange={(s) => { currentSearch = s }}>{children}</SearchProbe>
+      </MemoryRouter>
+    )
+    const { result } = renderHook(
+      () => useUrlQueryState(schema, { preserveExternalKeys: ["tab"] }),
+      { wrapper }
+    )
+
+    act(() => result.current.setQuery({ email: "bar" }))
+
+    expect(currentSearch).toContain("tab=guest")
+    expect(currentSearch).toContain("email=bar")
+  })
+
+  it("옵션 미지정 시 외부 키 (tab) 가 setQuery 후 사라짐 — 기존 동작 회귀 가드", () => {
+    // 기존 호출처 (partyrooms 등) 무영향 확인
+    // ... 검증 골격은 위 패턴 동형, options 미전달
+  })
+})
+
+// SearchProbe: useLocation 으로 search string 노출하는 헬퍼 (필요 시 작성)
+```
+
+> 구현자: 헬퍼 SearchProbe 또는 동등 패턴 — `MemoryRouter` + `useLocation` spy. 기존 hook 테스트가 있다면 그 헬퍼 재사용.
+
+- [ ] **Step 3: 회귀 — 기존 호출처 PASS 확인**
+
+Run: `yarn vitest run`
+Expected: 기존 members-page / partyrooms 등 호출처 테스트 무파손 (옵션 미사용 시 동작 동일)
+
+- [ ] **Step 4: 커밋**
+
+```bash
+git add src/shared/lib/use-url-query-state.ts src/shared/lib/__tests__/use-url-query-state.test.tsx
+git commit -m "feat(d8): useUrlQueryState preserveExternalKeys 옵션 — Tabs 컨테이너 외부 키 보존 (#8)"
+```
 
 ### Task 21: `widgets/guests-list.tsx` 신설
 
@@ -1944,7 +2238,10 @@ import { Pagination } from "@/widgets/pagination"
 import { ApiError } from "@/shared/api/error"
 
 export function GuestsListWidget() {
-  const { query, setQuery, reset } = useUrlQueryState(guestsListQuerySchema)
+  // preserveExternalKeys: ["tab"] — members-page Tabs 컨테이너의 ?tab=guest 가 setQuery 시 사라지는 것 방지
+  const { query, setQuery, reset } = useUrlQueryState(guestsListQuerySchema, {
+    preserveExternalKeys: ["tab"],
+  })
   if (query === null) return null
   return <GuestsListContent query={query} setQuery={setQuery} reset={reset} />
 }
@@ -1984,20 +2281,35 @@ function GuestsListContent({ query, setQuery, reset }: ContentProps) {
 
 Run: `yarn tsc --noEmit`
 
-- [ ] **Step 3: 커밋**
+- [ ] **Step 3: `widgets/members-list.tsx` 1줄 수정 — preserveExternalKeys 적용**
 
-```bash
-git add src/widgets/guests-list.tsx
-git commit -m "feat(d8): widgets/guests-list — MembersListWidget 패턴 동형 (#8)"
+```diff
+- const { query, setQuery, reset } = useUrlQueryState(membersListQuerySchema)
++ const { query, setQuery, reset } = useUrlQueryState(membersListQuerySchema, {
++   preserveExternalKeys: ["tab"],
++ })
 ```
 
-### Task 22: `pages/members-page.tsx` Tabs 컨테이너 전환 + 테스트
+- [ ] **Step 4: 회귀 — 기존 members-page integration 테스트 PASS 확인**
+
+Run: `yarn vitest run src/pages/__tests__/members-page.test.tsx`
+Expected: PASS (3 tests — 기존 MSW integration tests 무파손. preserveExternalKeys 가 옵션이고 외부 키가 없을 때 기존 동작 동일)
+
+- [ ] **Step 5: 커밋**
+
+```bash
+git add src/widgets/guests-list.tsx src/widgets/members-list.tsx
+git commit -m "feat(d8): widgets/guests-list + members-list 1줄 — preserveExternalKeys=['tab'] (#8)"
+```
+
+### Task 22: `pages/members-page.tsx` Tabs 컨테이너 전환 + 신규 탭 테스트 (기존 test 보존)
 
 **Files:**
 - Modify: `src/pages/members-page.tsx` (5줄 → ~30줄)
-- Create / Modify: `src/pages/__tests__/members-page.test.tsx`
+- **DO NOT MODIFY**: `src/pages/__tests__/members-page.test.tsx` — 기존 3 MSW integration tests (happy path / `?tier=FM` / 255 char invalid drop) MEMBER 회귀 가드. **수정 금지** (spec §10.3).
+- Create: `src/pages/__tests__/members-page.tabs.test.tsx` — 신규 Tabs 전환 로직 전용 테스트 (widget mock 사용 OK)
 
-기존 5줄 wrapper 를 Tabs 컨테이너로 전환. URL search param `tab` 으로 active sync.
+**중요 invariant 확인**: 기존 `members-page.test.tsx` 는 `MembersListWidget` 을 mock 하지 않고 *real integration* 으로 검증함. 본 Task 이후에도 `MembersPage` 의 default tab 이 `member` 라 기존 테스트는 그대로 PASS 해야 함 (Tabs 가 MembersListWidget 을 default 로 렌더, MSW 가 `/api/v1/admin/members` 응답).
 
 - [ ] **Step 1: `members-page.tsx` 수정**
 
@@ -2039,15 +2351,15 @@ export function MembersPage() {
 }
 ```
 
-> 구현자: `shadcn/ui` `Tabs` 기본 동작은 inactive TabsContent 를 unmount (force-mount 미설정 시) — 두 탭 동시 마운트 방지 자동 보장. 만약 빌드에서 다르게 동작한다면 `forceMount={undefined}` 명시.
+> shadcn/ui `Tabs` (Radix backed) 는 inactive TabsContent 를 unmount (default). 두 widget 동시 마운트 없음 — 별도 forceMount 조작 불필요.
 
-- [ ] **Step 2: 테스트 작성** (`pages/__tests__/members-page.test.tsx`)
+- [ ] **Step 2: 신규 테스트 파일 `members-page.tabs.test.tsx` 작성** (widget mock — Tabs 전환 로직만 좁게 검증; 기존 `members-page.test.tsx` 는 무변경 보존)
 
 ```typescript
-// src/pages/__tests__/members-page.test.tsx
+// src/pages/__tests__/members-page.tabs.test.tsx
 import { describe, it, expect, vi } from "vitest"
 import { render, screen, fireEvent } from "@testing-library/react"
-import { MemoryRouter, Route, Routes } from "react-router-dom"
+import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MembersPage } from "../members-page"
 
@@ -2058,13 +2370,18 @@ vi.mock("@/widgets/guests-list", () => ({
   GuestsListWidget: () => <div data-testid="guests-widget">GUEST_WIDGET</div>,
 }))
 
+function LocationProbe() {
+  const loc = useLocation()
+  return <div data-testid="loc-search">{loc.search}</div>
+}
+
 function renderWithRoute(initialPath: string) {
-  const client = new QueryClient()
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[initialPath]}>
         <Routes>
-          <Route path="/members" element={<MembersPage />} />
+          <Route path="/members" element={<><MembersPage /><LocationProbe /></>} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>
@@ -2078,22 +2395,30 @@ describe("MembersPage Tabs container", () => {
     expect(screen.queryByTestId("guests-widget")).not.toBeInTheDocument()
   })
 
-  it("renders GUEST tab when ?tab=guest", () => {
+  it("renders GUEST tab when ?tab=guest (URL → active tab sync)", () => {
     renderWithRoute("/members?tab=guest")
     expect(screen.getByTestId("guests-widget")).toBeInTheDocument()
     expect(screen.queryByTestId("members-widget")).not.toBeInTheDocument()
   })
 
-  it("renders MEMBER tab for invalid ?tab values (fallback)", () => {
+  it("renders MEMBER tab for invalid ?tab values (fallback to default)", () => {
     renderWithRoute("/members?tab=invalid_xyz")
     expect(screen.getByTestId("members-widget")).toBeInTheDocument()
   })
 
-  it("changes URL to ?tab=guest when GUEST trigger clicked", () => {
+  it("clicking GUEST trigger updates URL to ?tab=guest AND swaps content (active tab → URL sync)", () => {
     renderWithRoute("/members")
     fireEvent.click(screen.getByText("GUEST"))
-    // useSearchParams 의 변경은 동기 — Tabs 내부 콘텐츠 swap 확인
+    // URL 직접 검증 (단순 widget swap 만이 아니라)
+    expect(screen.getByTestId("loc-search").textContent).toContain("tab=guest")
     expect(screen.getByTestId("guests-widget")).toBeInTheDocument()
+  })
+
+  it("clicking MEMBER trigger from GUEST tab updates URL to ?tab=member", () => {
+    renderWithRoute("/members?tab=guest")
+    fireEvent.click(screen.getByText("정회원"))
+    expect(screen.getByTestId("loc-search").textContent).toContain("tab=member")
+    expect(screen.getByTestId("members-widget")).toBeInTheDocument()
   })
 
   it("회귀 가드: MEMBER 탭 기본 렌더 (Member widget 호출됨)", () => {
@@ -2103,61 +2428,178 @@ describe("MembersPage Tabs container", () => {
 })
 ```
 
-- [ ] **Step 3: 테스트 PASS 확인**
+- [ ] **Step 3: Tabs 테스트 + 기존 integration 테스트 둘 다 PASS 확인**
 
-Run: `yarn vitest run src/pages/__tests__/members-page.test.tsx`
-Expected: PASS (5 tests)
+Run:
+```bash
+yarn vitest run src/pages/__tests__/members-page.tabs.test.tsx
+yarn vitest run src/pages/__tests__/members-page.test.tsx   # 기존 3 tests 무파손 회귀 가드
+```
+Expected: PASS (신규 6 + 기존 3 = 9 tests)
 
 - [ ] **Step 4: 커밋**
 
 ```bash
-git add src/pages/members-page.tsx src/pages/__tests__/members-page.test.tsx
-git commit -m "feat(d8): members-page Tabs 컨테이너 — 정회원/GUEST + URL sync (#8)"
+git add src/pages/members-page.tsx src/pages/__tests__/members-page.tabs.test.tsx
+git commit -m "feat(d8): members-page Tabs 컨테이너 — URL ↔ tab sync + 신규 tabs.test 분리 (기존 test 무변경 보존) (#8)"
 ```
 
-### Task 23: `pages/guest-detail-page.tsx` 신설 + 테스트
+### Task 23: `widgets/guests-detail.tsx` + `pages/guest-detail-page.tsx` (FSD 패턴 정합)
 
 **Files:**
-- Create: `src/pages/guest-detail-page.tsx`
-- Create: `src/pages/__tests__/guest-detail-page.test.tsx`
+- Create: `src/widgets/guests-detail.tsx` — 실 로직 (useParams + useGuestDetail + NotFoundView + GuestDetailCards 래핑). **mutation dropdown 없음 (read-only)**.
+- Create: `src/pages/guest-detail-page.tsx` — 5줄 wrapper (`member-detail-page.tsx` 와 동일 패턴)
+- Create: `src/pages/__tests__/guest-detail-page.test.tsx` — 실 통합 테스트 (MSW 또는 use-guest-detail mock + Memory Router param)
 
-기존 `pages/member-detail-page.tsx` 동형. `useParams` 로 `guestId` 추출, `useGuestDetail` 호출.
+> **이전 plan 의 "page 에 직접 logic" 패턴은 폐기** — pfplay-admin FSD 정합상 `pages/*-detail-page.tsx` 는 5줄 widget wrapper, 실 컨테이너는 `widgets/*-detail.tsx`. `member-detail-page.tsx` + `widgets/members-detail.tsx` 쌍이 표준.
 
-- [ ] **Step 1: 컴포넌트 작성** (member-detail-page 동형 — useParams `:guestId` 파싱, `useGuestDetail`, loading/error/notFound 분기 + `GuestDetailCards` 렌더)
+- [ ] **Step 1: `widgets/guests-detail.tsx` 작성** — `widgets/members-detail.tsx` 동형. `MembersActionsDropdown` import **절대 없음** (read-only invariant).
 
-- [ ] **Step 2: 테스트 작성** (member-detail-page.test.tsx 동형 — 라우트 param → hook → GuestDetailCards 통합)
+```typescript
+// src/widgets/guests-detail.tsx
+import { useParams, Link } from "react-router-dom"
+import { useGuestDetail } from "@/features/guests/api/use-guest-detail"
+import { GuestDetailCards } from "@/features/guests/ui/guest-detail-cards"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Button } from "@/components/ui/button"
+import { ApiError } from "@/shared/api/error"
 
-- [ ] **Step 3: 테스트 PASS 확인**
+export function GuestsDetailWidget() {
+  const { guestId } = useParams<{ guestId: string }>()
+  const id = Number(guestId)
+  const idValid = Number.isFinite(id) && id > 0
+  const { data, isLoading, error } = useGuestDetail(idValid ? id : 0)
+
+  if (!idValid) return <NotFoundView />
+  if (error instanceof ApiError && error.status === 404) return <NotFoundView />
+  if (isLoading) {
+    return (
+      <div className="p-6 lg:p-8 space-y-4">
+        <Skeleton className="h-8 w-64" />
+        <Skeleton className="h-32 w-full" />
+        <Skeleton className="h-32 w-full" />
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-48 w-full" />
+      </div>
+    )
+  }
+  if (!data) return null
+
+  return (
+    <div className="p-6 lg:p-8">
+      <div className="flex items-center justify-between mb-4">
+        <Link to="/members?tab=guest" className="text-sm text-muted-foreground inline-block">
+          ← 목록으로
+        </Link>
+        {/* mutation dropdown 없음 — read-only invariant */}
+      </div>
+      <GuestDetailCards detail={data} />
+    </div>
+  )
+}
+
+function NotFoundView() {
+  return (
+    <div className="p-6 lg:p-8">
+      <h2 className="text-xl font-semibold text-muted-foreground mb-4">
+        존재하지 않는 게스트입니다
+      </h2>
+      <Button asChild variant="outline">
+        <Link to="/members?tab=guest">목록으로</Link>
+      </Button>
+    </div>
+  )
+}
+```
+
+- [ ] **Step 2: `pages/guest-detail-page.tsx` 작성** (5줄 wrapper)
+
+```typescript
+// src/pages/guest-detail-page.tsx
+import { GuestsDetailWidget } from "@/widgets/guests-detail"
+
+export function GuestDetailPage() {
+  return <GuestsDetailWidget />
+}
+```
+
+- [ ] **Step 3: 테스트 작성** — `pages/__tests__/guest-detail-page.test.tsx`. 기존 `member-detail-page.test.tsx` 의 MSW 패턴 동형. 핵심 단언:
+
+```typescript
+// src/pages/__tests__/guest-detail-page.test.tsx — 골격
+import { describe, it, expect } from "vitest"
+import { render, screen, waitFor } from "@testing-library/react"
+import { MemoryRouter, Routes, Route } from "react-router-dom"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { GuestDetailPage } from "../guest-detail-page"
+// MSW handler 가 /api/v1/admin/guests/{id} 응답 — 기존 member-detail-page.test.tsx 가 MSW 사용 시 동일 패턴.
+// 또는 use-guest-detail vi.mock — 기존 컨벤션 따름.
+
+describe("GuestDetailPage", () => {
+  it("happy: /guests/5001 → useGuestDetail → GuestDetailCards 렌더 + agent/nickname 노출", async () => {
+    // ... render with route param, assert agent/nickname text
+  })
+
+  it("invalid guestId (NaN) → NotFoundView 노출", async () => {
+    // /guests/abc 등
+  })
+
+  it("404 응답 → NotFoundView", async () => {
+    // MSW 404 또는 hook error mock
+  })
+
+  it("read-only invariant: 작업/등급변경/탈퇴 버튼 부재 (회귀 가드)", async () => {
+    // ... assert queryByRole/queryByText for "작업", "등급 변경", "비식별화 탈퇴"
+  })
+})
+```
+
+> 구현자: 기존 `pages/__tests__/member-detail-page.test.tsx` 의 MSW 셋업 / fixture / waitFor 패턴을 정확히 동형 적용. assertion 데이터는 `guestDetailFixture` (Task 19 Step 1 작성) 재사용.
+
+- [ ] **Step 4: 테스트 PASS 확인**
 
 Run: `yarn vitest run src/pages/__tests__/guest-detail-page.test.tsx`
+Expected: PASS
 
-- [ ] **Step 4: 커밋**
+- [ ] **Step 5: 커밋**
 
 ```bash
-git add src/pages/guest-detail-page.tsx src/pages/__tests__/guest-detail-page.test.tsx
-git commit -m "feat(d8): guest-detail-page — GuestDetailCards 래핑 + tests (#8)"
+git add src/widgets/guests-detail.tsx src/pages/guest-detail-page.tsx src/pages/__tests__/guest-detail-page.test.tsx
+git commit -m "feat(d8): guests-detail widget + page wrapper — FSD pattern (mutation 부재) (#8)"
 ```
 
-### Task 24: 라우트 등록 — `/guests/:guestId`
+### Task 24: 라우트 등록 — `/guests/:guestId` in `src/App.tsx`
 
 **Files:**
-- Modify: `src/app/routes.tsx` (또는 라우트 등록 파일 — 기존 `member-detail-page` 라우트 인접 위치)
+- Modify: `src/App.tsx` — `MemberDetailPage` import 인접에 `GuestDetailPage` import 추가, `<Route path="/members/:memberId" ...>` (현 `App.tsx:28`) 바로 다음 줄에 sibling Route 추가
+
+> **확인된 사실**: 라우트 정의는 `src/App.tsx` 한 곳에서 관리. `src/app/router.tsx`, `src/app/routes.tsx`, `src/main.tsx` 후보는 *존재하지 않음* (Glob 검증). App.tsx 외 라우트 설정 파일 없음.
 
 - [ ] **Step 1: 라우트 등록**
 
-기존 `<Route path="/members/:memberId" element={<MemberDetailPage />} />` 패턴 인접에 `<Route path="/guests/:guestId" element={<GuestDetailPage />} />` 추가.
+```diff
+ import { MembersPage } from "@/pages/members-page"
+ import { MemberDetailPage } from "@/pages/member-detail-page"
++import { GuestDetailPage } from "@/pages/guest-detail-page"
+ ...
+         <Route path="/members" element={<MembersPage />} />
+         <Route path="/members/:memberId" element={<MemberDetailPage />} />
++        <Route path="/guests/:guestId" element={<GuestDetailPage />} />
+         <Route path="/partyrooms" element={<PartyroomsPage />} />
+```
 
-> 구현자: 라우트 등록 파일 정확한 위치 확인 후 수정. `src/app/router.tsx`, `src/app/routes.tsx`, `src/main.tsx` 등 후보. import 추가.
+- [ ] **Step 2: 라우트 등록 검증 (App.tsx 자체엔 단위 테스트 없음 — 수동 smoke + 다른 페이지 테스트 회귀 확인으로 대체)**
 
-- [ ] **Step 2: e2e smoke (수동) 또는 라우트 등록 테스트**
+Run: `yarn vitest run` (전체 — 회귀 zero 확인)
+Expected: 기존 모든 테스트 PASS. App.tsx 무회귀.
 
-라우트 파일이 단위 테스트되고 있다면 거기에 case 추가. 아니면 수동 smoke.
+수동 smoke (Task 25 Step 2 에서 종합 검증).
 
 - [ ] **Step 3: 커밋**
 
 ```bash
-git add src/app/...
-git commit -m "feat(d8): /guests/:guestId 라우트 등록 (#8)"
+git add src/App.tsx
+git commit -m "feat(d8): /guests/:guestId route 등록 in App.tsx (#8)"
 ```
 
 ### Task 25: 전체 회귀 검증 + 통합 커밋
@@ -2197,16 +2639,22 @@ gh pr create --title "D/#8 어드민 GUEST read-only 조회 (frontend)" --body "
 
 Spec: pfplay-platform `docs/superpowers/specs/2026-05-20-d8-admin-guest-readonly-design.md`
 Plan: pfplay-platform `docs/superpowers/plans/2026-05-20-d8-admin-guest-readonly.md`
-Backend PR: pfplay-platform PR (TBD, 먼저 머지되어야 함 — Spec §13 contract sync)
+Backend PR: pfplay/pfplay-platform#<번호> (push 전 채워 넣기)
 
 ## Test plan
-- [x] vitest run — 전체 GREEN
+- [x] vitest run — 전체 GREEN (기존 members-page MSW integration 3 tests 포함, 무파손)
 - [x] tsc --noEmit — 0 error
 - [x] lint — 0 error
-- [x] members-page 탭 컨테이너 회귀 가드 테스트
+- [x] members-page.tabs.test 신규 — URL ↔ tab sync 검증
 - [x] guests-filter-form tier filter 부재 검증
 - [x] guest-detail-cards mutation dropdown 부재 검증
-- [ ] stg 배포 후 GUEST 데이터 실연동 smoke
+- [x] guests-table row click → `/guests/{guestId}` navigate 검증
+- [ ] stg 배포 후 GUEST 데이터 실연동 smoke (backend PR stg 안정화 확인 후)
+
+## Cross-repo 머지 순서 (필수)
+- [ ] backend PR (pfplay-platform `feature/d8-admin-guest-readonly`) → develop 머지 → stg 자동 배포 완료
+- [ ] backend stg 헬스 확인 (GET /api/v1/admin/guests 200, GET /api/v1/admin/guests/{id} 200)
+- [ ] 그 다음에 본 admin PR 머지
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 EOF

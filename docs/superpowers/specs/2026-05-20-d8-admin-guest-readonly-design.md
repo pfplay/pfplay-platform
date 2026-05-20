@@ -138,7 +138,7 @@ Query params (전부 optional):
 | name | type | 의미 |
 |---|---|---|
 | `page` | int | 0-based, default 0 |
-| `size` | int | default 20, max 100 |
+| `size` | int | default 50, max 200 (Member 컨트롤러 컨벤션 정합) |
 | `email` | string | 부분 일치 (case-insensitive) |
 | `joined_from` | date `YYYY-MM-DD` | inclusive |
 | `joined_to` | date `YYYY-MM-DD` | inclusive (서버 `lt(joined_to.plusDays(1).atStartOfDay())`) |
@@ -310,10 +310,13 @@ public AdminGuestDetailResponse getDetail(Long guestId) {
 
 ### 9.1 Backend exception
 
+`AdminMemberException` 의 `MBR-NNN` 컨벤션과 동형으로 `GST-NNN` 사용. read-only 라 NOT_FOUND + INVALID_LIST_QUERY 두 코드만 필요:
+
 ```java
-public enum AdminGuestException implements ErrorCode {
-    GUEST_NOT_FOUND(HttpStatus.NOT_FOUND, "AG001", "게스트를 찾을 수 없습니다.");
-    // ... 표준 패턴
+public enum AdminGuestException implements DomainException {
+    GUEST_NOT_FOUND("GST-001", "Guest 가 존재하지 않습니다.", ErrorType.NOT_FOUND),
+    INVALID_LIST_QUERY("GST-002", "Guest 목록 조회 query 파라미터가 유효하지 않습니다.", ErrorType.BAD_REQUEST);
+    // ... AdminMemberException 동형 골격
 }
 ```
 
