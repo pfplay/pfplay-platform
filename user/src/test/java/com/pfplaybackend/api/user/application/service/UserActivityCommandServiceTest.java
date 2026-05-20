@@ -13,11 +13,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
-import java.util.NoSuchElementException;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -50,31 +48,43 @@ class UserActivityCommandServiceTest {
     }
 
     @Test
-    @DisplayName("updateDjPointScore — DJ_PNT 활동 데이터의 점수를 증가시킨다")
-    void updateDjPointScoreIncrementsScore() {
+    @DisplayName("updateDjPointScore — atomic UPDATE 로 DJ_PNT delta 적용 (race-safe)")
+    void updateDjPointScoreAtomicDelta() {
         // given
         UserId userId = new UserId(1L);
-        ActivityData djActivity = ActivityData.create(userId, ActivityType.DJ_PNT, 10);
-        when(activityRepository.findByUserIdAndActivityType(userId, ActivityType.DJ_PNT))
-                .thenReturn(Optional.of(djActivity));
+        when(activityRepository.applyScoreDelta(userId, ActivityType.DJ_PNT, 5)).thenReturn(1);
 
-        // when
-        userActivityCommandService.updateDjPointScore(userId, 5);
+        // when & then — applyScoreDelta 단일 호출로 끝 (read-modify-write 패턴 제거)
+        assertThatNoException().isThrownBy(() ->
+                userActivityCommandService.updateDjPointScore(userId, 5));
 
-        // then — JPA dirty-flush handles persistence; verify in-memory mutation
-        assertThat(djActivity.getScore().getValue()).isEqualTo(15);
+        verify(activityRepository).applyScoreDelta(userId, ActivityType.DJ_PNT, 5);
     }
 
     @Test
-    @DisplayName("updateDjPointScore — DJ_PNT 데이터가 없으면 NoSuchElementException 발생")
-    void updateDjPointScoreThrowsWhenMissing() {
+    @DisplayName("updateDjPointScore — DJ_PNT 행 없으면 silent no-op (이전 NoSuchElementException → WARN 로그 + drop)")
+    void updateDjPointScoreSilentNoopWhenMissing() {
         // given
         UserId userId = new UserId(1L);
-        when(activityRepository.findByUserIdAndActivityType(userId, ActivityType.DJ_PNT))
-                .thenReturn(Optional.empty());
+        when(activityRepository.applyScoreDelta(userId, ActivityType.DJ_PNT, 5)).thenReturn(0);
 
-        // when & then
-        assertThatThrownBy(() -> userActivityCommandService.updateDjPointScore(userId, 5))
-                .isInstanceOf(NoSuchElementException.class);
+        // when & then — exception 없음, 호출자 (PlaybackReactionPostProcessCommandService) 의
+        // 흐름이 시드 누락 케이스에 의해 깨지지 않게 boundary 동작.
+        assertThatNoException().isThrownBy(() ->
+                userActivityCommandService.updateDjPointScore(userId, 5));
+    }
+
+    @Test
+    @DisplayName("updateDjPointScore — 음수 delta 도 atomic UPDATE 로 전달 (DB 측 GREATEST 가 floor 가드)")
+    void updateDjPointScoreNegativeDeltaPropagates() {
+        // given — 청취자가 reaction 토글로 -delta 적용하는 케이스
+        UserId userId = new UserId(1L);
+        when(activityRepository.applyScoreDelta(userId, ActivityType.DJ_PNT, -3)).thenReturn(1);
+
+        // when
+        userActivityCommandService.updateDjPointScore(userId, -3);
+
+        // then — 음수 floor 는 DB-side GREATEST(0, ...) 책임. 서비스는 delta 만 전달.
+        verify(activityRepository).applyScoreDelta(userId, ActivityType.DJ_PNT, -3);
     }
 }
