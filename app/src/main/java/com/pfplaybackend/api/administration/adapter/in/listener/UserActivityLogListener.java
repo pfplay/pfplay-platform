@@ -130,6 +130,8 @@ public class UserActivityLogListener {
             UserActivityEventType type = (e.getAccessType() == AccessType.ENTER)
                     ? UserActivityEventType.PARTYROOM_ENTERED
                     : UserActivityEventType.PARTYROOM_EXITED;
+            log.info("[on.CrewAccessedEvent] type={} userId={} partyroomId={}",
+                    type, e.getUserId().getUid(), e.getPartyroomId().getId());
             // metadata 단순화 — CrewAccessedEvent에 stage_type/duration_sec 부재
             // (spec §4.7.2의 metadata 키는 예시; future evolution으로 보강 가능).
             // JsonMetadata.empty() — converter가 빈 map을 SQL NULL로 직렬화.
