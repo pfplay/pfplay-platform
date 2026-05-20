@@ -221,18 +221,6 @@ class DjChangePlaylistSpecificationTest {
     }
 
     @Test
-    @DisplayName("평가 순서 잠금 — queue closed + not-owned 동시: QUEUE_CLOSED 가 먼저")
-    void queueClosedBeatsOwnership() {
-        // ForbiddenException 자체는 둘 다 던지지만, 평가 순서는 queue-closed 가 선행.
-        // (errorCode 명세는 ExceptionCreator 가 보존하므로, 별도 컨트롤러 테스트에서 잠금)
-        assertThatThrownBy(() -> spec.validate(closedQueue(), false, false, true))
-            .isInstanceOf(ForbiddenException.class);
-        // QUEUE_CLOSED 가 먼저 던져졌는지 보장하기 위해 시그니처 단언은 ExceptionCreator
-        // 의 message/code 추적 — 본 spec 테스트는 평가가 closed 단계에서 멈췄음을
-        // 다른 두 호출이 발생하지 않는다는 사실(== 코드 정의)로 간접 잠금.
-    }
-
-    @Test
     @DisplayName("평가 순서 잠금 — currentDj + not-owned 동시: CURRENT_DJ_CANNOT_CHANGE_PLAYLIST 가 먼저(ConflictException)")
     void currentDjBeatsOwnership() {
         assertThatThrownBy(() -> spec.validate(openQueue(), true, false, true))
@@ -241,7 +229,9 @@ class DjChangePlaylistSpecificationTest {
 }
 ```
 
-> 평가 순서 잠금 테스트(case 6/7)는 ForbiddenException vs ConflictException 의 **다른 예외 타입** 으로 우선순위를 간접 확인. 예: DJ-005 = ForbiddenException, DJ-006 = ConflictException. 두 조건 동시 발화 시 DJ-006(ConflictException) 가 잡히면 currentDj 가 먼저 평가됐음을 증명.
+> 평가 순서 잠금 테스트(case 6 `currentDjBeatsOwnership`)는 ForbiddenException vs ConflictException 의 **다른 예외 타입** 으로 우선순위를 직접 확인. DJ-006 = ConflictException, DJ-005 = ForbiddenException. 두 조건 동시 발화 시 ConflictException 가 잡히면 currentDj 가 먼저 평가됐음을 증명.
+>
+> **참고 (queue-closed vs ownership 평가 순서)**: 두 invariant 모두 `ForbiddenException` 을 던져 spec unit 레벨에서는 type 만으로 구분 불가. 의도는 controller WebMvc 테스트(Task 11)의 `jsonPath("$.error.errorCode").value("DJ-002"/"DJ-005")` 를 통해 잠금 — 별도 spec case 추가 불요(reviewer round-1 advisory 반영).
 
 - [ ] **Step 2: 실패 확인**
 
@@ -277,7 +267,7 @@ public class DjChangePlaylistSpecification {
 - [ ] **Step 4: 통과 확인**
 
 Run: 위 Step 2 와 동일.
-Expected: 7 tests PASS.
+Expected: 6 tests PASS (reviewer round-2 advisory 로 case 6 `queueClosedBeatsOwnership` 드롭, controller WebMvc 에서 errorCode 잠금).
 
 - [ ] **Step 5: 커밋**
 
@@ -417,7 +407,7 @@ Run:
 ```bash
 JAVA_HOME="C:/Users/Eisen/.jdks/ms-21.0.7" ./gradlew :app:test --tests "com.pfplaybackend.api.party.domain.specification.DjEnqueueSpecificationTest" 2>&1 | tail -30
 ```
-Expected: spec test 6 PASS. **그러나** `:app:compileJava` 가 `DjCommandService.enqueueDj` 의 3-arg 호출 때문에 실패. Chunk 3 Task 10 에서 해소.
+Expected: **build halts at `:app:compileJava` with `DjCommandService.enqueueDj` 3-arg call error — `DjEnqueueSpecificationTest` does not execute until Task 10 unblocks the caller.** Chunk 1~2 진행은 가능(playlist 모듈·party port interface·DTO 는 `app/compileJava` 와 독립). 본 spec test 의 PASS 시각은 **Task 10 Step 4**.
 
 - [ ] **Step 5: 커밋 (caller 일시 빨강 명시)**
 
@@ -887,19 +877,21 @@ import 추가:
 import com.pfplaybackend.api.party.domain.specification.DjChangePlaylistSpecification;
 ```
 
-- [ ] **Step 4: 통과 확인**
+> **로그 레벨 INFO**: party.application.service 는 [[project_observability_b1b2_merged]] / observability A4 정책상 INFO pin-allowed 비즈니스 패키지. state-mutating command 의 ENTER / OK 두 라인은 의도된 observability surface.
+
+- [ ] **Step 4: 컴파일 빨강 carry-over 확인**
 
 Run: 위 Step 2 와 동일.
-Expected: 7 신규 PASS.
+Expected: **build halts at `:app:compileJava`** — `DjCommandService.enqueueDj` 가 여전히 `DjEnqueueSpecification.validate` 의 옛 3-arg signature 를 호출 (Task 4 의 일시 빨강 carry-over). 본 task 의 changePlaylist 7 신규 테스트는 **이번 step 에서는 실행되지 않음**. PASS 시각 = **Task 10 Step 4** (caller 4-arg 정합 직후 changePlaylist + enqueue 모두 GREEN).
 
-> 기존 enqueue/dequeue 테스트 4개는 여전히 fail 가능 — Chunk 1 Task 4 의 `DjEnqueueSpecification` arity 변경 영향 + Task 10 미적용 상태. Task 10 까지 가서 정합.
+> 본 task 의 Step 3 까지 production·test 코드는 모두 정확. 빨강의 원천은 Task 4 의 caller 미정합 단 하나 — Task 10 Step 3 가 그 caller 호출 라인 1줄만 4-arg 로 교체하면 동시 해소.
 
 - [ ] **Step 5: 커밋**
 
 ```bash
 git add app/src/main/java/com/pfplaybackend/api/party/application/service/DjCommandService.java \
         app/src/test/java/com/pfplaybackend/api/party/application/service/DjCommandServiceTest.java
-git commit -m "feat(e223): DjCommandService.changePlaylist — happy/4 fail/idempotent (#223)"
+git commit -m "feat(e223): DjCommandService.changePlaylist — happy/4 fail/idempotent (Task 4/10 caller 정합 대기) (#223)"
 ```
 
 ---
@@ -1186,12 +1178,20 @@ git commit -m "feat(e223): DjCommandController PATCH /dj-queue/me — changePlay
 
 기존 party 모듈 IT 들의 패턴을 따른다(Flyway + H2 또는 Testcontainers, `@SpringBootTest` + `@Transactional`/`@AfterEach` cleanup). 작업 시작 전 기존 IT 한 개를 열어 base 설정·픽스처 헬퍼를 확인하고 그대로 재사용. **신규 베이스 클래스/헬퍼 작성 금지** — 회귀잠금 IT 의 패턴(예: `PartyroomAccessCommandServiceRaceIT`, `DjQueueGraceIntegrationTest` 등)을 모방.
 
-- [ ] **Step 1: 기존 IT 패턴 파악**
+- [ ] **Step 1: 기존 IT 패턴 파악 + 선택한 base 파일 기록**
 
-작업 직전 다음 파일 1개 열어 base 어노테이션·픽스처·cleanup 방식 파악:
-- `app/src/integrationTest/java/.../DjQueueGraceIntegrationTest.java` 또는 동등.
+먼저 IT 디렉토리 구조 확인:
+```bash
+git ls-files "app/src/integrationTest/**/*.java" | head -30
+git ls-files "app/src/test/**/*IntegrationTest.java" | head -30
+```
 
-(plan 작성 시점에 정확한 base 파일을 확정하지 않은 이유 = IT 디렉토리 구조·base 패턴은 실행 시점에 git ls-files 로 1차 확인 후 진입하는 게 안전. 보통 `@SpringBootTest` + `@ActiveProfiles("integration-test")` + `@Sql`/`@Transactional` + Testcontainers MySQL.)
+선택한 base IT 파일명을 plan-execution 로그에 명시(예: `Selected base IT pattern: <path>`). 후보:
+- `app/src/integrationTest/java/.../DjQueueGraceIntegrationTest.java`
+- `app/src/integrationTest/java/.../PartyroomAccessCommandServiceRaceIT.java`
+- `app/src/integrationTest/java/.../PartyroomCounterListenerIT.java`
+
+(보통 `@SpringBootTest` + `@ActiveProfiles("integration-test")` + Testcontainers MySQL.)
 
 - [ ] **Step 2: 실패 IT 작성 (3 case)**
 
@@ -1313,7 +1313,7 @@ gh pr create --title "feat(e223): 대기 중 DJ 플레이리스트 변경 API (C
 ## 테스트
 
 - :playlist:test PASS (신규 2 + 기존 무변)
-- :app:test PASS (신규: DjChangePlaylistSpecificationTest 7 / DjCommandServiceTest changePlaylist 7 + enqueue 회귀 1 / DjCommandControllerTest changePlaylist 8 / DjDataTest 1, 수정: DjEnqueueSpecificationTest 6)
+- :app:test PASS (신규: DjChangePlaylistSpecificationTest 6 / DjCommandServiceTest changePlaylist 7 + enqueue 회귀 1 / DjCommandControllerTest changePlaylist 8 / DjDataTest 1, 수정: DjEnqueueSpecificationTest 6)
 - :app:integrationTest PASS (DjCommandIntegrationTest 3 신규)
 
 ## 스펙 / 계획
