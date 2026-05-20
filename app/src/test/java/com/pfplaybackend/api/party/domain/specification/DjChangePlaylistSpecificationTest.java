@@ -71,4 +71,13 @@ class DjChangePlaylistSpecificationTest {
         assertThatThrownBy(() -> spec.validate(openQueue(), true, false, true))
                 .isInstanceOf(ConflictException.class);
     }
+
+    @Test
+    @DisplayName("평가 순서 잠금 — queue closed + not-owned 동시: QUEUE_CLOSED(validateOpen) 가 먼저 (spec §4-1)")
+    void queueClosedBeatsOwnership() {
+        // 둘 다 ForbiddenException 이지만, closed 가 먼저 평가되면 ownership/empty 호출 자체가 발생 안 함
+        // (== spec §3-2 의 evaluation order, validateOpen 이 throw 후 후속 if 블록 실행 안 됨)
+        assertThatThrownBy(() -> spec.validate(closedQueue(), false, false, true))
+                .isInstanceOf(ForbiddenException.class);
+    }
 }
