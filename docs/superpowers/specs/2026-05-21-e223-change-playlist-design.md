@@ -89,8 +89,10 @@ public class DjChangePlaylistSpecification {
 ```
 - 평가 순서 근거: queue closed → 메타 조건(current dj) → 소유권(보안) → 콘텐츠(empty). 보안 게이트가 콘텐츠 게이트보다 앞.
 
-**`DjEnqueueSpecification`** (동반 보강)
+**`DjEnqueueSpecification`** (동반 보강 — **breaking signature change: arity 3 → 4**)
 ```java
+// before: validate(DjQueueData djQueue, boolean isAlreadyRegistered, boolean isEmptyPlaylist)
+// after:
 public void validate(DjQueueData djQueue, boolean isAlreadyRegistered,
                      boolean isOwned, boolean isEmptyPlaylist) {
     djQueue.validateOpen();
@@ -99,19 +101,25 @@ public void validate(DjQueueData djQueue, boolean isAlreadyRegistered,
     if (isAlreadyRegistered) throw create(ALREADY_REGISTERED);
 }
 ```
-- 호출자(`DjCommandService.enqueueDj`)에서 `isOwned` 계산값 전달. signature 확장이지만 같은 클래스 1 caller(서비스) → 폭발 반경 작음.
+- 호출자(`DjCommandService.enqueueDj`)에서 `isOwned` 계산값 전달. 프로덕션 caller 1개(grep 확인). 단, 기존 `DjEnqueueSpecificationTest` 가 직접 호출 → **테스트 픽스처/시그니처 sweep 필수**(compile-driven, plan task 명시).
 - 평가 순서: ownership → empty → duplicate (보안 우선).
+- **Contract 변경 (OpenAPI 클라이언트 영향)**: 평가 순서 swap 결과 — *기존*: 이미 등록된 사용자 + 타인 playlist 시도 → `DJ-001 ALREADY_REGISTERED`. *변경 후*: 같은 케이스 → `DJ-005 NOT_OWNED_PLAYLIST` 가 먼저. 현 frontend picker 가 본인 playlist 만 노출하므로 실 노출 경로 없음, 다만 OpenAPI 스펙을 코드 외부에서 소비하는 클라이언트가 있다면 에러 코드 우선순위 변경에 유의.
 
 ### 3-3. Port 확장
 
-**`PlaylistQueryPort`** (party/application/port/out)
+**party 모듈 `PlaylistQueryPort`** (`app/.../party/application/port/out/PlaylistQueryPort.java`)
 ```java
 public interface PlaylistQueryPort {
     boolean isEmptyPlaylist(Long playlistId);
     boolean isOwnedBy(Long playlistId, Long userId);  // 신규
 }
 ```
-구현 = playlist 모듈의 기존 어댑터(`PlaylistQueryAdapter` 또는 동등). 단순 owner_user_id 비교 쿼리. playlist 자체 미존재 시 `false` 반환(NOT_OWNED_PLAYLIST 매핑) — 별도 NOT_FOUND 분기를 안 두는 이유 = playlist 정상 존재 여부는 caller 책임 분리, security boundary 응답으로 enumeration 회피.
+
+**party 모듈 `PlaylistQueryAdapter`** (`app/.../party/adapter/out/external/PlaylistQueryAdapter.java`) — 현행 `isEmptyPlaylist` 가 `TrackQueryService.isEmptyPlaylist` 에 위임하는 것과 같은 패턴으로 `isOwnedBy` 는 playlist 모듈의 `PlaylistQueryService.isOwnedBy(Long, UserId)` 신규 메서드에 위임.
+
+**playlist 모듈 신규 메서드**: `PlaylistQueryService.isOwnedBy(Long playlistId, UserId userId): boolean` — 기존 `findByIdAndUserId(playlistId, userId)` 가 `null` 반환 시 false, non-null 시 true (또는 동등 효율의 exists 쿼리). 구현 위치는 plan 단계에서 결정(현 서비스 메서드 재사용 vs `PlaylistQueryPort.existsByIdAndUserId` 신설).
+
+**Non-existent playlist semantic**: `isOwnedBy` 가 playlist 미존재 시 `false` 반환 → `NOT_OWNED_PLAYLIST` (DJ-005) 매핑. 별도 NOT_FOUND 분기를 안 두는 이유 = (1) playlist 정상 존재 여부는 caller 책임 분리, (2) security boundary 응답으로 enumeration 회피, (3) frontend picker 가 본인 playlist 만 노출하므로 사용자 노출 경로 없음. **회귀 가드 테스트 버킷 필수**: §4-2/§4-4 에 non-existent playlistId → DJ-005 case 명시.
 
 ### 3-4. 서비스 계층
 
@@ -132,7 +140,7 @@ public void changePlaylist(PartyroomId partyroomId, PlaylistId newPlaylistId) {
     CrewData crew                   = partyroomQueryService.getCrewOrThrow(partyroomId, authContext.getUserId());
     CrewId crewId                   = new CrewId(crew.getId());
 
-    DjData me = aggregatePort.findDjByPartyroomAndCrew(partyroomId, crewId)
+    DjData me = aggregatePort.findDj(partyroomId, crewId)                       // 기존 port 메서드 재사용
         .orElseThrow(() -> ExceptionCreator.create(DjException.NOT_FOUND_DJ));   // DJ-004
 
     boolean isCurrentDj      = playback.isActivated() && playback.isCurrentDj(crewId);
@@ -143,13 +151,16 @@ public void changePlaylist(PartyroomId partyroomId, PlaylistId newPlaylistId) {
 
     Long oldPlaylistId = me.getPlaylistId() != null ? me.getPlaylistId().getId() : null;
     me.updatePlaylist(newPlaylistId);
-    aggregatePort.saveDj(me);
+    // ※ saveDj 명시 호출 안 함 — me 는 @Transactional 컨텍스트의 managed entity,
+    //   JPA dirty check 가 commit 시 UPDATE 자동 발행([[feedback_elegant_no_code_dirtying]])
 
     log.info("[changePlaylist] OK requestId={} partyroomId={} crewId={} oldPlaylistId={} newPlaylistId={}",
         RequestIdInterceptor.current(), partyroomId.getId(), crewId.getId(), oldPlaylistId, newPlaylistId.getId());
     // 도메인 이벤트 발행 없음 — WS broadcast 불필요(§2 결정 2)
 }
 ```
+
+**동시성 / 레이스 윈도우 (수용 정책)**: 본 메서드는 `@Transactional` 컨텍스트 안에서 `me` 를 load → mutate → commit 한다. 같은 사용자의 dequeue 와 changePlaylist 가 동시 도착하는 사용자 정상 시나리오는 [[single-partyroom-subscription-invariant]] 상 동일 디바이스 = 단일 세션이므로 사실상 직렬화. 그러나 admin 강제 dequeue 또는 백엔드 cron(presence grace) 이 동일 row 를 동시 변경하는 윈도우는 존재 — 이 경우 changePlaylist tx commit 이 already-deleted row 에 UPDATE 발행 → 0 rows affected silently. **수용 정책 = last-writer-wins, JPA 의 dirty-update 가 silent no-op 처리. `@Version` / pessimistic lock 미도입**(트레이드오프: 정상 경로 99.9% 시나리오 단순화 우선, 비정상 race 는 ⇒ 사용자가 다시 enqueue + change 로 회복 가능). 동일하게 `djQueue.validateOpen` snapshot 후 다른 tx 가 close 하는 race 도 수용. §6 위험 목록에 명시.
 
 **enqueue 동반 보강**:
 ```java
@@ -159,14 +170,9 @@ new DjEnqueueSpecification().validate(djQueue, isAlreadyRegistered, isOwned, isE
 ```
 - 호출 위치는 기존 `validate(djQueue, isAlreadyRegistered, isEmptyPlaylist)` 직전 `isEmptyPlaylist` 계산 라인 옆.
 
-### 3-5. Repository / Aggregate 확장
+### 3-5. Repository / Aggregate
 
-**`PartyroomAggregatePort.findDjByPartyroomAndCrew`** (신규)
-```java
-Optional<DjData> findDjByPartyroomAndCrew(PartyroomId partyroomId, CrewId crewId);
-```
-- 구현(`PartyroomAggregateAdapter`): JPA repository 단건 조회. 기존 `findDjsOrdered(partyroomId)` 필터링은 큐 전체 로드 → 비효율.
-- 새 JPA repository 메서드 시그니처: `Optional<DjData> findByPartyroomIdAndCrewId(PartyroomId, CrewId)` (둘 다 `@Embedded` value object).
+`PartyroomAggregatePort.findDj(PartyroomId, CrewId): Optional<DjData>` **이미 존재** (`app/.../party/domain/port/PartyroomAggregatePort.java:42`). 신설 불요 — `changePlaylist` 가 이를 그대로 호출. (spec 초안의 `findDjByPartyroomAndCrew` 신설 제안은 reviewer 가 중복 지적 → 폐기, [[feedback_elegant_no_code_dirtying]] 정합.)
 
 ### 3-6. Controller
 
@@ -210,31 +216,34 @@ public record ChangePlaylistRequest(@NotNull @Positive Long playlistId) {}
 - !isOwned + isEmpty → NOT_OWNED_PLAYLIST 가 먼저(보안 우선 순서 잠금)
 
 ### 4-2. Service Unit
-**`DjCommandServiceChangePlaylistTest`** (또는 기존 `DjCommandServiceTest` 확장, 6+)
-- happy: updatePlaylist 호출 + saveDj 1회 + 이벤트 publish 0회(broadcast 없음)
-- not-in-queue: NOT_FOUND_DJ, save 0회
-- current DJ: DJ-006, save 0회
-- not owned: DJ-005, save 0회
-- empty playlist: DJ-003, save 0회
-- idempotent: 같은 playlistId 입력 → updatePlaylist 호출되더라도 (JPA dirty check 가 no-op 처리) 예외 없음, 204 응답
+**`DjCommandServiceChangePlaylistTest`** (또는 기존 `DjCommandServiceTest` 확장, 7+)
+- happy: `me.updatePlaylist(newId)` 호출 + `eventPublisher.publishEvent` 0회 (broadcast 없음). `saveDj` 어서션 안 함 (dirty-check 의존)
+- not-in-queue: NOT_FOUND_DJ throw
+- current DJ: DJ-006 throw
+- not owned: DJ-005 throw
+- non-existent playlistId (isOwnedBy=false 모킹) → DJ-005 throw  ← 신규 (§3-3 semantic 잠금)
+- empty playlist: DJ-003 throw
+- idempotent (same playlistId): `updatePlaylist(sameId)` 호출되더라도 예외 없음. SQL UPDATE 발행 여부는 IT(§4-3) 책임
 
 **`DjCommandServiceEnqueueTest`** (회귀 가드 보강, 2 추가)
 - enqueue + not-owned playlist → DJ-005
 - 기존 happy 픽스처에 `playlistQueryPort.isOwnedBy = true` mock 보정(전 픽스처 sweep)
 
 ### 4-3. IT (party 모듈)
-**`DjCommandIntegrationTest.changePlaylist`** (2)
+**`DjCommandIntegrationTest.changePlaylist`** (3)
 - happy: enqueue → changePlaylist → DB 재조회 시 playlist_id 갱신, order_number 보존
-- invariant: enqueue(orderNumber=2) → changePlaylist → 다른 DJ 의 orderNumber 무변
+- invariant: enqueue 2명 → 2번째가 changePlaylist → 다른 DJ 의 order_number 무변
+- idempotent: enqueue → 같은 playlistId 로 changePlaylist → DB 재조회 시 playlist_id 무변, no logical change (SQL UPDATE 발행 여부는 dirty-check 거동상 환경 의존 — assert는 "최종 row 상태 무변"으로)
 
 ### 4-4. Controller WebMvc
-**`DjCommandControllerTest.changePlaylist`** (신규, 6+)
+**`DjCommandControllerTest.changePlaylist`** (신규, 7+)
 - 204 happy
 - 400 invalid body (playlistId null / 0 / negative)
 - 401 unauth
-- 404 NOT_FOUND_DJ
-- 403 DJ-003 / DJ-005
-- 409 DJ-006
+- 404 NOT_FOUND_DJ (DJ-004)
+- 403 DJ-003 EMPTY_PLAYLIST  ← 별도 case
+- 403 DJ-005 NOT_OWNED_PLAYLIST  ← 별도 case (non-existent playlistId 포함)
+- 409 DJ-006 CURRENT_DJ_CANNOT_CHANGE_PLAYLIST
 
 ### 4-5. 회귀 가드 (cross-cutting)
 - `:app:test` 전체 GREEN
@@ -243,23 +252,29 @@ public record ChangePlaylistRequest(@NotNull @Positive Long playlistId) {}
 ## 5. 영향 / Out-of-scope
 
 ### 영향 (in-scope)
-- party 모듈: `DjData` / `DjException` / `DjCommandService` / `DjCommandController` / `DjEnqueueSpecification` / `DjChangePlaylistSpecification`(신규) / `PlaylistQueryPort`(확장) / `PartyroomAggregatePort`(확장) / `ChangePlaylistRequest`(신규)
-- playlist 모듈: `PlaylistQueryAdapter`(또는 동등) — `isOwnedBy` 구현 추가
+- party 모듈:
+  - **신규**: `DjChangePlaylistSpecification`, `ChangePlaylistRequest` DTO
+  - **확장**: `DjData.updatePlaylist` mutator, `DjException` (DJ-005/006), party `PlaylistQueryPort.isOwnedBy`, party `PlaylistQueryAdapter` 위임 추가, `DjCommandService.changePlaylist` + `enqueueDj` ownership 추가, `DjEnqueueSpecification.validate` arity 3→4, `DjCommandController.changePlaylist` endpoint
+  - **무변**: `PartyroomAggregatePort.findDj` 기존 메서드 재사용
+- playlist 모듈: `PlaylistQueryService.isOwnedBy(Long, UserId)` 신규 (또는 동등). 기존 `findByIdAndUserId` 재사용 형태 가능
 - OpenAPI doc: 신규 endpoint + DJ-005/006 항목 자동 반영(`@ApiErrorCodes` 데코)
 
 ### Out-of-scope (별건 후속)
-- **재생 중 DJ 의 playlist 재지정** (사용자 결정 §2-1) — UX 요구 발생 시 별 spec
+- **재생 중 DJ 의 playlist 재지정** (사용자 결정 §2-1) — UX 요구 발생 시 별 spec. **forward link**: 그 시점엔 다음 트랙부터 적용 vs 즉시 적용 결정 + 다른 크루 화면 갱신 필요성 = WS broadcast (`CHANGE_PLAYLIST` enum 신설) 가 거의 확실히 필요해질 것. 즉 본 spec 의 "no broadcast" 결정은 **"대기 중 DJ 만"** 범위로 명시적 한정.
 - **frontend 진입** (`pfplay-web/widgets/partyroom-djing-dialog/ui/body.component.tsx:147` `alert('Not Impl')` 제거 + playlist picker + PATCH 호출 + error 토스트) — pfplay-web 별 PR
-- **WS broadcast 확장** (`CHANGE_PLAYLIST` enum) — `DjWithProfileDto` 에 playlist 메타 노출 디자인이 합의되면 그때 진입
+- **WS broadcast 확장** (`CHANGE_PLAYLIST` enum) — `DjWithProfileDto` 에 playlist 메타 노출 디자인이 합의되면 그때 진입(위 forward link 와 결합 가능)
 - **기존 enqueue 의 ownership 위반 데이터 백필** — DB audit 필요 시 별건
 
 ## 6. 잠재 위험 / 검증 포인트
 
-- **`PlaylistQueryPort.isOwnedBy` 어댑터 구현 위치**: playlist 모듈 어댑터에 추가. 다른 호출자 영향 없음(현재 isEmptyPlaylist 1개 메서드 인터페이스, 다른 도메인 무사용 — spec 작성 시점 확인됨).
-- **`PartyroomAggregatePort.findDjByPartyroomAndCrew` 신설 vs `findDjsOrdered` 필터링**: 단건 쿼리 권장 — N+1 회피, 의도 명시. 기존 `findDjsOrdered` 의 caller (enqueue/dequeue/admin-dequeue/E/#3 doStart) 무변.
-- **enqueue 회귀 영향**: 기존 enqueue 테스트 픽스처에서 `PlaylistQueryPort.isOwnedBy` mock 누락 시 전부 DJ-005 회귀. 픽스처 sweep 명시(plan task).
-- **Idempotent semantic 의 JPA 동작**: 같은 playlist_id 로 `updatePlaylist` → `@DynamicUpdate` + dirty check 가 변경 없음 인지 → SQL UPDATE 미발행. 예외 발생 없음(원자 동작). IT 로 검증.
-- **ownership 누락 데이터의 dev/stg 마이그레이션**: 백필 안 함(별건). 신규 enqueue/PATCH 만 잠금 — 기존 DJ row 의 historical playlist 가 ownership 위반 상태라도 시스템 동작에 영향 없음(read-only 인용만 됨).
+- **party `PlaylistQueryPort.isOwnedBy` 어댑터 위치**: party 모듈의 `PlaylistQueryAdapter` 가 playlist 모듈 `PlaylistQueryService.isOwnedBy(Long, UserId)` 신규 메서드에 위임. 기존 `isEmptyPlaylist → TrackQueryService.isEmptyPlaylist` 의 패턴 미러. plan 단계에서 playlist 모듈 메서드의 구현 형태(`findByIdAndUserId null 체크 재사용` vs `exists 쿼리 신설`) 결정.
+- **`PartyroomAggregatePort.findDj` 재사용 (신설 회피)**: 기존 시그니처 `findDj(PartyroomId, CrewId): Optional<DjData>` 활용 — reviewer 가 중복 검출, 신설 폐기. [[feedback_elegant_no_code_dirtying]] 정합.
+- **enqueue 회귀 영향**: 기존 enqueue 테스트 픽스처에서 `PlaylistQueryPort.isOwnedBy` mock 누락 시 전부 DJ-005 회귀. 픽스처 sweep 명시(plan task). `DjEnqueueSpecification.validate` arity 변경(3→4)으로 인한 compile-driven sweep 도 동반.
+- **enqueue 에러 코드 우선순위 변경 (contract change)**: 평가 순서 swap 결과, 기등록+타인 playlist 동시 위반 시 *전*: DJ-001 ALREADY_REGISTERED → *후*: DJ-005 NOT_OWNED_PLAYLIST. 사용자 노출 경로는 picker 가 본인 playlist 만 노출하므로 0 이나, OpenAPI 외부 클라이언트 가능성을 위해 명시적 인지. (§3-2 참조)
+- **`saveDj` 명시 호출 제거 → JPA dirty check 의존**: `me` 가 managed entity 이므로 `@Transactional` commit 시 자동 UPDATE 발행. enqueue 패턴(`aggregatePort.saveDj` 명시 호출, 새 entity 라 `persist` 의도)와 비대칭이지만, 업데이트 시 명시 save 는 redundant noise. service unit test 에서는 saveDj 호출 횟수 어서션 안 함.
+- **Idempotent semantic 의 JPA 동작**: 같은 playlist_id 로 `updatePlaylist` → dirty check 가 변경 없음 인지 → SQL UPDATE 미발행이 일반적이나 `@DynamicUpdate` 와의 결합·연관 컬럼 변화 등 환경 의존. IT 단계 어서션은 "최종 row 상태 무변" 으로 한정(SQL UPDATE 발행 0회 어서션은 brittle 회피).
+- **동시성 race 윈도우 (수용)**: §3-4 에 명시한 admin-dequeue / cron / queue-close 의 동시 발생 시 silent no-op 가능. 회복 = 사용자 재 enqueue + change. `@Version`/pessimistic lock 미도입(YAGNI vs 실제 고통: 현 시점 보고된 race incident 0).
+- **ownership 누락 historical data**: 백필 안 함(별건). 신규 enqueue/PATCH 만 invariant 잠금 — 기존 DJ row 의 historical playlist 가 ownership 위반 상태라도 시스템 동작에 영향 없음(read-only 인용만 됨).
 
 ## 7. 머지·배포 순서
 
