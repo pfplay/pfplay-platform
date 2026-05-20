@@ -108,12 +108,14 @@ public class BugReportData {
 
 ```java
 public enum BugReportException implements DomainException {
-    RATE_LIMIT_EXCEEDED("BUG-001", "잠시 후 다시 시도해주세요", ErrorType.TOO_MANY_REQUESTS);
+    RATE_LIMIT_EXCEEDED("BUG-001", "잠시 후 다시 시도해주세요", ErrorType.TOO_MANY_REQUESTS),
+    INVALID_LIST_QUERY("BUG-002", "유효하지 않은 목록 조회 조건입니다", ErrorType.BAD_REQUEST),
+    BUG_REPORT_NOT_FOUND("BUG-003", "버그 리포트를 찾을 수 없습니다", ErrorType.NOT_FOUND);
     ...
 }
 ```
 
-> `ErrorType.TOO_MANY_REQUESTS` 가 GlobalExceptionHandler 에 매핑되어 있는지 확인 필요. 부재 시 추가 (spec §6 cross-cutting note).
+> `ErrorType.TOO_MANY_REQUESTS` + `TooManyRequestsException` 핸들러 모두 `common/exception/{ErrorType.java, GlobalExceptionHandler.java}` 에 **이미 존재** — 추가 작업 불요(reviewer round-1 확인).
 
 ### 3-3. Submit API (pfplay-platform)
 
@@ -199,11 +201,12 @@ public class BugReportCommandService {
 }
 ```
 
-**`BugReportRateLimitGuard`** (`administration/application/util/BugReportRateLimitGuard.java`):
-- bucket4j `Bucket` per `userAccountId`, `Caffeine` cache (TTL 5분, 동시 활성 사용자 100k 추정 = 메모리 미미)
-- bandwidth: `Bandwidth.classic(1, Refill.intervally(1, Duration.ofMinutes(1)))` — 1분당 1 토큰, capacity 1.
-- API: `acquireOrThrow(Long userId)` — block 시 `throw ExceptionCreator.create(BugReportException.RATE_LIMIT_EXCEEDED)`.
-- 기존 `AdminLoginRateLimitGuard` 가 있다면 그 패턴 미러 (없으면 본 spec 이 첫 도입).
+**`BugReportRateLimiter`** (`administration/application/ratelimit/BugReportRateLimiter.java`) — 기존 `AdminLoginRateLimiter` (`auth/application/ratelimit/AdminLoginRateLimiter.java`) 패턴 정합:
+- bucket4j `Bucket` per `userAccountId`, 별도 `@Qualifier("bugReportUserBuckets")` Caffeine cache (캐시 namespace 충돌 회피)
+- bucket4j 신 API: `Bucket.builder().addLimit(Bandwidth.builder().capacity(1).refillIntervally(1, Duration.ofMinutes(1)).build()).build()` (deprecated `Bandwidth.classic(...)` 사용 금지)
+- 생성자 hand-written `@Qualifier` (lombok `@RequiredArgsConstructor` 는 Qualifier 정보 stripping → 직접 작성)
+- 외부화 `RateLimitProperties.bugReport` (capacity 1 / refill 60s) — `AdminLoginRateLimiter` 와 동위
+- API: `acquireOrThrow(Long userId)` — block 시 `throw ExceptionCreator.create(BugReportException.RATE_LIMIT_EXCEEDED)` (BUG-001 → `TooManyRequestsException` 매핑, `AdminLoginRateLimiter` 의 inner `RateLimitedException` 패턴은 본 spec 에서 사용 안 함)
 
 ### 3-5. Admin Query API (D/#8 패턴 정합)
 
@@ -255,7 +258,7 @@ Auth: AdminAccessToken (D/#8 AbstractAdminWebMvcTest 정합)
 - `AdminBugReportQueryRepositoryImpl` (QueryDSL JPQL, D/#8 `AdminGuestQueryRepositoryImpl` 미러)
   - JOIN `bug_report br` × `user_account ua` (reporter email/nickname) × `partyroom p` LEFT JOIN (partyroom name)
 - `AdminBugReportQueryService` (paging/sort 유효성 + DTO 매핑)
-- `AdminBugReportQueryController` (`@PreAuthorize("hasRole('ADMIN')")`, D/#8 AbstractAdminWebMvcTest 패턴)
+- `AdminBugReportQueryController` (`@PreAuthorize("@adminAuth.isAdmin()")` — 모든 admin 컨트롤러 컨벤션 정합. `hasRole('ADMIN')` 은 다른 코드 path 라 보안 갭. D/#8 `AdminGuestQueryController` 미러)
 
 **Error matrix** (admin):
 
@@ -269,6 +272,8 @@ Auth: AdminAccessToken (D/#8 AbstractAdminWebMvcTest 정합)
 ### 3-6. pfplay-web UI
 
 **위치**: `src/widgets/layouts/ui/header.component.tsx` line 53 `<div className='items-center gap-6 flexRow'>` 안 `<LanguageChangeMenu />` 직전 또는 직후 — 메뉴 항목 1개 추가.
+
+> ⚠️ **GT 게스트 분기 바깥**: 현 Header line 54 의 `me && me.authorityTier !== AuthorityTier.GT` conditional 은 **user Menu(이메일 + 로그아웃)** 만 감싸고 있음. `BugReportButton` 은 게스트 포함 전 인증 사용자에 노출되어야 하므로 **그 conditional 바깥, `<LanguageChangeMenu />` 와 sibling** 으로 둘 것. 실수로 안에 nest 금지.
 
 **컴포넌트 트리** (FSD):
 ```
@@ -298,7 +303,7 @@ src/features/bug-report/
   <PFBug width={24} height={24} />
 </button>
 ```
-- 아이콘: `@/shared/ui/icons` 에 `PFBug` 추가 (24px SVG, 기존 PF* 아이콘 패밀리룩 정합 — gray-400 default, hover gray-200, transition-colors). 후보 = lucide `Bug` 스타일 미러.
+- 아이콘: `@/shared/ui/icons` 에 `PFBug` **신규 SVG 작성** (24px, 기존 PF* 아이콘 패밀리룩 정합 — gray-400 default, hover gray-200, transition-colors). **시각 참고용**으로 lucide 의 Bug 아이콘 형태를 미러하되 **lucide 패키지 의존성 추가 금지** — pfplay-web 은 lucide 미사용(grep 0 hits).
 - Tooltip 은 (현 Header 의 다른 항목들에 tooltip 없으니 생략, aria-label 로 충분).
 
 **`BugReportDialog`** (모달):
@@ -356,7 +361,7 @@ en.json 동일 키 영문 번역. [[feedback_pfplay_web_i18n_drift]] 정합 — 
 **사이드바 메뉴 추가**:
 - 라벨 "사용자 피드백" (한글)
 - 아이콘: lucide `MessageSquareWarning` 또는 `Inbox` (기존 admin 사이드바 아이콘 패밀리 따름)
-- 위치: "회원" / "GUEST" / "파티룸" 다음 (D/#8 GUEST 가 별도 탭 분리한 정신 정합)
+- **위치 = "운영 관리" 섹션 안 "신고"(Flag) 다음** (`pfplay-admin/src/app/layout.tsx:33-63` `navSections` 배열). 실제 사이드바 구조: ① 운영 관리(회원·파티룸·신고) ② 시스템 관리(어드민 관리·공지·아바타). D/#8 GUEST 는 회원 탭 안에 흡수돼 사이드바 단독 아님 — 본 spec 도 단독 항목 "사용자 피드백" 을 운영 관리 끝에 추가.
 
 **라우트**:
 - `/admin/voc/bug-reports` — 목록 페이지
@@ -389,11 +394,14 @@ src/pages/
 **상세 페이지**:
 - Card: 작성자 (이메일, 닉네임, → 회원·게스트 상세 링크 — D/#8 정합)
 - Card: 본문 (전체, white-space: pre-wrap)
-- Card: 컨텍스트 (page_url 클릭 가능 외부 링크, user_agent, partyroom_id → 파티룸 상세 링크)
+- Card: 컨텍스트
+  - **page_url**: 사용자가 임의로 위조 가능(Referer 헤더 신뢰 X). 표시 정책: anchor 표시 시 `rel='noopener noreferrer' target='_blank'` + URL allowlist (https 만, 자체 도메인은 click-through 허용 / 외부 도메인은 텍스트로만 표시). React 자동 escape 로 XSS 차단.
+  - **user_agent**: 텍스트로만 (anchor 없음).
+  - **partyroom_id**: 사용자 claim 값(서버 검증 안 함). UI 라벨에 "사용자 신고 시점 주장값" 명시 + 파티룸 상세 링크는 클릭 가능 (link 자체는 자체 도메인이라 안전).
 - Card: 메타 (작성일)
 - 액션 없음 (read-only)
 
-**App.tsx** 라우트 등록 1줄 추가:
+**App.tsx** 라우트 등록 (flat route 컨벤션 — 기존 `/avatars/...` 등 평탄 등록 패턴 정합, nested `<Route path="/voc">…` 쉘 사용 안 함):
 ```tsx
 <Route path='/voc/bug-reports' element={<BugReportsPage />} />
 <Route path='/voc/bug-reports/:bugReportId' element={<BugReportDetailPage />} />
@@ -421,6 +429,7 @@ src/pages/
   - `AdminBugReportQueryServiceTest` — list paging / detail / NOT_FOUND ~4 case
 - **Repository IT** (Testcontainers MySQL, V19 적용):
   - `AdminBugReportQueryRepositoryImplIT` — seed 5건 + filter/sort/page/detail ~5 case
+  - **주의**: `BugReportData.create()` 가 `LocalDateTime now` 를 파라미터로 받음 (auditing 아님). `AdminGuestQueryRepositoryImplIT` 처럼 native `UPDATE` 로 createdAt 오버라이드 트릭 불요 — seed 시 결정적 timestamp 직접 주입.
 - **Controller WebMvc**:
   - `BugReportCommandControllerTest` (AbstractPartyCommandWebMvcTest 류 신규 또는 AbstractAdminWebMvcTest 모방) — 201/400/401/429 ~5 case
   - `AdminBugReportQueryControllerTest` (AbstractAdminWebMvcTest 정합) — 200 list/detail / 400 / 401 / 403 / 404 ~6 case
@@ -471,11 +480,12 @@ src/pages/
 
 ## 6. 잠재 위험 / 검증 포인트
 
-- **`ErrorType.TOO_MANY_REQUESTS` 매핑 존재 여부**: GlobalExceptionHandler 가 BUG-001 을 429 로 변환할 수 있어야. 부재 시 plan task 1 에서 동반 추가 — D/#8 의 `AdminGuestException` 도입 시 보강한 정합.
-- **`BugReportRateLimitGuard` 가 기존 bucket4j 패턴과 충돌 안 함**: `AdminLoginRateLimitGuard` 가 이미 있다면 같은 Caffeine cache 인스턴스를 공유 vs 분리 — 분리 권장 (cache key namespace 충돌 회피).
+- ~~`ErrorType.TOO_MANY_REQUESTS` 매핑 존재 여부~~ — **이미 존재** (`common/exception/ErrorType.java:9` + `GlobalExceptionHandler.java:75-79` `TooManyRequestsException` 핸들러). 본 spec 의 BUG-001 throw 경로 `ExceptionCreator.create(BugReportException.RATE_LIMIT_EXCEEDED)` → `TooManyRequestsException` → 429 매핑이 자동.
+- **`BugReportRateLimiter` 의 Caffeine cache 분리**: 기존 `AdminLoginRateLimiter` (`auth/application/ratelimit/AdminLoginRateLimiter.java`) 와 별도 `@Qualifier("bugReportUserBuckets")` 캐시 빈 — cache key namespace 충돌 회피. bucket4j 신 API 사용 (`Bandwidth.builder()...`, deprecated `Bandwidth.classic()` 금지). 생성자 hand-written (`@Qualifier` Lombok stripping 회피).
 - **Referer header 신뢰성**: 브라우저가 `Referrer-Policy` 에 따라 안 보낼 수 있음 (특히 cross-origin). null 허용 + 클라이언트가 body 에 `pageUrl` 명시도 후속 검토 (1차 도입 = Referer null 허용).
 - **content XSS**: admin 콘솔에서 React 가 자동 escape (별도 sanitize 없음). content 안에 마크다운/HTML 무가공 출력 안 함.
-- **partyroomId 위조**: 클라이언트가 임의 partyroomId 보낼 수 있음. 1차 도입은 검증 안 함(어드민이 진단 시 reporter user vs partyroom 정합성 확인). 후속 = 사용자 crew 멤버십 검증 추가.
+- **partyroomId 위조**: 클라이언트가 임의 partyroomId 보낼 수 있음. 1차 도입은 검증 안 함(어드민이 진단 시 reporter user vs partyroom 정합성 확인). admin UI(§3-7 상세 페이지) 는 partyroomId 라벨에 "사용자 신고 시점 주장값" 명시 — 운영자가 신뢰 수준을 인지. 후속 = 사용자 crew 멤버십 검증 추가.
+- **Referer 위조**: page_url 도 사용자가 임의 설정 가능 (Referer 헤더는 클라이언트 제어). 노이즈 가능성 인지. admin UI 노출 정책(§3-7) 으로 mitigation: anchor 표시 시 https only + 외부 도메인은 텍스트, React 자동 escape 로 XSS 차단.
 - **content 길이 2000자 제한**: TEXT 컬럼은 64KB 까지 가능하나 application 측에서 2000 자 cap. 향후 확대 시 인덱스 영향 0.
 - **pageUrl/UA 500자 cap**: 매우 긴 URL/UA 대비 server-side truncate. `VARCHAR(500)` 컬럼 정합.
 - **Index 효율**: `idx_br_created` 가 어드민 목록 default sort (createdAt DESC) 정합. `idx_br_reporter` 는 후속 본인 이력 조회 대비 인덱스 미리 둠 (YAGNI vs 마이그레이션 비용 trade-off — 인덱스 1개 미미).
