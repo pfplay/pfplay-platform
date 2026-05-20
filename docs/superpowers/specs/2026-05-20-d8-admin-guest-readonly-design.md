@@ -78,30 +78,51 @@ pfplay-platform/app/src/main/java/com/pfplaybackend/api/administration/
 
 ### 4.2 컴포넌트 신설 (Frontend, pfplay-admin)
 
+pfplay-admin 은 FSD(Feature-Sliced Design) 레이아웃 — `pages/*-page.tsx` 는 5줄짜리 widget wrapper, 실 컨테이너는 `widgets/<feature-list>.tsx` (members-list 패턴 확인). GUEST 도 같은 패턴 적용:
+
 ```
 pfplay-admin/src/
 ├── entities/guest/                           [신규 슬라이스]
 │   ├── index.ts
-│   └── model/types.ts                        (AdminGuestSummary, AdminGuestDetail, ...)
+│   └── model/types.ts                        (AdminGuestSummary, AdminGuestDetail, GuestProfileSummary)
 ├── features/guests/                          [신규]
 │   ├── api/
 │   │   ├── guests-api.ts                     (listGuests, getGuestDetail)
 │   │   ├── use-guests-list.ts
 │   │   └── use-guest-detail.ts
 │   ├── model/
-│   │   └── filter-schema.ts                  (GuestsListQuery)
+│   │   └── filter-schema.ts                  (GuestsListQuery — tier 필드 부재)
 │   └── ui/
 │       ├── guests-table.tsx
-│       ├── guests-filter-form.tsx
+│       ├── guests-filter-form.tsx            (tier filter 없음)
 │       └── guest-detail-cards.tsx
-└── pages/
-    └── members/                               (기존 페이지 — 라우트 컴포넌트만 탭 컨테이너로 교체)
-        ├── members-page.tsx                  (수정: 탭 컨테이너로 분리)
-        ├── members-tab.tsx                   [신규: 기존 컨텐츠 추출]
-        └── guests-tab.tsx                    [신규]
+├── widgets/
+│   └── guests-list.tsx                       [신규 — MembersListWidget 패턴 동형]
+└── pages/                                    (FSD: 평면 구조)
+    ├── members-page.tsx                      (수정: Tabs 컨테이너로 — <MembersListWidget/> + <GuestsListWidget/>)
+    └── guest-detail-page.tsx                 [신규 — MemberDetailPage 패턴 동형, GuestDetailCards 래핑]
 ```
 
-탭 컴포넌트는 `tab` URL param 으로 sync (`?tab=member` / `?tab=guest`), refresh 보존.
+`pages/members-page.tsx` 는 `Tabs` 로 두 widget 을 감싸는 형태:
+
+```tsx
+// 개략
+export function MembersPage() {
+  const [tab, setTab] = useTabUrlState() // ?tab=member | guest, default=member
+  return (
+    <Tabs value={tab} onValueChange={setTab}>
+      <TabsList>
+        <TabsTrigger value="member">정회원</TabsTrigger>
+        <TabsTrigger value="guest">GUEST</TabsTrigger>
+      </TabsList>
+      <TabsContent value="member"><MembersListWidget /></TabsContent>
+      <TabsContent value="guest"><GuestsListWidget /></TabsContent>
+    </Tabs>
+  )
+}
+```
+
+탭 컴포넌트는 `tab` URL param 으로 sync (`?tab=member` / `?tab=guest`), refresh 보존. 두 widget 은 각자 `useUrlQueryState` 로 독립적인 query state 보유 — page/size/filter 충돌 없음 (탭별 prefix 또는 분리 schema 로 격리, 구현 시 결정).
 
 ### 4.3 Cross-BC 경계
 
@@ -322,7 +343,8 @@ public enum AdminGuestException implements ErrorCode {
 | `guests-table.test.tsx` | 컬럼 렌더, empty state, clickable row 라우팅 |
 | `guests-filter-form.test.tsx` | 이메일 debounce, 가입일/정렬 onChange, **tier filter 부재 검증** |
 | `guest-detail-cards.test.tsx` | 카드 렌더, **mutation dropdown 부재 검증** |
-| 탭 컨테이너 테스트 (`members-page.test.tsx` 신규/확장) | URL `?tab=*` ↔ active tab sync, 탭 전환 시 두 탭 동시 마운트되지 않음, **MEMBER 탭 기능 동일성 검증 (회귀 가드)** |
+| `guest-detail-page.test.tsx` (신규) | `pages/__tests__/` 위치 — `member-detail-page.test.tsx` 대칭. 라우트 param → useGuestDetail → GuestDetailCards 렌더 통합 |
+| 탭 컨테이너 테스트 (`pages/__tests__/members-page.test.tsx` 신규/확장) | URL `?tab=*` ↔ active tab sync, 탭 전환 시 두 탭 동시 마운트되지 않음, **MEMBER 탭 기능 동일성 검증 (회귀 가드)** |
 
 ### 10.3 회귀 잠금
 
@@ -345,7 +367,8 @@ public enum AdminGuestException implements ErrorCode {
 
 - DB 마이그레이션 zero (schema 무변경)
 - env 변경 zero
-- backend 배포 후 frontend 배포 권장 (frontend 가 신규 endpoint 호출 시 backend 가 응답 가능해야 함). pfplay 표준 — backend develop 머지 → stg 자동 배포 → 안정화 후 admin develop 머지.
+- 배포 순서 강제: **backend PR 머지 → stg 자동배포 → 안정화 확인 → admin PR 오픈/머지**. 역순 시 frontend 가 신규 endpoint 호출에 stg 백엔드가 404 응답 → 콘솔 표시 깨짐. pfplay 표준 ([[feedback_pr_series_workflow]] 의 cross-repo 순서 정합).
+- contract sync gate: admin PR 의 신규 type (`AdminGuestSummary` 등) 은 backend PR 의 DTO record 와 1:1 대응. backend PR 머지 후 actual response shape 확인 → admin type 작성 권장 (drift 방지).
 
 ## 14. 작업 분량 추정
 
