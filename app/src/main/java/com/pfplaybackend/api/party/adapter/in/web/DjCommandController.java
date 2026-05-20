@@ -3,6 +3,7 @@ package com.pfplaybackend.api.party.adapter.in.web;
 import com.pfplaybackend.api.common.ApiCommonResponse;
 import com.pfplaybackend.api.common.config.swagger.ApiErrorCodes;
 import com.pfplaybackend.api.common.domain.value.PlaylistId;
+import com.pfplaybackend.api.party.adapter.in.web.payload.request.dj.ChangePlaylistRequest;
 import com.pfplaybackend.api.party.adapter.in.web.payload.request.dj.RegisterDjRequest;
 import com.pfplaybackend.api.party.adapter.in.web.payload.response.CreateDjResponse;
 import com.pfplaybackend.api.party.application.service.DjCommandService;
@@ -66,6 +67,20 @@ public class DjCommandController {
             @Parameter(description = "파티룸 ID") @PathVariable Long partyroomId,
             @Parameter(description = "해제할 DJ ID") @PathVariable Long djId) {
         djCommandService.dequeueDj(new PartyroomId(partyroomId), new DjId(djId));
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "본인 DJ 플레이리스트 변경",
+            description = "DJ 대기열에 등록된 본인의 디제잉 플레이리스트를 변경합니다. 큐 순서는 보존되며, 재생 중 DJ 는 변경할 수 없습니다.")
+    @ApiResponse(responseCode = "204", description = "변경 성공")
+    @SecurityRequirement(name = "cookieAuth")
+    @ApiErrorCodes({DjException.class})
+    @PatchMapping("/{partyroomId}/dj-queue/me")
+    @PreAuthorize("hasRole('MEMBER')")
+    public ResponseEntity<Void> changePlaylist(
+            @Parameter(description = "파티룸 ID") @PathVariable Long partyroomId,
+            @Valid @RequestBody ChangePlaylistRequest request) {
+        djCommandService.changePlaylist(new PartyroomId(partyroomId), new PlaylistId(request.getPlaylistId()));
         return ResponseEntity.noContent().build();
     }
 }

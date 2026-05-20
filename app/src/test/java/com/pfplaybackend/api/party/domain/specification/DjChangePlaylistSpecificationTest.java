@@ -11,13 +11,13 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-class DjEnqueueSpecificationTest {
+class DjChangePlaylistSpecificationTest {
 
-    private DjEnqueueSpecification spec;
+    private DjChangePlaylistSpecification spec;
 
     @BeforeEach
     void setUp() {
-        spec = new DjEnqueueSpecification();
+        spec = new DjChangePlaylistSpecification();
     }
 
     private DjQueueData openQueue() {
@@ -31,8 +31,8 @@ class DjEnqueueSpecificationTest {
     }
 
     @Test
-    @DisplayName("정상 DJ 등록 — 예외 없음")
-    void validEnqueue() {
+    @DisplayName("정상 변경 — 예외 없음 (queue open, not current, owned, non-empty)")
+    void validChange() {
         assertThatNoException().isThrownBy(() ->
                 spec.validate(openQueue(), false, true, false));
     }
@@ -45,30 +45,39 @@ class DjEnqueueSpecificationTest {
     }
 
     @Test
-    @DisplayName("타인 소유 playlist — NOT_OWNED_PLAYLIST (DJ-005, 신규)")
+    @DisplayName("재생 중 DJ — CURRENT_DJ_CANNOT_CHANGE_PLAYLIST (DJ-006)")
+    void currentDjThrows() {
+        assertThatThrownBy(() -> spec.validate(openQueue(), true, true, false))
+                .isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    @DisplayName("타인 소유 playlist — NOT_OWNED_PLAYLIST (DJ-005)")
     void notOwnedThrows() {
         assertThatThrownBy(() -> spec.validate(openQueue(), false, false, false))
                 .isInstanceOf(ForbiddenException.class);
     }
 
     @Test
-    @DisplayName("빈 플레이리스트 — EMPTY_PLAYLIST (DJ-003)")
-    void emptyPlaylist() {
+    @DisplayName("빈 playlist — EMPTY_PLAYLIST (DJ-003)")
+    void emptyPlaylistThrows() {
         assertThatThrownBy(() -> spec.validate(openQueue(), false, true, true))
                 .isInstanceOf(ForbiddenException.class);
     }
 
     @Test
-    @DisplayName("이미 등록된 DJ — ALREADY_REGISTERED (DJ-001)")
-    void alreadyRegistered() {
-        assertThatThrownBy(() -> spec.validate(openQueue(), true, true, false))
+    @DisplayName("평가 순서 잠금 — currentDj + not-owned 동시: CURRENT_DJ_CANNOT_CHANGE_PLAYLIST 가 먼저(ConflictException)")
+    void currentDjBeatsOwnership() {
+        assertThatThrownBy(() -> spec.validate(openQueue(), true, false, true))
                 .isInstanceOf(ConflictException.class);
     }
 
     @Test
-    @DisplayName("평가 순서 잠금 — already-registered + not-owned 동시: NOT_OWNED_PLAYLIST 가 먼저 (보안 우선)")
-    void ownershipBeatsAlreadyRegistered() {
-        assertThatThrownBy(() -> spec.validate(openQueue(), true, false, false))
+    @DisplayName("평가 순서 잠금 — queue closed + not-owned 동시: QUEUE_CLOSED(validateOpen) 가 먼저 (spec §4-1)")
+    void queueClosedBeatsOwnership() {
+        // 둘 다 ForbiddenException 이지만, closed 가 먼저 평가되면 ownership/empty 호출 자체가 발생 안 함
+        // (== spec §3-2 의 evaluation order, validateOpen 이 throw 후 후속 if 블록 실행 안 됨)
+        assertThatThrownBy(() -> spec.validate(closedQueue(), false, false, true))
                 .isInstanceOf(ForbiddenException.class);
     }
 }

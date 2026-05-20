@@ -40,4 +40,22 @@ class DjDataTest {
         // then
         assertThat(dj.getOrderNumber()).isEqualTo(5);
     }
+
+    @Test
+    @DisplayName("updatePlaylist — playlist 가 변경되고 orderNumber 는 보존된다")
+    void updatePlaylistKeepsOrderNumber() {
+        // given
+        PlaylistId oldId = new PlaylistId(10L);
+        PlaylistId newId = new PlaylistId(99L);
+        DjData dj = DjData.create(new PartyroomId(1L), oldId, new CrewId(20L), 3);
+
+        // when
+        dj.updatePlaylist(newId);
+
+        // then
+        assertThat(dj.getPlaylistId()).isEqualTo(newId);
+        assertThat(dj.getOrderNumber()).isEqualTo(3);
+        assertThat(dj.getCrewId()).isEqualTo(new CrewId(20L));
+        assertThat(dj.getPartyroomId()).isEqualTo(new PartyroomId(1L));
+    }
 }

@@ -96,6 +96,7 @@ class DjCommandServiceLogCaptureTest {
         when(aggregatePort.findDjQueueState(partyroomId)).thenReturn(djQueue);
         when(partyroomQueryService.getCrewOrThrow(partyroomId, userId)).thenReturn(crew);
         when(aggregatePort.isDjRegistered(partyroomId, new CrewId(7L))).thenReturn(false);
+        when(playlistQueryPort.isOwnedBy(playlistId.getId(), userId.getUid())).thenReturn(true);
         when(playlistQueryPort.isEmptyPlaylist(playlistId.getId())).thenReturn(false);
         when(aggregatePort.findDjsOrdered(partyroomId)).thenReturn(Collections.emptyList());
         when(aggregatePort.saveDj(any(DjData.class))).thenReturn(mock(DjData.class));

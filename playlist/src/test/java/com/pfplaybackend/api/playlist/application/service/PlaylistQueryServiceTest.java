@@ -89,4 +89,31 @@ class PlaylistQueryServiceTest {
         assertThat(result).isEqualTo(expected);
         verify(queryPort).findByIdAndUserId(playlistId, userId);
     }
+
+    @Test
+    @DisplayName("isOwnedBy — playlist 가 본인 소유면 true")
+    void isOwnedByReturnsTrueWhenOwned() {
+        // given
+        PlaylistSummaryDto owned = new PlaylistSummaryDto(99L, "My Playlist", 5, PlaylistType.PLAYLIST, 1L);
+        when(queryPort.findByIdAndUserId(99L, userId)).thenReturn(owned);
+
+        // when
+        boolean result = playlistQueryService.isOwnedBy(99L, userId);
+
+        // then
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    @DisplayName("isOwnedBy — playlist 가 타인 소유거나 미존재면 false")
+    void isOwnedByReturnsFalseWhenNotOwned() {
+        // given
+        when(queryPort.findByIdAndUserId(99L, userId)).thenReturn(null);
+
+        // when
+        boolean result = playlistQueryService.isOwnedBy(99L, userId);
+
+        // then
+        assertThat(result).isFalse();
+    }
 }

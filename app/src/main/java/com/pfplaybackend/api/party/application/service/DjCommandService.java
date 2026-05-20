@@ -15,6 +15,7 @@ import com.pfplaybackend.api.party.domain.exception.DjException;
 import com.pfplaybackend.api.party.domain.exception.GradeException;
 import com.pfplaybackend.api.party.domain.port.PartyroomAggregatePort;
 import com.pfplaybackend.api.party.domain.service.PartyroomAggregateService;
+import com.pfplaybackend.api.party.domain.specification.DjChangePlaylistSpecification;
 import com.pfplaybackend.api.party.domain.specification.DjEnqueueSpecification;
 import com.pfplaybackend.api.party.domain.value.CrewId;
 import com.pfplaybackend.api.party.domain.value.DjId;
@@ -62,8 +63,9 @@ public class DjCommandService {
             log.warn("[enqueueDj] ALREADY_REGISTERED - requestId={}, partyroomId={}, crewId={}",
                     RequestIdInterceptor.current(), partyroomId.getId(), crew.getId());
         }
+        boolean isOwned = playlistQueryPort.isOwnedBy(playlistId.getId(), authContext.getUserId().getUid());
         boolean isEmptyPlaylist = playlistQueryPort.isEmptyPlaylist(playlistId.getId());
-        new DjEnqueueSpecification().validate(djQueue, isAlreadyRegistered, isEmptyPlaylist);
+        new DjEnqueueSpecification().validate(djQueue, isAlreadyRegistered, isOwned, isEmptyPlaylist);
         log.info("[enqueueDj] VALIDATION_PASSED - requestId={}, partyroomId={}, crewId={}",
                 RequestIdInterceptor.current(), partyroomId.getId(), crew.getId());
 
@@ -133,6 +135,39 @@ public class DjCommandService {
         if (wasCurrentDj) {
             playbackControlPort.skipPlayback(partyroomId);
         }
+    }
+
+    @Transactional
+    public void changePlaylist(PartyroomId partyroomId, PlaylistId newPlaylistId) {
+        AuthContext authContext = ThreadLocalContext.getAuthContext();
+        Long userId = authContext.getUserId().getUid();
+        log.info("[changePlaylist] ENTER - requestId={}, partyroomId={}, userId={}, newPlaylistId={}",
+                RequestIdInterceptor.current(), partyroomId.getId(), userId, newPlaylistId.getId());
+
+        partyroomQueryService.getPartyroomById(partyroomId);
+        PartyroomPlaybackData playback = aggregatePort.findPlaybackState(partyroomId);
+        DjQueueData djQueue = aggregatePort.findDjQueueState(partyroomId);
+
+        CrewData crew = partyroomQueryService.getCrewOrThrow(partyroomId, authContext.getUserId());
+        CrewId crewId = new CrewId(crew.getId());
+
+        DjData me = aggregatePort.findDj(partyroomId, crewId)
+                .orElseThrow(() -> ExceptionCreator.create(DjException.NOT_FOUND_DJ));
+
+        boolean isCurrentDj     = playback.isActivated() && playback.isCurrentDj(crewId);
+        boolean isOwned         = playlistQueryPort.isOwnedBy(newPlaylistId.getId(), userId);
+        boolean isEmptyPlaylist = playlistQueryPort.isEmptyPlaylist(newPlaylistId.getId());
+
+        new DjChangePlaylistSpecification().validate(djQueue, isCurrentDj, isOwned, isEmptyPlaylist);
+
+        Long oldPlaylistId = me.getPlaylistId() != null ? me.getPlaylistId().getId() : null;
+        me.updatePlaylist(newPlaylistId);
+        // ※ saveDj 명시 호출 안 함 — me 는 @Transactional 컨텍스트의 managed entity,
+        //   JPA dirty check 가 commit 시 UPDATE 자동 발행. spec §3-4
+
+        log.info("[changePlaylist] OK - requestId={}, partyroomId={}, crewId={}, oldPlaylistId={}, newPlaylistId={}",
+                RequestIdInterceptor.current(), partyroomId.getId(), crewId.getId(), oldPlaylistId, newPlaylistId.getId());
+        // 도메인 이벤트 발행 없음 — WS broadcast 불필요(spec §2-2)
     }
 
 }
