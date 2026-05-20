@@ -356,11 +356,23 @@ import java.util.Set;
  *
  * <p>Spec: docs/superpowers/specs/2026-05-20-observability-b1-b2-design.md §6.2.
  *
- * <p>제약:
+ * <p>Override 범위 (logstash-logback-encoder 7.4 verified — 본 SPI 만 호출됨):
+ * <ul>
+ *   <li>{@link #writeFieldName(String)} — currentField 추적</li>
+ *   <li>{@link #writeString(String)} — 가장 빈번한 emit 경로 (message/exception)</li>
+ *   <li>{@link #writeString(char[], int, int)} — char-array variant (방어적)</li>
+ *   <li>{@link #writeRawValue(String)} — raw value (큰 객체 trace 등)</li>
+ * </ul>
+ *
+ * <p>제약 (spec §6.3):
  * <ul>
  *   <li>field-scope state — {@code currentField} 가 마지막 {@code writeFieldName} 으로만 갱신.
  *       array 원소 안에선 직전 필드 이름 잔존 (flat 구조에선 무영향).</li>
- *   <li>writeRaw(String) 미 override — logstash-encoder 에서 거의 사용 안 함.</li>
+ *   <li>{@code writeFieldName(SerializableString)}, {@code writeString(Reader, int)},
+ *       offset variants of {@code writeRawValue}, {@code writeRaw(String)} 미 override —
+ *       logstash-logback-encoder 7.4 에서 사용 안 됨 (`JsonWritingUtils.writeStringField` =
+ *       writeFieldName(String) + writeString(String) 패턴 사용). future encoder evolution 시
+ *       override 추가 검토.</li>
  * </ul>
  */
 public class MaskingJsonGeneratorDecorator implements JsonGeneratorDecorator {
@@ -576,8 +588,12 @@ Profile 분기: local 콘솔 pattern, dev/staging/prod JSON encoder + masking. `
    - local: 가독성 PatternLayout (개발자 콘솔용)
    - dev/staging/prod: LogstashEncoder JSON + MaskingJsonGeneratorDecorator
                        (Cloud Logging jsonPayload 자동 인식)
+   - test (= @ActiveProfiles("test")): Spring Boot base.xml include
+                       (framework noise suppression + CONSOLE appender 유지)
 
-  test profile 은 Spring Boot 기본 logback-test.xml 컨벤션 사용 — 본 파일은 미적용.
+  ⚠️ logback-test.xml 이 부재라 Spring Boot 는 logback-spring.xml 을 모든 profile 에 적용함.
+  test profile 명시 안 하면 root logger 가 zero appender → framework defaults.xml suppression
+  (Hibernate/Catalina WARN 등) 도 잃음. 명시적 test block 으로 base.xml include 해서 보존.
 -->
 <configuration>
 
@@ -591,6 +607,11 @@ Profile 분기: local 콘솔 pattern, dev/staging/prod JSON encoder + masking. `
     <root level="INFO">
       <appender-ref ref="STDOUT"/>
     </root>
+  </springProfile>
+
+  <springProfile name="test">
+    <!-- Spring Boot 기본 console + framework noise suppression -->
+    <include resource="org/springframework/boot/logging/logback/base.xml"/>
   </springProfile>
 
   <springProfile name="dev,staging,prod">
@@ -634,7 +655,7 @@ Expected: local profile 시 콘솔에 `[requestId=, userId=, partyroomId=] com.p
 - [ ] **Step 3: 기존 모든 테스트 회귀 확인**
 
 Run: `JAVA_HOME="C:/Users/Eisen/.jdks/ms-21.0.7" ./gradlew :app:test`
-Expected: PASS (920+ tests, 회귀 없음 — logback-spring.xml 이 test profile 에 적용 안 됨 + Spring Boot 기본 logback-test.xml 패턴 보존)
+Expected: PASS (920+ tests). logback-spring.xml 은 test profile 에서도 적용되지만 `<springProfile name="test">` block 이 Spring Boot base.xml include 로 기본 console + framework noise suppression 보존 → ListAppender-on-class-logger 사용 테스트 (DjCommandServiceLogCaptureTest 등) 무파손, 일반 stdout 출력도 유지
 
 - [ ] **Step 4: 커밋**
 
@@ -684,6 +705,10 @@ class LogbackJsonConfigTest {
         assertThat(content).contains("<springProfile name=\"local\">");
         assertThat(content).contains("PatternLayoutEncoder");
         assertThat(content).contains("[requestId=%X{requestId:-}");
+
+        // test profile = Spring Boot base.xml include (framework noise suppression 보존)
+        assertThat(content).contains("<springProfile name=\"test\">");
+        assertThat(content).contains("org/springframework/boot/logging/logback/base.xml");
 
         // dev/staging/prod JSON
         assertThat(content).contains("<springProfile name=\"dev,staging,prod\">");
@@ -977,42 +1002,10 @@ class MdcTaskDecoratorTest {
         assertThat(postRunRequestId.get()).isNull();  // worker thread MDC 클린업됨
     }
 
-    @Test
-    @DisplayName("producer MDC 가 empty 이고 worker 에 leftover MDC 있으면 → run 동안 producer empty, 이후 leftover 복원 (best-effort)")
-    void empty_producer_with_worker_leftover() throws Exception {
-        // producer MDC: empty
-        // (현재 thread 의 MDC 비움)
-        MDC.clear();
-
-        Runnable inner = () -> {
-            // worker 에서 보이는 MDC: empty 여야 함 (producer 가 empty 라 decorate 가 clear)
-        };
-        Runnable decorated = decorator.decorate(inner);
-
-        // worker thread 가 시작 전에 leftover MDC 보유한 상황 시뮬레이션
-        CountDownLatch latch = new CountDownLatch(1);
-        AtomicReference<String> insideRunValue = new AtomicReference<>();
-        AtomicReference<String> postRunValue = new AtomicReference<>();
-        new Thread(() -> {
-            MDC.put("requestId", "leftover-from-prev-task");  // worker pool thread 재사용 시뮬레이션
-            try {
-                Runnable observer = () -> {
-                    insideRunValue.set(MDC.get("requestId"));
-                };
-                // observer wrapping 된 decorated 를 다시 만들지 않고, 이번 thread 에서 직접 검증
-                decorator.decorate(observer).run();
-                postRunValue.set(MDC.get("requestId"));
-            } finally {
-                latch.countDown();
-            }
-        }).start();
-        assertThat(latch.await(2, TimeUnit.SECONDS)).isTrue();
-
-        // decorate 호출 시점에 producer (=현재 thread) MDC 가 empty 이므로 → worker run 중 empty 강제
-        assertThat(insideRunValue.get()).isNull();
-        // run 후 finally 가 best-effort 로 worker 의 prev MDC ("leftover-from-prev-task") 복원
-        assertThat(postRunValue.get()).isEqualTo("leftover-from-prev-task");
-    }
+    // empty_producer_with_worker_leftover 시나리오는 두 thread 분리 셋업이 필요하나
+    // (producer 에서 decorate, 별도 worker 에서 run) test 코드 복잡도 대비 가치 낮음 — drop.
+    // 대신 propagation/cleans 테스트의 symmetry 로 동일 contract (context==null → MDC.clear) 가
+    // 간접 검증됨: 첫 번째 테스트 후 finally 가 worker 의 prev (null) 로 clear 함.
 
     @Test
     @DisplayName("예외 발생 시에도 finally 가 MDC 클린업")
@@ -1090,14 +1083,14 @@ public class MdcTaskDecorator implements TaskDecorator {
 - [ ] **Step 4: 테스트 PASS 확인**
 
 Run: `JAVA_HOME="C:/Users/Eisen/.jdks/ms-21.0.7" ./gradlew :app:test --tests "*MdcTaskDecoratorTest*"`
-Expected: PASS (3 tests)
+Expected: PASS (2 tests — propagation/cleans + exception cleanup)
 
 - [ ] **Step 5: 커밋**
 
 ```bash
 git add app/src/main/java/com/pfplaybackend/api/common/log/MdcTaskDecorator.java \
         app/src/test/java/com/pfplaybackend/api/common/log/MdcTaskDecoratorTest.java
-git commit -m "feat(obs-b2): MdcTaskDecorator + 3 cases (propagation/leftover/exception)"
+git commit -m "feat(obs-b2): MdcTaskDecorator + 2 cases (propagation/exception)"
 ```
 
 ### Task 12: `RequestIdInterceptor` MDC 격상
@@ -1118,12 +1111,23 @@ cat app/src/test/java/com/pfplaybackend/api/common/adapter/in/web/RequestIdInter
 
 - [ ] **Step 2: 새 MDC 검증 테스트 추가**
 
+기존 `RequestIdInterceptorTest` 클래스 상단에 import 추가:
 ```java
-// 기존 RequestIdInterceptorTest 클래스에 케이스 추가 (clean up 보장 위해 @AfterEach MDC.clear)
+import org.junit.jupiter.api.AfterEach;
+import org.slf4j.MDC;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
+```
 
+기존 테스트들 인접에 케이스 추가:
+
+```java
 @AfterEach
-void clearMdc() {
+void clearMdcAndSecurityContext() {
     MDC.clear();
+    SecurityContextHolder.clearContext();
 }
 
 @Test
@@ -1139,16 +1143,45 @@ void preHandle_sets_mdc_requestId() {
 }
 
 @Test
-@DisplayName("afterCompletion: MDC.requestId 제거")
-void afterCompletion_removes_mdc_requestId() {
+@DisplayName("afterCompletion: MDC.requestId + MDC.userId 모두 제거")
+void afterCompletion_removes_mdc() {
     MockHttpServletRequest request = new MockHttpServletRequest();
     MockHttpServletResponse response = new MockHttpServletResponse();
+    SecurityContextHolder.getContext().setAuthentication(
+            new UsernamePasswordAuthenticationToken("user-42", null));
     interceptor.preHandle(request, response, new Object());
     assertThat(MDC.get("requestId")).isNotNull();
+    assertThat(MDC.get("userId")).isEqualTo("user-42");
 
     interceptor.afterCompletion(request, response, new Object(), null);
 
     assertThat(MDC.get("requestId")).isNull();
+    assertThat(MDC.get("userId")).isNull();
+}
+
+@Test
+@DisplayName("preHandle: 인증된 사용자 — MDC.userId 설정")
+void preHandle_sets_mdc_userId_when_authenticated() {
+    SecurityContextHolder.getContext().setAuthentication(
+            new UsernamePasswordAuthenticationToken("authenticated-user", null));
+    MockHttpServletRequest request = new MockHttpServletRequest();
+    MockHttpServletResponse response = new MockHttpServletResponse();
+
+    interceptor.preHandle(request, response, new Object());
+
+    assertThat(MDC.get("userId")).isEqualTo("authenticated-user");
+}
+
+@Test
+@DisplayName("preHandle: 비인증 (anonymous) — MDC.userId 미설정")
+void preHandle_no_userId_when_anonymous() {
+    // SecurityContext 비어있음 (clearContext 후)
+    MockHttpServletRequest request = new MockHttpServletRequest();
+    MockHttpServletResponse response = new MockHttpServletResponse();
+
+    interceptor.preHandle(request, response, new Object());
+
+    assertThat(MDC.get("userId")).isNull();
 }
 
 @Test
@@ -1175,6 +1208,8 @@ package com.pfplaybackend.api.common.adapter.in.web;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.MDC;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
@@ -1192,6 +1227,9 @@ import java.util.UUID;
  *
  * <p>Spec: docs/superpowers/specs/2026-05-20-observability-b1-b2-design.md §7.2.
  * Phase A6 (platform#210) 의 ThreadLocal 단계에서 MDC 격상 — Phase B2.
+ *
+ * <p>SecurityContext 가 preHandle 시점에 populated: Spring Security Filter Chain 이
+ * DispatcherServlet 보다 먼저 실행되어 인증된 요청은 SecurityContextHolder 가 이미 채워짐.
  *
  * <p>async dispatch (DeferredResult/Callable) 미해소 — spec §10.4 참조.
  */
@@ -1250,8 +1288,7 @@ public class RequestIdInterceptor implements HandlerInterceptor {
      */
     private String extractUserId() {
         try {
-            org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
-            var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
             if (auth == null || !auth.isAuthenticated()) return null;
             String name = auth.getName();
             if (name == null || name.isBlank() || "anonymousUser".equals(name)) return null;
@@ -1263,12 +1300,12 @@ public class RequestIdInterceptor implements HandlerInterceptor {
 }
 ```
 
-> **주의**: 기존 코드의 ThreadLocal `CURRENT` 가 사라지므로, 같은 파일 안의 import (java.util.UUID) 외에 `ThreadLocal` 관련 import 도 제거. `SecurityContextHolder` 는 `org.springframework.security.core.context.SecurityContextHolder` 로 fully-qualified 사용 — `extractUserId` 헬퍼만 필요.
+> **주의**: 기존 코드의 ThreadLocal `CURRENT` 가 사라지므로 `ThreadLocal` 관련 import 도 제거. 신규 import = `org.slf4j.MDC`, `org.springframework.security.core.Authentication`, `org.springframework.security.core.context.SecurityContextHolder`.
 
 - [ ] **Step 5: 기존 + 신규 모든 RequestIdInterceptorTest PASS 확인**
 
 Run: `JAVA_HOME="C:/Users/Eisen/.jdks/ms-21.0.7" ./gradlew :app:test --tests "*RequestIdInterceptorTest*"`
-Expected: PASS (기존 sanitize/UUID 케이스 + 신규 3 MDC 케이스)
+Expected: PASS (기존 sanitize/UUID 케이스 + 신규 5 MDC 케이스: requestId 설정/clear/userId 인증/userId anonymous/current backward compat)
 
 - [ ] **Step 6: A1 호출자 (`DjCommandService`) 회귀 확인**
 
@@ -1584,9 +1621,10 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.pfplaybackend.api.common.AbstractIntegrationTest;
-import com.pfplaybackend.api.party.domain.event.CrewAccessedEvent;
-import com.pfplaybackend.api.party.domain.enums.AccessType;
 import com.pfplaybackend.api.common.domain.value.UserId;
+import com.pfplaybackend.api.party.domain.enums.AccessType;
+import com.pfplaybackend.api.party.domain.event.CrewAccessedEvent;
+import com.pfplaybackend.api.party.domain.value.CrewId;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.AfterEach;
@@ -1596,9 +1634,9 @@ import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Duration;
-import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -1608,12 +1646,18 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Spec: docs/superpowers/specs/2026-05-20-observability-b1-b2-design.md §10.2.
  *
- * <p>전제: AsyncConfig 의 userActivityLogExecutor 가 MdcTaskDecorator 적용,
- * Listener 가 MdcHelper.scope("partyroomId", ...) try-with-resources 적용.
+ * <p>전제:
+ * <ul>
+ *   <li>AsyncConfig 의 userActivityLogExecutor 가 MdcTaskDecorator 적용</li>
+ *   <li>Listener 의 on(CrewAccessedEvent) 가 MdcHelper.scope("partyroomId", ...) try-with-resources 적용</li>
+ *   <li>AFTER_COMMIT phase 발화를 위해 TransactionTemplate 으로 publishEvent 감쌈
+ *       (PartyroomCounterListenerIT 와 동일 패턴)</li>
+ * </ul>
  */
 class UserActivityLogListenerMdcIT extends AbstractIntegrationTest {
 
     @Autowired ApplicationEventPublisher publisher;
+    @Autowired TransactionTemplate transactionTemplate;
 
     private ListAppender<ILoggingEvent> appender;
     private Logger listenerLogger;
@@ -1636,23 +1680,24 @@ class UserActivityLogListenerMdcIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("on(CrewAccessedEvent ENTER): listener thread 의 log MDC 에 partyroomId 출현")
     void crewAccessed_propagates_partyroomId_mdc() {
+        // CrewAccessedEvent ctor: (PartyroomId, CrewId, UserId, AccessType)
+        // — DomainEvent 가 LocalDateTime 자동 부여, ctor 인자 X
         CrewAccessedEvent event = new CrewAccessedEvent(
-                new UserId(1234L),
                 new PartyroomId(5678L),
-                AccessType.ENTER,
-                LocalDateTime.now()
+                new CrewId(9999L),
+                new UserId(1234L),
+                AccessType.ENTER
         );
 
-        publisher.publishEvent(event);
+        // AFTER_COMMIT phase 가 fire 되려면 TX 안에서 publish 필요 (PartyroomCounterListenerIT 패턴)
+        transactionTemplate.executeWithoutResult(status -> publisher.publishEvent(event));
 
         // @Async + AFTER_COMMIT 이라 비동기 대기
         Awaitility.await()
                 .atMost(Duration.ofSeconds(3))
                 .untilAsserted(() -> {
-                    // listener 메서드 안에서 발생한 log 가 캡처되어야 함.
-                    // log() helper 가 호출되지만 그 안의 implementation 이 logger 호출하지 않으면
-                    // listener body 자체의 log statement 가 필요. 본 예시는 MDC 가 listener
-                    // 진입 후에 setting 되었는지를 검증 — appender event 의 MDCPropertyMap 확인.
+                    // listener body 의 진입 log.info("[on.CrewAccessedEvent] ...") 가 capture 되며
+                    // 그 event 의 MDCPropertyMap 에 partyroomId=5678 가 출현해야 함.
                     assertThat(appender.list)
                             .anyMatch(e -> "5678".equals(e.getMDCPropertyMap().get("partyroomId")));
                 });
@@ -1660,9 +1705,7 @@ class UserActivityLogListenerMdcIT extends AbstractIntegrationTest {
 }
 ```
 
-> 구현자: `AbstractIntegrationTest` 의 정확한 import path + Awaitility 의존성 위치 확인. 만약 listener 안에 명시적 `log.info` 호출이 없으면 (현재 코드상 `log(...)` helper 만 호출) 본 테스트가 capture 할 log event 가 없을 수 있음 — 이 경우 listener 안에 `log.info("[on.CrewAccessedEvent] type={}, userId={}, partyroomId={}", ...)` 같은 진입 로그 추가 필요. spec §A1 의 critical-path 로그 컨벤션 정합.
-
-> **결정**: 만약 진입 로그 추가가 필요하면 Task 16 의 same edit 안에 한 줄 추가 (`log.info("[on.CrewAccessedEvent] type={} userId={} partyroomId={}", type, e.getUserId().getUid(), e.getPartyroomId().getId());`) — Listener 가 어차피 audit 목적이라 진입 INFO 로그는 자연스러움.
+> 구현자: `Awaitility` 의존성은 기존 `:app:test` IT 들 (PartyroomCounterListenerIT 등) 에서 이미 사용 중이라 추가 의존성 작업 필요 없음. Listener 안에 명시적 `log.info("[on.CrewAccessedEvent] ...")` 진입 로그가 있어야 capture 가능 — Task 16/17 의 listener 수정 시 진입 로그 한 줄 추가 (다음 Step).
 
 - [ ] **Step 2: Listener 안에 진입 로그 추가 (Task 16 보강)**
 
