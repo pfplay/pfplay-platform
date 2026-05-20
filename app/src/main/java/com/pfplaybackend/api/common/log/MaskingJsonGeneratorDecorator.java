@@ -36,6 +36,9 @@ import java.util.Set;
  */
 public class MaskingJsonGeneratorDecorator implements JsonGeneratorDecorator {
 
+    // logback-spring.xml 의 <fieldNames> 와 cross-reference:
+    //   <message>message</message>, <stackTrace>exception</stackTrace>.
+    // XML rename 시 본 set 도 같이 변경 — LogbackJsonConfigTest 가 둘의 일치를 잠금.
     private static final Set<String> MASKABLE_FIELDS = Set.of("message", "exception");
 
     @Override
@@ -81,6 +84,8 @@ public class MaskingJsonGeneratorDecorator implements JsonGeneratorDecorator {
             if (input == null || input.isEmpty()) return input;
             String out = input;
             // secret 먼저
+            // 주의: KV 패턴들의 replacement 가 `$1=<redacted>` 라 입력 separator 가 `:` 였더라도 `=` 로 정규화됨.
+            // 의도된 동작 — 토큰은 완전 마스킹되므로 보안 영향 zero, 로그 가독성도 일관됨.
             out = MaskingPatterns.JWT.matcher(out).replaceAll("<jwt-redacted>");
             out = MaskingPatterns.BEARER_TOKEN.matcher(out).replaceAll("Bearer <redacted>");
             out = MaskingPatterns.PASSWORD_KV.matcher(out).replaceAll("$1=<redacted>");

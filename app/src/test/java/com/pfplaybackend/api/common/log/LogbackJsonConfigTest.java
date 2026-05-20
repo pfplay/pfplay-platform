@@ -45,6 +45,10 @@ class LogbackJsonConfigTest {
         // Cloud Logging severity 매핑
         assertThat(content).contains("<level>severity</level>");
 
+        // stackTrace → exception 필드 rename — MaskingJsonGeneratorDecorator.MASKABLE_FIELDS 와
+        // cross-reference (코드 vs XML drift 가드. XML 변경 시 코드도 같이 보정 강제)
+        assertThat(content).contains("<stackTrace>exception</stackTrace>");
+
         // Masking decorator wired
         assertThat(content).contains("com.pfplaybackend.api.common.log.MaskingJsonGeneratorDecorator");
     }

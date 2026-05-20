@@ -22,6 +22,8 @@ public final class MaskingPatterns {
     // --- Secret — 완전 마스킹 ---
     public static final Pattern JWT = Pattern.compile(
             "eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+");
+    // value class `[^\s,"'}]+` 는 공백을 안 잡음 — `password=foo bar` 면 `foo` 만 마스킹.
+    // JSON 직렬화된 로그 라인에선 password value 에 raw 공백이 없으므로 무영향.
     public static final Pattern PASSWORD_KV = Pattern.compile(
             "(?i)(password|password_hash|passwordhash|pwd)[\"']?\\s*[:=]\\s*[\"']?[^\\s,\"'}]+");
     public static final Pattern BEARER_TOKEN = Pattern.compile(
