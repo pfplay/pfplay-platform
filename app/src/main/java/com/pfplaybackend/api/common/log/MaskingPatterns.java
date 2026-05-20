@@ -40,7 +40,8 @@ public final class MaskingPatterns {
     public static final Pattern EMAIL = Pattern.compile(
             "([\\w.+-])[\\w.+-]*@([\\w-]+(?:\\.[\\w-]+)+)");
     /** lookbehind/lookahead 로 5+ octet decimal sequence 부분 매치 방지.
-     *  semver-like 단일 시퀀스는 의도적으로 redact (spec §6.3 limitation). */
+     *  lookahead 가 `\d`+`.` 둘 다 거부해야 6-decimal 의 inner 4-window (e.g. 192.168.1.1 in
+     *  192.168.1.1.2.3) 도 reject. semver-like 4-decimal 단일 시퀀스는 의도적으로 redact (spec §6.3 limitation). */
     public static final Pattern IP_V4 = Pattern.compile(
-            "(?<![\\d.])(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})\\.\\d{1,3}(?!\\d)");
+            "(?<![\\d.])(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})\\.\\d{1,3}(?![\\d.])");
 }
