@@ -105,6 +105,8 @@ yarn vitest --run
 
 ## Chunk 1: pfplay-platform backend (V19 + submit + admin query + tests)
 
+**Prerequisite**: D/#8 (PR #242 `feat(d8): 어드민 콘솔 GUEST read-only`) **already merged into develop** at `8db1e647` (2026-05-21). 본 plan 의 `AbstractAdminWebMvcTest` 수정·QueryDSL `QUserAccountData` import 패턴이 D/#8 산출물에 의존. 본 branch (`feature/voc-bug-report`) base 가 `develop` 이라 자동 포함.
+
 ### Task 1: V19 Flyway 마이그레이션 + `BugReportData` entity + `BugReportException`
 
 **Files:**
@@ -1212,7 +1214,7 @@ class AdminBugReportQueryRepositoryImplIT extends AbstractIntegrationTest {
 }
 ```
 
-> 실제 작성 시점에 `AdminGuestQueryRepositoryImplIT.java` 의 helper(`seedUserAccount`, `seedPartyroom` 등) 시그니처 확인하여 reporter user / partyroom row 가 join 결과에 노출되도록 함께 시드. user_account 시드 없이는 reporterEmail/nickname 이 null 또는 row 자체 누락(LEFT JOIN 정책에 따라). **plan-execution 로그**: 선택한 base IT 파일 명시.
+> **시드 helper**: D/#8 `AdminGuestQueryRepositoryImplIT` 에 `seedUserAccount`/`seedPartyroom` 공유 helper **존재하지 않음** (plan reviewer round-1 검증). 본 IT 내부에 private helper 직접 작성 — `EntityManager.persist(UserAccountData.builder()...build())` 또는 `entityManager.createNativeQuery("INSERT INTO user_account ...").executeUpdate()` (D/#8 IT 의 내부 패턴 확인 후 일관 적용). reporterEmail 검증 case (count + detail) 에서만 필수, sort/period/keyword filter case 는 user 시드 없이도 통과.
 
 - [ ] **Step 5: 실패 확인**
 
@@ -1233,8 +1235,12 @@ import com.pfplaybackend.api.administration.application.dto.AdminBugReportDetail
 import com.pfplaybackend.api.administration.application.dto.AdminBugReportListQuery;
 import com.pfplaybackend.api.administration.application.dto.AdminBugReportSummaryDto;
 import com.pfplaybackend.api.administration.domain.entity.data.QBugReportData;
-import com.pfplaybackend.api.iam.domain.entity.data.QUserAccountData;
+// ⚠️ user 모듈 (iam 아님 — AdminMember/AdminPartyroom QueryRepositoryImpl 정합):
+import com.pfplaybackend.api.user.domain.entity.data.QUserAccountData;
 import com.pfplaybackend.api.party.domain.entity.data.QPartyroomData;
+// nickname source: user_account 에 nickname 컬럼 없음 → profile.bio.nickname join 필요
+// (AdminPartyroomQueryRepositoryImpl.java:80 패턴 미러). 본 plan 단순 버전은
+// reporterNickname null 허용 + 후속 task 에서 profile join 추가 가능 (YAGNI 결정 — 1차 도입은 email 만):
 import com.querydsl.core.BooleanBuilder;
 import com.querydsl.core.types.Projections;
 import com.querydsl.core.types.dsl.Expressions;
@@ -1266,7 +1272,7 @@ public class AdminBugReportQueryRepositoryImpl implements AdminBugReportQueryRep
                         br.bugReportId,
                         br.reporterUserAccountId,
                         ua.email,
-                        ua.nickname,
+                        Expressions.nullExpression(String.class),   // reporterNickname — 1차 도입은 null (profile join 후속)
                         preview,
                         br.partyroomId,
                         br.createdAt))
@@ -1300,7 +1306,7 @@ public class AdminBugReportQueryRepositoryImpl implements AdminBugReportQueryRep
                         br.bugReportId,
                         br.reporterUserAccountId,
                         ua.email,
-                        ua.nickname,
+                        Expressions.nullExpression(String.class),   // reporterNickname — 1차 도입은 null (profile join 후속)
                         br.content,
                         br.pageUrl,
                         br.userAgent,
@@ -1327,7 +1333,11 @@ public class AdminBugReportQueryRepositoryImpl implements AdminBugReportQueryRep
 }
 ```
 
-> `QPartyroomData` / `QUserAccountData` 정확한 클래스 경로는 IDE/grep 으로 확인 (`PartyroomData` / `UserAccountData` 의 generated Q-class). 본 plan 의 import 는 추정 — 실제 실행 시 정정.
+> QueryDSL Q-class 경로 (verified against `AdminPartyroomQueryRepositoryImpl.java:7,12,67`):
+> - `QUserAccountData` = `com.pfplaybackend.api.user.domain.entity.data.QUserAccountData`
+> - `QPartyroomData` = `com.pfplaybackend.api.party.domain.entity.data.QPartyroomData`
+>
+> **reporterNickname**: `user_account` 자체에 nickname 컬럼 없음. 다른 admin query 들은 `profile.bio.nickname` join 사용 (AdminPartyroomQueryRepositoryImpl.java:80). **본 plan 1차 도입은 null 처리** (Expressions.nullExpression) — 어드민 진단에 email 이 더 본질적이고, profile entity join 은 plan 분량 ↑ + ProfileData 모듈 cross 도메인 의존성 추가. 후속 PR 에서 profile join 보강.
 
 - [ ] **Step 7: 통과 확인**
 
@@ -2481,12 +2491,16 @@ git commit -m "feat(voc): features/bug-report slice — submit API + zod + party
 
 ---
 
-### Task 14: `BugReportForm` + `BugReportDialog`
+### Task 14: `BugReportForm` + `BugReportDialog` + 신규 mini-toast
 
 **Files:**
+- Create: `pfplay-web/src/features/bug-report/ui/bug-report-toast.tsx` — 신규 mini-toast (EventToast 스타일 미러, 의존성 추가 없이)
+- Create: `pfplay-web/src/features/bug-report/model/use-bug-report-toast.hook.ts` — zustand store (success/error/rate_limit + 자동 dismiss 3s)
 - Create: `pfplay-web/src/features/bug-report/ui/bug-report-form.component.tsx` + test
 - Create: `pfplay-web/src/features/bug-report/ui/bug-report-dialog.component.tsx` + test
 - Create: `pfplay-web/src/features/bug-report/index.ts` (BugReportButton/Dialog 외부 노출)
+
+> **Toast 사정 (사용자 결정 2026-05-21)**: pfplay-web 전역 toast 라이브러리 부재 (`@/shared/lib/toast` 미존재, 기존 sign-in 은 `alert()` 사용). 결정 = **VOC 전용 mini-toast 신규 도입** — system-announcement `EventToast` 의 스타일·a11y (`role='status'`, severity accent, dismissible) 컨벤션 미러하되 broadcast 가 아닌 단일 사용자 액션 응답 용도 (severity = success/error 2종). zustand store + 3초 auto-dismiss. 외부 의존성 0.
 
 - [ ] **Step 1: 실패 form 테스트 작성**
 
@@ -2507,6 +2521,74 @@ yarn vitest --run src/features/bug-report/ui/bug-report-form
 ```
 Expected: 컴파일 또는 import 실패.
 
+- [ ] **Step 2.5: mini-toast store + component 작성**
+
+`pfplay-web/src/features/bug-report/model/use-bug-report-toast.hook.ts`:
+```ts
+import { create } from 'zustand';
+
+type Severity = 'success' | 'error';
+type ToastItem = { severity: Severity; message: string };
+
+type State = {
+  current: ToastItem | null;
+  show: (item: ToastItem) => void;
+  dismiss: () => void;
+};
+
+export const useBugReportToast = create<State>((set) => ({
+  current: null,
+  show: (item) => {
+    set({ current: item });
+    setTimeout(() => set((s) => (s.current === item ? { current: null } : s)), 3000);
+  },
+  dismiss: () => set({ current: null }),
+}));
+```
+
+`pfplay-web/src/features/bug-report/ui/bug-report-toast.tsx` (EventToast 스타일 미러):
+```tsx
+'use client';
+import { cn } from '@/shared/lib/functions/cn';
+import { Typography } from '@/shared/ui/components/typography';
+import { useBugReportToast } from '../model/use-bug-report-toast.hook';
+
+const ACCENT: Record<string, string> = {
+  success: 'border-l-green-400',
+  error:   'border-l-red-300',
+};
+
+export function BugReportToast() {
+  const current = useBugReportToast((s) => s.current);
+  const dismiss = useBugReportToast((s) => s.dismiss);
+  if (!current) return null;
+  return (
+    <div
+      data-testid='bug-report-toast'
+      role='status'
+      className={cn(
+        'pointer-events-auto w-[320px] bg-gray-800 border border-gray-700 rounded-[6px] border-l-[3px] shadow-lg',
+        ACCENT[current.severity]
+      )}
+    >
+      <div className='px-4 py-3 flex items-start gap-3'>
+        <Typography type='detail2' className='text-gray-50 flex-1'>{current.message}</Typography>
+        <button
+          type='button'
+          onClick={dismiss}
+          data-testid='bug-report-toast-close'
+          className='text-gray-400 hover:text-gray-200 leading-none px-1 -mt-0.5'
+        >
+          ×
+        </button>
+      </div>
+    </div>
+  );
+}
+```
+
+> BugReportToast 렌더 위치: BugReportDialog Body 안 `BugReportForm` 옆 (모달 내부 inline). dialog 닫혀도 store 자동 dismiss 됨. 별도 `<BugReportToast />` host 가 외부 layout 에 필요 없음 — 사용자 결정상 1차 도입 단순화. 후속에 dialog 외부 fixed position 토스트 host 필요 시 별 PR.
+
 - [ ] **Step 3: `BugReportForm` 구현**
 
 ```tsx
@@ -2519,7 +2601,7 @@ import { TextButton } from '@/shared/ui/components/text-button';
 import { Textarea } from '@/shared/ui/components/textarea';
 import { Typography } from '@/shared/ui/components/typography';
 import { useI18n } from '@/shared/lib/localization/i18n.context';
-import { toast } from '@/shared/lib/toast';  // 기존 toast 패턴 확인
+import { useBugReportToast } from '../model/use-bug-report-toast.hook';  // VOC 전용 mini-toast (Task 14 신규)
 import { bugReportSchema, type BugReportSchema } from '../model/bug-report-schema';
 import { useSubmitBugReport } from '../model/use-submit-bug-report.hook';
 
@@ -2537,22 +2619,22 @@ export function BugReportForm({ onSubmitted }: Props) {
   });
   const content = watch('content', '');
   const mutation = useSubmitBugReport();
+  const toast = useBugReportToast();
 
   const onSubmit = (data: BugReportSchema) => {
     mutation.mutate(
       { content: data.content },
       {
         onSuccess: () => {
-          toast.success(t.bug_report.toast.success);
+          toast.show({ severity: 'success', message: t.bug_report.toast.success });
           onSubmitted();
         },
         onError: (err: unknown) => {
           const status = (err as { response?: { status?: number } })?.response?.status;
-          if (status === 429) {
-            toast.error(t.bug_report.toast.rate_limit);
-          } else {
-            toast.error(t.bug_report.toast.error);
-          }
+          toast.show({
+            severity: 'error',
+            message: status === 429 ? t.bug_report.toast.rate_limit : t.bug_report.toast.error,
+          });
         },
       }
     );
@@ -2606,6 +2688,7 @@ import { useDialog } from '@/shared/ui/components/dialog';
 import { Typography } from '@/shared/ui/components/typography';
 import { useI18n } from '@/shared/lib/localization/i18n.context';
 import { BugReportForm } from './bug-report-form.component';
+import { BugReportToast } from './bug-report-toast';
 
 export function useOpenBugReportDialog() {
   const { openDialog } = useDialog();
@@ -2621,7 +2704,12 @@ export function useOpenBugReportDialog() {
       titleAlign: 'left',
       showCloseIcon: true,
       classNames: { container: 'w-[480px] py-7 px-8 bg-black' },
-      Body: <BugReportForm onSubmitted={onCancel ?? (() => {})} />,
+      Body: (
+        <>
+          <BugReportToast />
+          <BugReportForm onSubmitted={onCancel ?? (() => {})} />
+        </>
+      ),
     }));
 }
 ```
