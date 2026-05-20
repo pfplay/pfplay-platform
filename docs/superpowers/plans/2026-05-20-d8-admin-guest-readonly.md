@@ -2196,8 +2196,19 @@ describe("useUrlQueryState — preserveExternalKeys", () => {
   })
 
   it("옵션 미지정 시 외부 키 (tab) 가 setQuery 후 사라짐 — 기존 동작 회귀 가드", () => {
-    // 기존 호출처 (partyrooms 등) 무영향 확인
-    // ... 검증 골격은 위 패턴 동형, options 미전달
+    let currentSearch = ""
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <MemoryRouter initialEntries={["/x?tab=guest&email=foo"]}>
+        <SearchProbe onChange={(s) => { currentSearch = s }}>{children}</SearchProbe>
+      </MemoryRouter>
+    )
+    // options 미전달 — 기존 호출처 (partyrooms 등) 동등 동작
+    const { result } = renderHook(() => useUrlQueryState(schema), { wrapper })
+
+    act(() => result.current.setQuery({ email: "bar" }))
+
+    expect(currentSearch).not.toContain("tab=guest")
+    expect(currentSearch).toContain("email=bar")
   })
 })
 
