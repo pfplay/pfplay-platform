@@ -115,7 +115,13 @@ public interface PlaylistQueryPort {
 }
 ```
 
-**party 모듈 `PlaylistQueryAdapter`** (`app/.../party/adapter/out/external/PlaylistQueryAdapter.java`) — 현행 `isEmptyPlaylist` 가 `TrackQueryService.isEmptyPlaylist` 에 위임하는 것과 같은 패턴으로 `isOwnedBy` 는 playlist 모듈의 `PlaylistQueryService.isOwnedBy(Long, UserId)` 신규 메서드에 위임.
+**party 모듈 `PlaylistQueryAdapter`** (`app/.../party/adapter/out/external/PlaylistQueryAdapter.java`) — 현행 `isEmptyPlaylist` 가 `TrackQueryService.isEmptyPlaylist` 에 위임하는 것과 같은 패턴으로 `isOwnedBy` 는 playlist 모듈의 `PlaylistQueryService.isOwnedBy(Long, UserId)` 신규 메서드에 위임. UserId VO wrap:
+```java
+@Override
+public boolean isOwnedBy(Long playlistId, Long userId) {
+    return playlistQueryService.isOwnedBy(playlistId, new UserId(userId));
+}
+```
 
 **playlist 모듈 신규 메서드**: `PlaylistQueryService.isOwnedBy(Long playlistId, UserId userId): boolean` — 기존 `findByIdAndUserId(playlistId, userId)` 가 `null` 반환 시 false, non-null 시 true (또는 동등 효율의 exists 쿼리). 구현 위치는 plan 단계에서 결정(현 서비스 메서드 재사용 vs `PlaylistQueryPort.existsByIdAndUserId` 신설).
 
