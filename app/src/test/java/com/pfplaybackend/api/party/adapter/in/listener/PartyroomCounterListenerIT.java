@@ -79,7 +79,7 @@ class PartyroomCounterListenerIT extends AbstractIntegrationTest {
         );
 
         PartyroomData reloaded = partyroomRepository.findById(roomId).orElseThrow();
-        assertThat(reloaded.getCrewCount()).isEqualTo(1);
+        assertThat(reloaded.getActiveCrewCount()).isEqualTo(1);
         assertThat(reloaded.getLastActivityAt()).isNotNull();
     }
 
@@ -101,7 +101,7 @@ class PartyroomCounterListenerIT extends AbstractIntegrationTest {
         );
 
         PartyroomData reloaded = partyroomRepository.findById(roomId).orElseThrow();
-        assertThat(reloaded.getCrewCount()).isZero();
+        assertThat(reloaded.getActiveCrewCount()).isZero();
     }
 
     @Test
@@ -119,7 +119,7 @@ class PartyroomCounterListenerIT extends AbstractIntegrationTest {
 
         PartyroomData reloaded = partyroomRepository.findById(roomId).orElseThrow();
         assertThat(reloaded.getLastActivityAt()).isNotNull();
-        assertThat(reloaded.getCrewCount()).isZero();
+        assertThat(reloaded.getActiveCrewCount()).isZero();
     }
 
     @Test
@@ -157,7 +157,7 @@ class PartyroomCounterListenerIT extends AbstractIntegrationTest {
         );
 
         PartyroomData reloaded = partyroomRepository.findById(roomId).orElseThrow();
-        assertThat(reloaded.getCrewCount()).isZero();
+        assertThat(reloaded.getActiveCrewCount()).isZero();
     }
 
     @Test
@@ -175,7 +175,7 @@ class PartyroomCounterListenerIT extends AbstractIntegrationTest {
         );
 
         PartyroomData reloaded = partyroomRepository.findById(roomId).orElseThrow();
-        assertThat(reloaded.getCrewCount()).isZero();
+        assertThat(reloaded.getActiveCrewCount()).isZero();
     }
 
     @Test
@@ -196,6 +196,6 @@ class PartyroomCounterListenerIT extends AbstractIntegrationTest {
         );
 
         PartyroomData reloaded = partyroomRepository.findById(roomId).orElseThrow();
-        assertThat(reloaded.getCrewCount()).isZero();
+        assertThat(reloaded.getActiveCrewCount()).isZero();
     }
 }

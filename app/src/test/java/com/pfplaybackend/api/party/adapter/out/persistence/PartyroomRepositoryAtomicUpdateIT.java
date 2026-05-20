@@ -50,7 +50,7 @@ class PartyroomRepositoryAtomicUpdateIT extends AbstractIntegrationTest {
 
         assertThat(affected).isEqualTo(1);
         PartyroomData reloaded = partyroomRepository.findById(p.getId()).orElseThrow();
-        assertThat(reloaded.getCrewCount()).isEqualTo(1);
+        assertThat(reloaded.getActiveCrewCount()).isEqualTo(1);
         assertThat(reloaded.getLastActivityAt()).isEqualToIgnoringNanos(now);
     }
 
@@ -85,7 +85,7 @@ class PartyroomRepositoryAtomicUpdateIT extends AbstractIntegrationTest {
 
         assertThat(affected).isEqualTo(1);
         PartyroomData reloaded = partyroomRepository.findById(p.getId()).orElseThrow();
-        assertThat(reloaded.getCrewCount()).isEqualTo(1);
+        assertThat(reloaded.getActiveCrewCount()).isEqualTo(1);
         assertThat(reloaded.getLastActivityAt()).isEqualToIgnoringNanos(decrementAt);
     }
 
@@ -100,7 +100,7 @@ class PartyroomRepositoryAtomicUpdateIT extends AbstractIntegrationTest {
         // — what matters is the underflow guard kept the count at 0.
         assertThat(affected).isIn(0, 1);
         PartyroomData reloaded = partyroomRepository.findById(p.getId()).orElseThrow();
-        assertThat(reloaded.getCrewCount()).isZero();
+        assertThat(reloaded.getActiveCrewCount()).isZero();
     }
 
     @Test
@@ -164,7 +164,7 @@ class PartyroomRepositoryAtomicUpdateIT extends AbstractIntegrationTest {
 
         assertThat(affected).isEqualTo(1);
         PartyroomData reloaded = partyroomRepository.findById(p.getId()).orElseThrow();
-        assertThat(reloaded.getCrewCount()).isZero();
+        assertThat(reloaded.getActiveCrewCount()).isZero();
     }
 
     @Test
@@ -178,7 +178,7 @@ class PartyroomRepositoryAtomicUpdateIT extends AbstractIntegrationTest {
         int affected = partyroomRepository.resetCrewCount(p.getId());
 
         assertThat(affected).isEqualTo(1);
-        assertThat(partyroomRepository.findById(p.getId()).orElseThrow().getCrewCount()).isZero();
+        assertThat(partyroomRepository.findById(p.getId()).orElseThrow().getActiveCrewCount()).isZero();
     }
 
     // ── findNonTerminatedHostRoom (status 시맨틱 변경 회귀) ────────────────

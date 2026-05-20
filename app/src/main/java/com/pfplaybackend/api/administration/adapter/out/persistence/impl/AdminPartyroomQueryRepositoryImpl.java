@@ -93,7 +93,7 @@ public class AdminPartyroomQueryRepositoryImpl implements AdminPartyroomQueryRep
                         p.stageType,
                         ua.userId.uid,
                         profile.bio.nickname,
-                        p.crewCount,
+                        p.activeCrewCount,
                         djCountSubquery,
                         pb.isActivated,
                         p.status,
@@ -139,7 +139,7 @@ public class AdminPartyroomQueryRepositoryImpl implements AdminPartyroomQueryRep
                                          JPQLQuery<Long> djCountSubquery) {
         Nickname nickname = t.get(profile.bio.nickname);
         Long djCount = t.get(djCountSubquery);
-        Integer crewCount = t.get(p.crewCount);
+        Integer crewCount = t.get(p.activeCrewCount);
         return new AdminPartyroomListRow(
                 t.get(p.id),
                 t.get(p.title),
@@ -202,7 +202,7 @@ public class AdminPartyroomQueryRepositoryImpl implements AdminPartyroomQueryRep
             ComparableExpressionBase<?> path = switch (order.getProperty()) {
                 case "createdAt"      -> p.createdAt;
                 case "lastActivityAt" -> p.lastActivityAt;
-                case "crewCount"      -> p.crewCount;
+                case "crewCount"      -> p.activeCrewCount;
                 case "title"          -> p.title;
                 case "hostNickname"   -> nicknameExpr;
                 default -> throw new IllegalArgumentException(
