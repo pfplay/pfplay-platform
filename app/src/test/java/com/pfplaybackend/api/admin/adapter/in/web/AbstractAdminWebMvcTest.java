@@ -6,6 +6,7 @@ import com.pfplaybackend.api.admin.application.service.AdminUserService;
 import com.pfplaybackend.api.admin.application.service.ChatSimulationService;
 import com.pfplaybackend.api.administration.adapter.in.web.AdminAnnouncementController;
 import com.pfplaybackend.api.administration.adapter.in.web.AdminAvatarCommandController;
+import com.pfplaybackend.api.administration.adapter.in.web.AdminBugReportQueryController;
 import com.pfplaybackend.api.administration.adapter.in.web.AdminAvatarQueryController;
 import com.pfplaybackend.api.administration.adapter.in.web.AdminCrewPenaltyCommandController;
 import com.pfplaybackend.api.administration.adapter.in.web.AdminGuestQueryController;
@@ -21,6 +22,7 @@ import com.pfplaybackend.api.administration.adapter.in.web.AdminPasswordControll
 import com.pfplaybackend.api.avatar.application.port.in.AvatarAdminCatalogQueryUseCase;
 import com.pfplaybackend.api.avatar.application.port.in.AvatarCatalogCommandUseCase;
 import com.pfplaybackend.api.administration.application.AdminContext;
+import com.pfplaybackend.api.administration.application.service.AdminBugReportQueryService;
 import com.pfplaybackend.api.administration.application.service.AdminBulkPartyroomActionService;
 import com.pfplaybackend.api.administration.application.service.AdminCrewPenaltyCommandService;
 import com.pfplaybackend.api.administration.application.service.AdminGuestQueryService;
@@ -67,7 +69,8 @@ import org.springframework.test.web.servlet.MockMvc;
         AdminMemberWithdrawCommandController.class,
         AdminReportQueryController.class,
         AdminReportCommandController.class,
-        AdminAnnouncementController.class
+        AdminAnnouncementController.class,
+        AdminBugReportQueryController.class
 })
 @Import({
         AbstractAdminWebMvcTest.SharedMethodSecurityConfig.class,
@@ -107,4 +110,5 @@ public abstract class AbstractAdminWebMvcTest {
     @MockBean protected AdminReportCommandService adminReportCommandService;
     @MockBean protected SystemAnnouncementCommandService systemAnnouncementCommandService;
     @MockBean protected SystemAnnouncementRepository systemAnnouncementRepository;
+    @MockBean protected AdminBugReportQueryService adminBugReportQueryService;
 }
