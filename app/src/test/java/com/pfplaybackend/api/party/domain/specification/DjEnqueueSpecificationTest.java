@@ -33,32 +33,42 @@ class DjEnqueueSpecificationTest {
     @Test
     @DisplayName("정상 DJ 등록 — 예외 없음")
     void validEnqueue() {
-        DjQueueData queue = openQueue();
         assertThatNoException().isThrownBy(() ->
-                spec.validate(queue, false, false));
+                spec.validate(openQueue(), false, true, false));
     }
 
     @Test
-    @DisplayName("큐 닫힘 — QUEUE_CLOSED")
+    @DisplayName("큐 닫힘 — QUEUE_CLOSED (DJ-002)")
     void queueClosed() {
-        DjQueueData queue = closedQueue();
-        assertThatThrownBy(() -> spec.validate(queue, false, false))
+        assertThatThrownBy(() -> spec.validate(closedQueue(), false, true, false))
                 .isInstanceOf(ForbiddenException.class);
     }
 
     @Test
-    @DisplayName("빈 플레이리스트 — EMPTY_PLAYLIST")
+    @DisplayName("타인 소유 playlist — NOT_OWNED_PLAYLIST (DJ-005, 신규)")
+    void notOwnedThrows() {
+        assertThatThrownBy(() -> spec.validate(openQueue(), false, false, false))
+                .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("빈 플레이리스트 — EMPTY_PLAYLIST (DJ-003)")
     void emptyPlaylist() {
-        DjQueueData queue = openQueue();
-        assertThatThrownBy(() -> spec.validate(queue, false, true))
+        assertThatThrownBy(() -> spec.validate(openQueue(), false, true, true))
                 .isInstanceOf(ForbiddenException.class);
     }
 
     @Test
-    @DisplayName("이미 등록된 DJ — ALREADY_REGISTERED")
+    @DisplayName("이미 등록된 DJ — ALREADY_REGISTERED (DJ-001)")
     void alreadyRegistered() {
-        DjQueueData queue = openQueue();
-        assertThatThrownBy(() -> spec.validate(queue, true, false))
+        assertThatThrownBy(() -> spec.validate(openQueue(), true, true, false))
                 .isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    @DisplayName("평가 순서 잠금 — already-registered + not-owned 동시: NOT_OWNED_PLAYLIST 가 먼저 (보안 우선)")
+    void ownershipBeatsAlreadyRegistered() {
+        assertThatThrownBy(() -> spec.validate(openQueue(), true, false, false))
+                .isInstanceOf(ForbiddenException.class);
     }
 }
