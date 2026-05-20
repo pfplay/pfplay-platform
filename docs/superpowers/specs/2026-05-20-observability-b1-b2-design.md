@@ -174,22 +174,67 @@ public final class MaskingPatterns {
     public static final Pattern API_KEY_KV = Pattern.compile("(?i)(api[_-]?key|apikey|secret[_-]?key|client[_-]?secret)[\"']?\\s*[:=]\\s*[\"']?[A-Za-z0-9._-]+");
 
     // PII — 일부 마스킹 (디버깅 가능한 형태로)
-    public static final Pattern EMAIL = Pattern.compile("([\\w.+-]{2})[\\w.+-]*@([\\w-]+(?:\\.[\\w-]+)+)");  // 첫 2자만 노출
-    public static final Pattern IP_V4 = Pattern.compile("(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})\\.\\d{1,3}");  // 마지막 옥텟 마스킹
+    // EMAIL: 첫 1자만 노출 (1-char local-part 도 안 leak 되게 — `{2}` 면 1-char local 이 non-match 로 통과되어 leak).
+    public static final Pattern EMAIL = Pattern.compile("([\\w.+-])[\\w.+-]*@([\\w-]+(?:\\.[\\w-]+)+)");
+    // IP_V4: word boundary + 좌측 lookbehind 로 `version 1.2.3.4` 같은 decimal sequence 오매칭 차단.
+    public static final Pattern IP_V4 = Pattern.compile("(?<![\\d.])(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})\\.\\d{1,3}(?!\\d)");
 }
 ```
 
 ### 6.2 마스킹 적용 메커니즘
 
 `MaskingJsonGeneratorDecorator` (구현 신규):
-- logstash-encoder 의 `JsonGeneratorDecorator` SPI 확장
-- emit 직전 JSON string value 를 패턴 매치 → 치환:
-  - JWT → `<jwt-redacted>`
-  - PASSWORD_KV → `password=<redacted>`
-  - BEARER_TOKEN → `Bearer <redacted>`
-  - EMAIL → `$1***@$2` (앞 2자 + `***@domain`)
-  - IP_V4 → `$1.xxx`
-- 매치 실패 = 그대로 통과 (무손실)
+- logstash-encoder 7.4 의 SPI: `JsonGeneratorDecorator { JsonGenerator decorate(JsonGenerator gen) }` 구현
+- 반환할 `JsonGenerator` 는 위임형 wrapper — `writeString(String)` / `writeRawValue(String)` 만 가로채서 패턴 매치 → 치환, 나머지 메서드는 delegate 호출
+- **필드 한정 적용**: `writeFieldName(String name)` 을 추적해 현재 필드가 `message` 또는 `exception` 일 때만 마스킹. logger / MDC / timestamp / severity / thread 는 통과
+- 치환 후 결과를 wrapped generator 의 `writeString(masked)` 으로 emit
+
+```java
+public class MaskingJsonGeneratorDecorator implements JsonGeneratorDecorator {
+    private static final Set<String> MASKABLE_FIELDS = Set.of("message", "exception");
+
+    @Override
+    public JsonGenerator decorate(JsonGenerator gen) {
+        return new MaskingJsonGenerator(gen);
+    }
+
+    static class MaskingJsonGenerator extends JsonGeneratorDelegate {
+        private String currentField;
+
+        MaskingJsonGenerator(JsonGenerator d) { super(d); }
+
+        @Override
+        public void writeFieldName(String name) throws IOException {
+            this.currentField = name;
+            super.writeFieldName(name);
+        }
+
+        @Override
+        public void writeString(String text) throws IOException {
+            super.writeString(MASKABLE_FIELDS.contains(currentField) ? mask(text) : text);
+        }
+
+        private String mask(String input) {
+            if (input == null || input.isEmpty()) return input;
+            String out = input;
+            // secret 먼저 (PII 보다 우선) — JWT/Bearer/cookies/api_key/password_kv
+            out = MaskingPatterns.JWT.matcher(out).replaceAll("<jwt-redacted>");
+            out = MaskingPatterns.BEARER_TOKEN.matcher(out).replaceAll("Bearer <redacted>");
+            out = MaskingPatterns.PASSWORD_KV.matcher(out).replaceAll("$1=<redacted>");
+            out = MaskingPatterns.ADMIN_ACCESS_TOKEN_COOKIE.matcher(out).replaceAll("AdminAccessToken=<redacted>");
+            out = MaskingPatterns.SHARED_SESSION_TOKEN_COOKIE.matcher(out).replaceAll("SharedSessionToken=<redacted>");
+            out = MaskingPatterns.XSRF_TOKEN.matcher(out).replaceAll("$1=<redacted>");
+            out = MaskingPatterns.API_KEY_KV.matcher(out).replaceAll("$1=<redacted>");
+            // PII — secret 패턴이 매치되지 않은 잔여 영역에 적용
+            out = MaskingPatterns.EMAIL.matcher(out).replaceAll("$1***@$2");
+            out = MaskingPatterns.IP_V4.matcher(out).replaceAll("$1.xxx");
+            return out;
+        }
+    }
+}
+```
+
+매치 실패 = 그대로 통과 (무손실)
 
 ### 6.3 제약
 
@@ -287,9 +332,19 @@ public void configureClientInboundChannel(ChannelRegistration registration) {
 }
 ```
 
+> **MDC propagation 전제**: Spring 의 inbound channel default 는 `ExecutorSubscribableChannel` 단일 디스패치 — preSend 와 @MessageMapping handler 가 같은 thread 라 MDC 가 자동 가시. **만약 향후 `registration.taskExecutor(...)` 추가로 thread pool 분리되면** TaskDecorator wiring 도 그 executor 에 추가해야 함 (이번 spec 범위 밖, 변경 발생 시 함께 처리).
+
 ### 7.4 MdcTaskDecorator
 
 ```java
+/**
+ * Producer thread 의 MDC context 를 worker thread 로 복사.
+ *
+ * <p>Best-effort restore: finally 의 `prev` 는 worker 의 *기존* MDC (보통 clean pool thread 라 null).
+ * pool thread 에 stale MDC 가 leftover 라면 그 값을 복원 — 그건 별도 코드 path 의 leak 이고,
+ * 본 decorator 는 *그 leak 을 보존* 한다 (decorator 가 leak fix 책임 아님).
+ * 정상 case 에서는 `prev == null` 이라 MDC.clear() = 깨끗한 thread 복원.
+ */
 public class MdcTaskDecorator implements TaskDecorator {
     @Override
     public Runnable decorate(Runnable runnable) {
@@ -321,15 +376,25 @@ public ThreadPoolTaskExecutor userActivityLogExecutor() {
 }
 ```
 
-### 7.5 MdcHelper.scope
+### 7.5 MdcHelper.scope + MdcScope sub-interface (checked exception 회피)
+
+`AutoCloseable.close()` 는 checked `throws Exception` 이라 caller 가 매번 try-catch 또는 throws 선언 필요. 적용 listener 가 늘어날수록 catch 보일러플레이트 누적. **`MdcScope` 라는 sub-interface** 로 `close()` 시그니처에서 `throws` 제거 (unchecked):
 
 ```java
+public interface MdcScope extends AutoCloseable {
+    /** AutoCloseable 의 throws Exception 을 unchecked 로 override — 호출자 catch 없이 try-with-resources 사용 가능. */
+    @Override
+    void close();
+}
+
 public final class MdcHelper {
     private MdcHelper() {}
 
-    /** try-with-resources 로 MDC 키 스코프 진입/복원. value null 이면 no-op AutoCloseable 반환. */
-    public static AutoCloseable scope(String key, Object value) {
-        if (value == null) return () -> {};
+    private static final MdcScope NOOP = () -> {};
+
+    /** try-with-resources 로 MDC 키 스코프 진입/복원. value null 이면 no-op MdcScope. */
+    public static MdcScope scope(String key, Object value) {
+        if (value == null) return NOOP;
 
         String prev = MDC.get(key);
         MDC.put(key, String.valueOf(value));
@@ -341,22 +406,24 @@ public final class MdcHelper {
 }
 ```
 
-사용 (UserActivityLogListener 의 partyroomId 출현 케이스 예시):
+사용 (UserActivityLogListener 의 partyroomId 출현 케이스 — 실제 메서드: `on(CrewAccessedEvent e)`):
 ```java
-@Async
-@TransactionalEventListener(phase = AFTER_COMMIT)
-public void on(PartyroomEnteredEvent event) {
-    try (var ignored = MdcHelper.scope("partyroomId", event.partyroomId().getId())) {
-        log.info("[handleEnter] partyroomId={}", event.partyroomId().getId());
-        // ...
-    } catch (Exception e) {
-        // AutoCloseable.close() 는 throw 안 함이라 안전
-        throw new RuntimeException(e);
+@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+@Async(AsyncConfig.UAL_EXECUTOR_BEAN)
+public void on(CrewAccessedEvent e) {
+    try (var ignored = MdcHelper.scope("partyroomId", e.getPartyroomId().getId())) {
+        UserActivityEventType type = (e.getAccessType() == AccessType.ENTER)
+                ? UserActivityEventType.PARTYROOM_ENTERED
+                : UserActivityEventType.PARTYROOM_EXITED;
+        log(e.getUserId().getUid(), type, e.getPartyroomId().getId(),
+            JsonMetadata.empty(), e.getOccurredAt());
+        // log() 내부 / 또는 이후 log.info 호출 시 partyroomId MDC 가 emit 됨
     }
+    // close() unchecked, 별도 catch 불필요
 }
 ```
 
-> **본 spec 의 적용 범위**: helper 신설 + 호출 예시 1개 (UserActivityLogListener 의 PartyroomEnteredEvent 처리). 다른 listener 들의 try-with-resources 적용은 후속 polish PR — 점진 적용해도 미적용 listener 는 단순히 partyroomId MDC 가 없을 뿐 (기존 동작 동일).
+> **본 spec 의 적용 범위**: helper 신설 + 호출 예시 1개 (`UserActivityLogListener.on(CrewAccessedEvent)` 만). 다른 listener 들 (`PartyroomCreatedEvent`, `CrewPenalizedEvent`, `AdminCrewPenalizedEvent`, `MemberTierChangedEvent`, `UserAccountWithdrawnEvent`, `MemberProfileInitializedEvent` 등) 의 try-with-resources 적용은 후속 polish PR — 점진 적용해도 미적용 listener 는 단순히 partyroomId MDC 가 없을 뿐 (기존 동작 동일).
 
 ## 8. Data Flow
 
@@ -412,9 +479,26 @@ WebSocket Frame (CONNECT, SUBSCRIBE, SEND)
 
 ### 10.3 회귀 잠금
 
-- A1 의 `RequestIdInterceptor.current()` 호출자들은 무수정 PASS (MDC.get 위임)
+- A1 의 `RequestIdInterceptor.current()` 호출자들 (`DjCommandService` 6곳 등) 은 무수정 PASS (MDC.get 위임)
 - 기존 모든 log.info() 호출지 무변경 (logger API 동일)
 - ArchUnit 영향 무 (common 모듈 내부 구조)
+
+### 10.4 Async dispatch 미해소 (deferred)
+
+기존 `RequestIdInterceptor` Javadoc 은 "Phase B MDC 전환 시 해소" 라고 명시하나, 그 주석이 가리킨 *async dispatch* (Spring MVC `DeferredResult`/`Callable`) 경로는 본 spec 범위 밖. MVC async interceptor (`MdcCallableProcessingInterceptor`) 추가 wiring 이 필요하나 pfplay-platform 에서 그 패턴 사용 빈도가 미미 — Phase A6 ThreadLocal 단계의 best-effort 한계를 그대로 상속. 본 spec 의 MDC 격상은 **동기 servlet 요청 + STOMP frame + @Async listener** 까지 cover, MVC async dispatch 는 별도 follow-up.
+
+### 10.5 추가 테스트 케이스 (reviewer 권고)
+
+- `MaskingPatternsTest`:
+  - empty string 입력 → no-op (NPE 안 남)
+  - multi-line stackTrace 안에 email 2개 + IP 2개 → 모두 마스킹
+  - 1-char local-part email (`a@example.com`) → `a***@example.com` (leak 없음 — `{1}` 정합)
+  - IP false-positive: `version 1.2.3.4 build` → 변형 없음 (lookbehind 정합)
+  - cookie 형식: `Cookie: AdminAccessToken=abc.def; SharedSessionToken=xyz` → 둘 다 `<redacted>`
+- `MdcHelperTest`:
+  - nested scope: outer `partyroomId=X` → inner `partyroomId=Y` → inner close → MDC.get("partyroomId")=="X"
+- `MdcTaskDecoratorTest`:
+  - producer MDC empty + worker thread 에 leftover MDC → 정상 case 에선 leftover 복원 (best-effort 정합), 신규 task 시작 시 깨끗한 producer context 적용 확인
 
 ## 11. 보안
 
@@ -433,15 +517,16 @@ WebSocket Frame (CONNECT, SUBSCRIBE, SEND)
 - DB 변경 zero
 - env 변경 zero
 - 배포 순서: develop → stg 자동배포 → log 출력 format 변경 visual 검증 (콘솔에 JSON 출력) → 안정화 → release/main
-- Rollback: logback-spring.xml 삭제 → Spring Boot 기본 콘솔 pattern 자동 복귀. 의존성 제거는 별도 PR. Zero-risk
+- Rollback (PR1): logback-spring.xml 삭제 → Spring Boot 기본 콘솔 pattern 자동 복귀. 의존성 제거는 별도 PR. Zero-risk
+- Rollback (PR2): commit revert (RequestIdInterceptor MDC 격상, WebSocketMdcChannelInterceptor 신설, AsyncConfig TaskDecorator 설정). MDC.put 자체는 encoder 없이도 무해 (no-op visible output), 단 위 변경들이 의존하는 helper/decorator 가 동시에 revert 되어야 함
 
 ## 14. 작업 분량 추정
 
-- B1 (logback-spring.xml + masking + 의존성): ~1일 + 테스트 ~0.5일
-- B2 (RequestIdInterceptor 격상 + WebSocket interceptor + TaskDecorator + helper + listener 예시): ~1일 + 테스트 ~0.5일
+- B1 (logback-spring.xml + masking + 의존성 + MaskingJsonGeneratorDecorator SPI 탐색): ~1.5일 + 테스트 ~1일
+- B2 (RequestIdInterceptor 격상 + WebSocket interceptor + TaskDecorator + MdcScope/Helper + listener 예시): ~1일 + 통합테스트 (ListAppender + Awaitility) ~1일
 - 통합 검증 / PR 분할 / 문서: ~0.5일
 
-총 **약 3~3.5일** (single dev). 결정 게이트 잠금 + 자율 진행.
+총 **약 4~5일** (single dev) — reviewer 권고대로 보정. 결정 게이트 잠금 + 자율 진행.
 
 ## 15. PR 분할 ([[feedback_pr_series_workflow]])
 
