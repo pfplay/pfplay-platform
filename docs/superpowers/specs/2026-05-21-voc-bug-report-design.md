@@ -257,7 +257,9 @@ Auth: AdminAccessToken (D/#8 AbstractAdminWebMvcTest 정합)
 - `AdminBugReportQueryRepository` (interface, `findRows`/`findDetail`/`count`)
 - `AdminBugReportQueryRepositoryImpl` (QueryDSL JPQL, D/#8 `AdminGuestQueryRepositoryImpl` 미러)
   - JOIN `bug_report br` × `user_account ua` (reporter email/nickname) × `partyroom p` LEFT JOIN (partyroom name)
-- `AdminBugReportQueryService` (paging/sort 유효성 + DTO 매핑)
+- `AdminBugReportQueryService`:
+  - `getList(...)`: paging/sort 유효성 검증 실패 시 `BUG-002 INVALID_LIST_QUERY` throw (`AdminGuestQueryService.getList` 의 validation 패턴 미러)
+  - `getDetail(bugReportId)`: `repository.findDetail(id).orElseThrow(() -> ExceptionCreator.create(BugReportException.BUG_REPORT_NOT_FOUND))` (BUG-003)
 - `AdminBugReportQueryController` (`@PreAuthorize("@adminAuth.isAdmin()")` — 모든 admin 컨트롤러 컨벤션 정합. `hasRole('ADMIN')` 은 다른 코드 path 라 보안 갭. D/#8 `AdminGuestQueryController` 미러)
 
 **Error matrix** (admin):
@@ -360,7 +362,7 @@ en.json 동일 키 영문 번역. [[feedback_pfplay_web_i18n_drift]] 정합 — 
 
 **사이드바 메뉴 추가**:
 - 라벨 "사용자 피드백" (한글)
-- 아이콘: lucide `MessageSquareWarning` 또는 `Inbox` (기존 admin 사이드바 아이콘 패밀리 따름)
+- 아이콘: lucide `MessageSquareWarning` (admin 은 lucide 사용, 기존 사이드바 아이콘 패밀리 정합)
 - **위치 = "운영 관리" 섹션 안 "신고"(Flag) 다음** (`pfplay-admin/src/app/layout.tsx:33-63` `navSections` 배열). 실제 사이드바 구조: ① 운영 관리(회원·파티룸·신고) ② 시스템 관리(어드민 관리·공지·아바타). D/#8 GUEST 는 회원 탭 안에 흡수돼 사이드바 단독 아님 — 본 spec 도 단독 항목 "사용자 피드백" 을 운영 관리 끝에 추가.
 
 **라우트**:
@@ -431,7 +433,7 @@ src/pages/
   - `AdminBugReportQueryRepositoryImplIT` — seed 5건 + filter/sort/page/detail ~5 case
   - **주의**: `BugReportData.create()` 가 `LocalDateTime now` 를 파라미터로 받음 (auditing 아님). `AdminGuestQueryRepositoryImplIT` 처럼 native `UPDATE` 로 createdAt 오버라이드 트릭 불요 — seed 시 결정적 timestamp 직접 주입.
 - **Controller WebMvc**:
-  - `BugReportCommandControllerTest` (AbstractPartyCommandWebMvcTest 류 신규 또는 AbstractAdminWebMvcTest 모방) — 201/400/401/429 ~5 case
+  - `BugReportCommandControllerTest` — 사용자 endpoint 라 admin base 부적합. `AbstractPartyCommandWebMvcTest` 패턴 미러하여 **신규 `AbstractVocCommandWebMvcTest`** 생성(`@WebMvcTest({BugReportCommandController.class})` + `@MockBean BugReportCommandService` + JWT mocks). 201/400/401/429 ~5 case
   - `AdminBugReportQueryControllerTest` (AbstractAdminWebMvcTest 정합) — 200 list/detail / 400 / 401 / 403 / 404 ~6 case
 
 ### 4-2. pfplay-web (frontend)
@@ -462,7 +464,6 @@ src/pages/
 - **pfplay-platform**:
   - 신규 Flyway V19 + `BugReportData` entity + `BugReportRepository(+Impl)` + `BugReportException` + `BugReportRateLimitGuard` + `BugReportCommandService` + `BugReportCommandController` + `SubmitBugReportRequest`·`SubmitBugReportResponse`
   - 신규 `AdminBugReportQueryRepository(+Impl)` + `AdminBugReportQueryService` + `AdminBugReportQueryController` + 4 DTO (Summary/Detail/Row/ListQuery)
-  - `ErrorType.TOO_MANY_REQUESTS` 가 GlobalExceptionHandler 에 매핑되어 있는지 확인 (없으면 추가, cross-cutting note)
   - `AbstractPartyCommandWebMvcTest` 또는 동등 base test 에 `BugReportCommandController` MockBean 추가 (관행 — 또는 admin 전용 path 라 admin base 만)
 - **pfplay-admin**:
   - 사이드바 메뉴 1줄 + 라우트 2개 + FSD 슬라이스 신규 (entities/bug-report, features/bug-reports, widgets/bug-reports-{list,detail}, pages/bug-report-detail-page)
