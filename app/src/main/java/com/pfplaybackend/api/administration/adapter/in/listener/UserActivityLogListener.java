@@ -6,6 +6,7 @@ import com.pfplaybackend.api.administration.domain.enums.UserActivityEventType;
 import com.pfplaybackend.api.administration.domain.value.JsonMetadata;
 import com.pfplaybackend.api.auth.domain.event.UserAccountSignedInEvent;
 import com.pfplaybackend.api.common.config.AsyncConfig;
+import com.pfplaybackend.api.common.log.MdcHelper;
 import com.pfplaybackend.api.party.domain.enums.AccessType;
 import com.pfplaybackend.api.party.domain.event.AdminCrewPenalizedEvent;
 import com.pfplaybackend.api.party.domain.event.CrewAccessedEvent;
@@ -125,14 +126,18 @@ public class UserActivityLogListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Async(AsyncConfig.UAL_EXECUTOR_BEAN)
     public void on(CrewAccessedEvent e) {
-        UserActivityEventType type = (e.getAccessType() == AccessType.ENTER)
-                ? UserActivityEventType.PARTYROOM_ENTERED
-                : UserActivityEventType.PARTYROOM_EXITED;
-        // metadata 단순화 — CrewAccessedEvent에 stage_type/duration_sec 부재
-        // (spec §4.7.2의 metadata 키는 예시; future evolution으로 보강 가능).
-        // JsonMetadata.empty() — converter가 빈 map을 SQL NULL로 직렬화.
-        log(e.getUserId().getUid(), type, e.getPartyroomId().getId(),
-            JsonMetadata.empty(), e.getOccurredAt());
+        try (var ignored = MdcHelper.scope("partyroomId", e.getPartyroomId().getId())) {
+            UserActivityEventType type = (e.getAccessType() == AccessType.ENTER)
+                    ? UserActivityEventType.PARTYROOM_ENTERED
+                    : UserActivityEventType.PARTYROOM_EXITED;
+            log.info("[on.CrewAccessedEvent] type={} userId={} partyroomId={}",
+                    type, e.getUserId().getUid(), e.getPartyroomId().getId());
+            // metadata 단순화 — CrewAccessedEvent에 stage_type/duration_sec 부재
+            // (spec §4.7.2의 metadata 키는 예시; future evolution으로 보강 가능).
+            // JsonMetadata.empty() — converter가 빈 map을 SQL NULL로 직렬화.
+            log(e.getUserId().getUid(), type, e.getPartyroomId().getId(),
+                JsonMetadata.empty(), e.getOccurredAt());
+        }
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)

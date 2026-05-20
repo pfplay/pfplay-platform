@@ -17,11 +17,16 @@ import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import com.pfplaybackend.api.party.domain.value.PlaybackId;
 import com.pfplaybackend.api.party.domain.value.PlaybackSnapshot;
 import com.pfplaybackend.api.party.domain.value.PlaybackTimeLimit;
+import jakarta.persistence.EntityManager;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.support.TransactionTemplate;
+
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -30,13 +35,35 @@ class PartyroomCounterListenerIT extends AbstractIntegrationTest {
     @Autowired private PartyroomRepository partyroomRepository;
     @Autowired private ApplicationEventPublisher eventPublisher;
     @Autowired private TransactionTemplate transactionTemplate;
+    @Autowired private EntityManager entityManager;
+
+    /** 각 케이스가 생성한 partyroom id 모아서 AfterEach 에서 cleanup —
+     *  본 IT 가 partyroomRepository.saveAndFlush 로 별도 tx commit 하므로
+     *  @Transactional rollback 으로 정리되지 않음. cleanup 누락 시 다른 IT
+     *  (CreateGeneralPartyRoomInvariantIntegrationTest 의 user_id 3001/3002/3005 등) 와
+     *  state pollution 발생 — "이미 다른 파티룸의 호스트입니다" ForbiddenException 유발. */
+    private final List<Long> createdRoomIds = new ArrayList<>();
 
     private long createActiveRoom(long hostUid, String linkSuffix) {
         PartyroomData p = PartyroomData.create(
                 "listener-test", "intro", LinkDomain.of("link-" + linkSuffix),
                 PlaybackTimeLimit.ofMinutes(5), StageType.GENERAL,
                 new UserId(hostUid));
-        return partyroomRepository.saveAndFlush(p).getId();
+        long id = partyroomRepository.saveAndFlush(p).getId();
+        createdRoomIds.add(id);
+        return id;
+    }
+
+    @AfterEach
+    void cleanupCreatedRooms() {
+        if (createdRoomIds.isEmpty()) return;
+        transactionTemplate.executeWithoutResult(status ->
+                entityManager.createNativeQuery(
+                                "DELETE FROM partyroom WHERE partyroom_id IN (:ids)")
+                        .setParameter("ids", createdRoomIds)
+                        .executeUpdate()
+        );
+        createdRoomIds.clear();
     }
 
     @Test

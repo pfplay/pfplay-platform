@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Spec: docs/superpowers/specs/2026-05-20-observability-b1-b2-design.md §5.
+
+  Profile 분기:
+   - local: 가독성 PatternLayout (개발자 콘솔용)
+   - dev/staging/prod: LogstashEncoder JSON + MaskingJsonGeneratorDecorator
+                       (Cloud Logging jsonPayload 자동 인식)
+   - test (= @ActiveProfiles("test")): Spring Boot base.xml include
+                       (framework noise suppression + CONSOLE appender 유지)
+
+  ⚠️ logback-test.xml 이 부재라 Spring Boot 는 logback-spring.xml 을 모든 profile 에 적용함.
+  test profile 명시 안 하면 root logger 가 zero appender → framework defaults.xml suppression
+  (Hibernate/Catalina WARN 등) 도 잃음. 명시적 test block 으로 base.xml include 해서 보존.
+-->
+<configuration>
+
+  <springProfile name="local">
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+      <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+        <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level [requestId=%X{requestId:-}, userId=%X{userId:-}, partyroomId=%X{partyroomId:-}] %logger{36} - %msg%n</pattern>
+        <charset>UTF-8</charset>
+      </encoder>
+    </appender>
+    <root level="INFO">
+      <appender-ref ref="STDOUT"/>
+    </root>
+  </springProfile>
+
+  <springProfile name="test">
+    <!-- Spring Boot 기본 console + framework noise suppression -->
+    <include resource="org/springframework/boot/logging/logback/base.xml"/>
+  </springProfile>
+
+  <springProfile name="dev,staging,prod">
+    <appender name="JSON_STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+      <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+        <!-- 4 MDC 표준 필드 자동 emit. B2 머지 전엔 값 없음 → 자동 omit -->
+        <includeMdcKeyName>requestId</includeMdcKeyName>
+        <includeMdcKeyName>userId</includeMdcKeyName>
+        <includeMdcKeyName>sessionId</includeMdcKeyName>
+        <includeMdcKeyName>partyroomId</includeMdcKeyName>
+
+        <!-- Cloud Logging severity/timestamp 자동 인식 위한 fieldName 매핑 -->
+        <fieldNames>
+          <timestamp>timestamp</timestamp>
+          <level>severity</level>
+          <logger>logger</logger>
+          <thread>thread</thread>
+          <message>message</message>
+          <stackTrace>exception</stackTrace>
+        </fieldNames>
+
+        <jsonGeneratorDecorator class="com.pfplaybackend.api.common.log.MaskingJsonGeneratorDecorator"/>
+      </encoder>
+    </appender>
+    <root level="INFO">
+      <appender-ref ref="JSON_STDOUT"/>
+    </root>
+  </springProfile>
+
+</configuration>

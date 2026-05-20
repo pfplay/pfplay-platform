@@ -14,12 +14,16 @@ import com.pfplaybackend.api.party.domain.value.LinkDomain;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import com.pfplaybackend.api.party.domain.value.PlaybackTimeLimit;
 import com.pfplaybackend.api.user.application.dto.shared.ProfileSettingDto;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -36,6 +40,12 @@ class PartyroomAccessCommandServiceRaceIT extends AbstractIntegrationTest {
 
     @Autowired private PartyroomAccessCommandService accessCommandService;
     @Autowired private PartyroomRepository partyroomRepository;
+    @Autowired private PlatformTransactionManager transactionManager;
+
+    /** saveAndFlush 가 별도 tx 로 commit 하고 tryEnter 가 crew 행까지 생성하므로
+     *  partyroom + 참조 자식 테이블 전부 정리. user_id 7001 은 AdminPartyroomQueryRepositoryImplIT
+     *  의 aliceUid 와 겹쳐 cross-class pollution 가능 — crew 도 반드시 cleanup. */
+    private final List<Long> createdRoomIds = new ArrayList<>();
 
     /**
      * tryEnter → assertHasProfile(PA-7.1) 게이트만 무력화 — race invariant 검증과 직교.
@@ -63,7 +73,34 @@ class PartyroomAccessCommandServiceRaceIT extends AbstractIntegrationTest {
                 "race", "intro", LinkDomain.of("link-race-" + hostUid),
                 PlaybackTimeLimit.ofMinutes(5), StageType.GENERAL,
                 new UserId(hostUid));
-        return partyroomRepository.saveAndFlush(p).getId();
+        long id = partyroomRepository.saveAndFlush(p).getId();
+        createdRoomIds.add(id);
+        return id;
+    }
+
+    @AfterEach
+    void cleanupCreatedRooms() {
+        if (createdRoomIds.isEmpty()) return;
+        // FK 제약이 없어 순서 자유 — tryEnter 가 만든 crew + (혹시 모를) dj/dj_queue/partyroom_playback
+        // 까지 partyroom_id 기준 일괄 정리. 마지막에 partyroom 본 행 삭제.
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            entityManager.createNativeQuery(
+                            "DELETE FROM crew WHERE partyroom_id IN (:ids)")
+                    .setParameter("ids", createdRoomIds).executeUpdate();
+            entityManager.createNativeQuery(
+                            "DELETE FROM dj WHERE partyroom_id IN (:ids)")
+                    .setParameter("ids", createdRoomIds).executeUpdate();
+            entityManager.createNativeQuery(
+                            "DELETE FROM dj_queue WHERE partyroom_id IN (:ids)")
+                    .setParameter("ids", createdRoomIds).executeUpdate();
+            entityManager.createNativeQuery(
+                            "DELETE FROM partyroom_playback WHERE partyroom_id IN (:ids)")
+                    .setParameter("ids", createdRoomIds).executeUpdate();
+            entityManager.createNativeQuery(
+                            "DELETE FROM partyroom WHERE partyroom_id IN (:ids)")
+                    .setParameter("ids", createdRoomIds).executeUpdate();
+        });
+        createdRoomIds.clear();
     }
 
     /**

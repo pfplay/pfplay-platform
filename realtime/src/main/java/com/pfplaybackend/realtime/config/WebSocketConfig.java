@@ -1,10 +1,12 @@
 package com.pfplaybackend.realtime.config;
 
 import com.pfplaybackend.realtime.interceptor.WebSocketHandshakeInterceptor;
+import com.pfplaybackend.realtime.interceptor.WebSocketMdcChannelInterceptor;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.server.ServerHttpRequest;
+import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
@@ -42,6 +44,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     private static final long CLIENT_TO_SERVER_HEARTBEAT_MS = 5_000L;
 
     private final WebSocketHandshakeInterceptor webSocketHandshakeInterceptor;
+    private final WebSocketMdcChannelInterceptor webSocketMdcChannelInterceptor;
 
     @Bean
     public TaskScheduler stompHeartbeatScheduler() {
@@ -59,6 +62,11 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                 .setTaskScheduler(stompHeartbeatScheduler());
         brokerRegistry.setApplicationDestinationPrefixes("/pub");
         brokerRegistry.setUserDestinationPrefix("/user");
+    }
+
+    @Override
+    public void configureClientInboundChannel(ChannelRegistration registration) {
+        registration.interceptors(webSocketMdcChannelInterceptor);
     }
 
     @Override
