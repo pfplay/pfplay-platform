@@ -25,7 +25,7 @@ import java.time.LocalDateTime;
 // Without it, JPA dirty-checking saves (e.g., terminate() from cleanup job)
 // would write back ALL columns including a stale crew_count, silently
 // overwriting concurrent atomic UPDATEs from PartyroomCounterListener.
-// crewCount/lastActivityAt/displayFlag have no setters — they are mutated
+// activeCrewCount/lastActivityAt/displayFlag have no setters — they are mutated
 // exclusively via PartyroomRepository.{increment,decrement,touch}* methods.
 @DynamicInsert
 @DynamicUpdate
@@ -68,9 +68,20 @@ public class PartyroomData extends BaseEntity {
     @Column(name = "status", nullable = false, length = 16)
     private PartyroomStatus status;
 
-    // V6: denormalized counter — atomic UPDATE만 갱신 (PartyroomRepository.incrementCrewCount/decrementCrewCount)
+    /**
+     * 활성(is_active=true) crew row 의 수 — denormalized counter.
+     *
+     * <p>의미상 "방 안에 현재 머무는 인원". V16 grace 정책상 PENDING_EXIT 도 is_active=true 라 카운트에 포함된다
+     * (transient disconnect 중 grace window 안 사용자도 "방 안에 있는 것" 으로 본다).
+     *
+     * <p>누적 입장자 수 아님. 과거 max 아님. atomic UPDATE 만으로 갱신
+     * ({@link com.pfplaybackend.api.party.adapter.out.persistence.PartyroomRepository#incrementCrewCount}
+     * / {@link com.pfplaybackend.api.party.adapter.out.persistence.PartyroomRepository#decrementCrewCount}).
+     *
+     * <p>DB 컬럼은 {@code crew_count} 로 유지 (V6 schema, prod 라이브 — rename 시 expand-and-contract 마이그 필요).
+     */
     @Column(name = "crew_count", nullable = false)
-    private int crewCount;
+    private int activeCrewCount;
 
     // V6: 최근 활동 시각 — atomic UPDATE만 갱신 (PartyroomRepository.touchLastActivity)
     @Column(name = "last_activity_at")
@@ -100,7 +111,7 @@ public class PartyroomData extends BaseEntity {
     @Builder
     public PartyroomData(Long id, PartyroomId partyroomId, UserId hostId, StageType stageType,
                          String title, String introduction, LinkDomain linkDomain, PlaybackTimeLimit playbackTimeLimit,
-                         String noticeContent, PartyroomStatus status, int crewCount,
+                         String noticeContent, PartyroomStatus status, int activeCrewCount,
                          LocalDateTime lastActivityAt, DisplayFlag displayFlag,
                          LocalDateTime createdAt, LocalDateTime updatedAt) {
         this.id = id;
@@ -113,7 +124,7 @@ public class PartyroomData extends BaseEntity {
         this.playbackTimeLimit = playbackTimeLimit;
         this.noticeContent = noticeContent;
         this.status = status != null ? status : PartyroomStatus.ACTIVE;
-        this.crewCount = crewCount;
+        this.activeCrewCount = activeCrewCount;
         this.lastActivityAt = lastActivityAt;
         this.displayFlag = displayFlag != null ? displayFlag : DisplayFlag.NORMAL;
         this.createdAt = createdAt;
@@ -133,7 +144,7 @@ public class PartyroomData extends BaseEntity {
                 .playbackTimeLimit(timeLimit)
                 .noticeContent("")
                 .status(PartyroomStatus.ACTIVE)
-                .crewCount(0)
+                .activeCrewCount(0)
                 .displayFlag(DisplayFlag.NORMAL)
                 .build();
     }

@@ -30,7 +30,7 @@ public interface PartyroomRepository extends JpaRepository<PartyroomData, Long>,
      */
     @Modifying(clearAutomatically = true)
     @Query("UPDATE PartyroomData p " +
-           "SET p.crewCount = p.crewCount + 1, p.lastActivityAt = :now " +
+           "SET p.activeCrewCount = p.activeCrewCount + 1, p.lastActivityAt = :now " +
            "WHERE p.id = :id " +
            "AND p.status <> com.pfplaybackend.api.party.domain.enums.PartyroomStatus.TERMINATED")
     int incrementCrewCount(@Param("id") Long id, @Param("now") LocalDateTime now);
@@ -40,7 +40,7 @@ public interface PartyroomRepository extends JpaRepository<PartyroomData, Long>,
      */
     @Modifying(clearAutomatically = true)
     @Query("UPDATE PartyroomData p " +
-           "SET p.crewCount = CASE WHEN p.crewCount > 0 THEN p.crewCount - 1 ELSE 0 END, " +
+           "SET p.activeCrewCount = CASE WHEN p.activeCrewCount > 0 THEN p.activeCrewCount - 1 ELSE 0 END, " +
            "    p.lastActivityAt = :now " +
            "WHERE p.id = :id " +
            "AND p.status <> com.pfplaybackend.api.party.domain.enums.PartyroomStatus.TERMINATED")
@@ -64,6 +64,6 @@ public interface PartyroomRepository extends JpaRepository<PartyroomData, Long>,
      * 이미 0인 row를 reset해도 멱등 (UPDATE 자체는 실행, affected row 1).
      */
     @Modifying(clearAutomatically = true)
-    @Query("UPDATE PartyroomData p SET p.crewCount = 0 WHERE p.id = :id")
+    @Query("UPDATE PartyroomData p SET p.activeCrewCount = 0 WHERE p.id = :id")
     int resetCrewCount(@Param("id") Long id);
 }

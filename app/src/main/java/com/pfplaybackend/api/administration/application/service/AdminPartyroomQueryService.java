@@ -166,7 +166,7 @@ public class AdminPartyroomQueryService {
                 hostUserId == null ? null : hostUserId.getUid(),
                 extractNickname(hostMember),
                 hostAccount == null ? null : hostAccount.getEmail(),
-                partyroom.getCrewCount(),
+                partyroom.getActiveCrewCount(),
                 partyroom.getLastActivityAt(),
                 partyroom.getStageType(),
                 playbackLimitMinutes,

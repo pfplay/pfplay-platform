@@ -94,7 +94,7 @@ class PartyroomCounterConcurrencyIT extends AbstractIntegrationTest {
         assertThat(affectedSum.get()).isEqualTo(THREAD_COUNT);
         PartyroomData reloaded = newTx().execute(status ->
                 partyroomRepository.findById(roomId).orElseThrow());
-        assertThat(reloaded.getCrewCount()).isEqualTo(THREAD_COUNT);
+        assertThat(reloaded.getActiveCrewCount()).isEqualTo(THREAD_COUNT);
     }
 
     @Test
@@ -146,6 +146,6 @@ class PartyroomCounterConcurrencyIT extends AbstractIntegrationTest {
         // pre-50 + concurrent 100 - concurrent 50 = 100
         PartyroomData reloaded = newTx().execute(status ->
                 partyroomRepository.findById(roomId).orElseThrow());
-        assertThat(reloaded.getCrewCount()).isEqualTo(100);
+        assertThat(reloaded.getActiveCrewCount()).isEqualTo(100);
     }
 }

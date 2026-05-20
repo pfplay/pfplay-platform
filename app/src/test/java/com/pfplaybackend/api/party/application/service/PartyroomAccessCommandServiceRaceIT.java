@@ -148,7 +148,7 @@ class PartyroomAccessCommandServiceRaceIT extends AbstractIntegrationTest {
 
         // AFTER_COMMIT listener는 REQUIRES_NEW 동기 dispatch라 done.await() 후 모든 UPDATE 완료
         PartyroomData reloaded = partyroomRepository.findById(roomId).orElseThrow();
-        assertThat(reloaded.getCrewCount())
+        assertThat(reloaded.getActiveCrewCount())
                 .as("100 동시 enter → crew_count는 정확히 1 (race B + spurious ENTER 차단 검증)")
                 .isEqualTo(1);
     }
