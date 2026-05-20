@@ -2,29 +2,31 @@ package com.pfplaybackend.api.common.adapter.in.web;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.MDC;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 import java.util.UUID;
 
 /**
- * HTTP 요청 상관관계(correlation) 인터셉터.
+ * HTTP 요청 상관관계 인터셉터.
  *
- * 들어오는 {@code X-Request-Id} 헤더가 있으면 그대로 사용하고, 없거나 공백이면
- * 8자 짧은 id 를 생성한다. 값을 (1) request attribute({@value #REQUEST_ID_ATTR}),
- * (2) 응답 헤더({@value #REQUEST_ID_HEADER}, 디버깅용 에코), (3) ThreadLocal
- * ({@link #current()}) 세 곳에 노출한다.
+ * <p>들어오는 {@code X-Request-Id} 헤더 (sanitize 후) 또는 자동 생성 8자 id 를
+ * MDC {@code requestId} 키로 푸시. 인증된 사용자의 uid 가 SecurityContext 에 있으면
+ * {@code userId} MDC 도 함께 설정. afterCompletion 에서 둘 다 remove.
  *
- * {@link #current()} 는 A1(핫패스 로그에 requestId 부착) 이 소비할 진입점이다.
- * HTTP 컨텍스트가 아니면 null 을 반환하므로 호출자는 반드시 null-safe 해야 한다.
+ * <p>{@link #current()} 는 backward compat — MDC.get("requestId") 위임. A1
+ * (`DjCommandService` 등) critical-path 로그가 사용.
  *
- * 비동기(async DeferredResult/Callable) dispatch 는 {@code afterConcurrentHandlingStarted}
- * 경로라 {@link #afterCompletion} 이 즉시 호출되지 않아 컨테이너 스레드에 stale requestId 가
- * 남을 수 있다. 다만 다음 요청 {@link #preHandle} 이 무조건 덮어쓰므로 누적되지 않고
- * bounded 이며, {@code current()} 소비자는 off-request 시 best-effort 전제다.
- * Phase B MDC 전환 시 해소된다.
+ * <p>Spec: docs/superpowers/specs/2026-05-20-observability-b1-b2-design.md §7.2.
+ * Phase A6 (platform#210) 의 ThreadLocal 단계에서 MDC 격상 — Phase B2.
  *
- * Spec: 옵저버빌리티 A6 (platform#210, Cluster C / C/T1-1)
+ * <p>SecurityContext 가 preHandle 시점에 populated: Spring Security Filter Chain 이
+ * DispatcherServlet 보다 먼저 실행되어 인증된 요청은 SecurityContextHolder 가 이미 채워짐.
+ *
+ * <p>async dispatch (DeferredResult/Callable) 미해소 — spec §10.4 참조.
  */
 @Component
 public class RequestIdInterceptor implements HandlerInterceptor {
@@ -32,25 +34,19 @@ public class RequestIdInterceptor implements HandlerInterceptor {
     public static final String REQUEST_ID_HEADER = "X-Request-Id";
     public static final String REQUEST_ID_ATTR = "requestId";
 
-    private static final ThreadLocal<String> CURRENT = new ThreadLocal<>();
+    private static final String MDC_REQUEST_ID = "requestId";
+    private static final String MDC_USER_ID = "userId";
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
-        String requestId = request.getHeader(REQUEST_ID_HEADER);
-        if (requestId == null || requestId.isBlank()) {
-            requestId = UUID.randomUUID().toString().substring(0, 8);
-        } else {
-            // 신뢰 경계: 클라이언트 제어값. 제어문자 제거(log-forging/헤더 인젝션 방어) + 길이 상한(log 증폭 방어).
-            requestId = requestId.replaceAll("\\p{Cntrl}", "");
-            if (requestId.length() > 64) {
-                requestId = requestId.substring(0, 64);
-            }
-            if (requestId.isBlank()) { // 제거 후 공백만 남으면 생성
-                requestId = UUID.randomUUID().toString().substring(0, 8);
-            }
-        }
+        String requestId = extractOrGenerate(request);
+
+        MDC.put(MDC_REQUEST_ID, requestId);
+        // userId: SecurityContext 의 principal name 에서 추출 (A6 단계엔 미적용 — 본 단계서 시도, null safe)
+        String userId = extractUserId();
+        if (userId != null) MDC.put(MDC_USER_ID, userId);
+
         request.setAttribute(REQUEST_ID_ATTR, requestId);
-        CURRENT.set(requestId);
         response.setHeader(REQUEST_ID_HEADER, requestId);
         return true;
     }
@@ -58,11 +54,42 @@ public class RequestIdInterceptor implements HandlerInterceptor {
     @Override
     public void afterCompletion(HttpServletRequest request, HttpServletResponse response,
                                 Object handler, Exception ex) {
-        CURRENT.remove();
+        MDC.remove(MDC_REQUEST_ID);
+        MDC.remove(MDC_USER_ID);
     }
 
-    /** 현재 스레드의 requestId. 비-HTTP 컨텍스트면 null — 호출자는 null-safe 해야 한다. */
+    /**
+     * Backward compat — A1 critical-path 로그 호출자 (DjCommandService 등) 가 사용.
+     * MDC.get 위임. HTTP 컨텍스트 밖에서는 null.
+     */
     public static String current() {
-        return CURRENT.get();
+        return MDC.get(MDC_REQUEST_ID);
+    }
+
+    private String extractOrGenerate(HttpServletRequest request) {
+        String requestId = request.getHeader(REQUEST_ID_HEADER);
+        if (requestId == null || requestId.isBlank()) {
+            return UUID.randomUUID().toString().substring(0, 8);
+        }
+        // 신뢰 경계: 클라이언트 제어값. 제어문자 제거 + 길이 상한.
+        requestId = requestId.replaceAll("\\p{Cntrl}", "");
+        if (requestId.length() > 64) requestId = requestId.substring(0, 64);
+        if (requestId.isBlank()) return UUID.randomUUID().toString().substring(0, 8);
+        return requestId;
+    }
+
+    /**
+     * SecurityContext 에서 인증된 사용자의 uid 추출. 비인증/익명 = null.
+     */
+    private String extractUserId() {
+        try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            if (auth == null || !auth.isAuthenticated()) return null;
+            String name = auth.getName();
+            if (name == null || name.isBlank() || "anonymousUser".equals(name)) return null;
+            return name;
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 }

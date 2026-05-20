@@ -2,6 +2,7 @@ package com.pfplaybackend.api.common.adapter.in.web;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -9,7 +10,14 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.MDC;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -156,5 +164,79 @@ class RequestIdInterceptorTest {
         other.join();
 
         assertThat(seen.get()).isNull();
+    }
+
+    // === Phase B2: MDC 격상 검증 ===
+
+    @AfterEach
+    void clearMdcAndSecurityContext() {
+        MDC.clear();
+        SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    @DisplayName("preHandle: MDC.requestId 설정")
+    void preHandle_sets_mdc_requestId() {
+        MockHttpServletRequest mockRequest = new MockHttpServletRequest();
+        mockRequest.addHeader("X-Request-Id", "test-req-id-001");
+        MockHttpServletResponse mockResponse = new MockHttpServletResponse();
+
+        interceptor.preHandle(mockRequest, mockResponse, new Object());
+
+        assertThat(MDC.get("requestId")).isEqualTo("test-req-id-001");
+    }
+
+    @Test
+    @DisplayName("afterCompletion: MDC.requestId + MDC.userId 모두 제거")
+    void afterCompletion_removes_mdc() {
+        MockHttpServletRequest mockRequest = new MockHttpServletRequest();
+        MockHttpServletResponse mockResponse = new MockHttpServletResponse();
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("user-42", null,
+                        List.of(new SimpleGrantedAuthority("ROLE_USER"))));
+        interceptor.preHandle(mockRequest, mockResponse, new Object());
+        assertThat(MDC.get("requestId")).isNotNull();
+        assertThat(MDC.get("userId")).isEqualTo("user-42");
+
+        interceptor.afterCompletion(mockRequest, mockResponse, new Object(), null);
+
+        assertThat(MDC.get("requestId")).isNull();
+        assertThat(MDC.get("userId")).isNull();
+    }
+
+    @Test
+    @DisplayName("preHandle: 인증된 사용자 — MDC.userId 설정")
+    void preHandle_sets_mdc_userId_when_authenticated() {
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("authenticated-user", null,
+                        List.of(new SimpleGrantedAuthority("ROLE_USER"))));
+        MockHttpServletRequest mockRequest = new MockHttpServletRequest();
+        MockHttpServletResponse mockResponse = new MockHttpServletResponse();
+
+        interceptor.preHandle(mockRequest, mockResponse, new Object());
+
+        assertThat(MDC.get("userId")).isEqualTo("authenticated-user");
+    }
+
+    @Test
+    @DisplayName("preHandle: 비인증 (anonymous) — MDC.userId 미설정")
+    void preHandle_no_userId_when_anonymous() {
+        // SecurityContext 비어있음 (clearContext 후)
+        MockHttpServletRequest mockRequest = new MockHttpServletRequest();
+        MockHttpServletResponse mockResponse = new MockHttpServletResponse();
+
+        interceptor.preHandle(mockRequest, mockResponse, new Object());
+
+        assertThat(MDC.get("userId")).isNull();
+    }
+
+    @Test
+    @DisplayName("current(): MDC 위임 (ThreadLocal 제거 후 backward compat)")
+    void current_delegates_to_mdc() {
+        MockHttpServletRequest mockRequest = new MockHttpServletRequest();
+        mockRequest.addHeader("X-Request-Id", "compat-test");
+        interceptor.preHandle(mockRequest, new MockHttpServletResponse(), new Object());
+
+        assertThat(RequestIdInterceptor.current()).isEqualTo("compat-test");
     }
 }
