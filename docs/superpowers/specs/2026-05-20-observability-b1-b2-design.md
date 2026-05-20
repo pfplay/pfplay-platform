@@ -176,8 +176,10 @@ public final class MaskingPatterns {
     // PII — 일부 마스킹 (디버깅 가능한 형태로)
     // EMAIL: 첫 1자만 노출 (1-char local-part 도 안 leak 되게 — `{2}` 면 1-char local 이 non-match 로 통과되어 leak).
     public static final Pattern EMAIL = Pattern.compile("([\\w.+-])[\\w.+-]*@([\\w-]+(?:\\.[\\w-]+)+)");
-    // IP_V4: word boundary + 좌측 lookbehind 로 `version 1.2.3.4` 같은 decimal sequence 오매칭 차단.
-    public static final Pattern IP_V4 = Pattern.compile("(?<![\\d.])(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})\\.\\d{1,3}(?!\\d)");
+    // IP_V4: lookbehind 와 lookahead 둘 다 `[\d.]` 로 막아 5+ octet decimal sequence 의 inner 4-window 차단.
+    // (Chunk 1 implementer fix 2026-05-20: 원래 lookahead `(?!\d)` 는 `192.168.1.1.2.3` 의 inner `192.168.1.1`
+    //  이 `.2` 로 끝나는 형태에서 통과 — `[\d.]` 로 확장 필요.)
+    public static final Pattern IP_V4 = Pattern.compile("(?<![\\d.])(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})\\.\\d{1,3}(?![\\d.])");
 }
 ```
 

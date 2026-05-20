@@ -145,10 +145,10 @@ public final class MaskingPatterns {
     /** 첫 1자만 노출 — {@code {1}} 이라 1-char local-part 도 매치 (leak 방지). */
     public static final Pattern EMAIL = Pattern.compile(
             "([\\w.+-])[\\w.+-]*@([\\w-]+(?:\\.[\\w-]+)+)");
-    /** lookbehind/lookahead 로 5+ octet decimal sequence 부분 매치 방지.
+    /** lookbehind/lookahead 둘 다 {@code [\\d.]} 로 막아 5+ octet decimal sequence 의 inner 4-window 차단.
      *  semver-like 단일 시퀀스는 의도적으로 redact (spec §6.3 limitation). */
     public static final Pattern IP_V4 = Pattern.compile(
-            "(?<![\\d.])(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})\\.\\d{1,3}(?!\\d)");
+            "(?<![\\d.])(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})\\.\\d{1,3}(?![\\d.])");
 }
 ```
 
