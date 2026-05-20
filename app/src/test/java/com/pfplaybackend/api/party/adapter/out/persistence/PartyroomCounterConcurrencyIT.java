@@ -6,6 +6,7 @@ import com.pfplaybackend.api.party.domain.entity.data.PartyroomData;
 import com.pfplaybackend.api.party.domain.enums.StageType;
 import com.pfplaybackend.api.party.domain.value.LinkDomain;
 import com.pfplaybackend.api.party.domain.value.PlaybackTimeLimit;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,6 +14,8 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -28,6 +31,10 @@ class PartyroomCounterConcurrencyIT extends AbstractIntegrationTest {
 
     private static final int THREAD_COUNT = 100;
 
+    /** newTx().execute commit 으로 partyroom 행이 클래스 외부로 누수 — 다른 IT 와의 host_uid /
+     *  unused-query 결과 collision 회피용 cleanup. */
+    private final List<Long> createdRoomIds = new ArrayList<>();
+
     /** Each concurrent thread needs its own transaction for @Modifying JPQL to execute. */
     private TransactionTemplate newTx() {
         return new TransactionTemplate(transactionManager);
@@ -38,7 +45,21 @@ class PartyroomCounterConcurrencyIT extends AbstractIntegrationTest {
                 "concurrent", "intro", LinkDomain.of("link-conc-" + hostUid),
                 PlaybackTimeLimit.ofMinutes(5), StageType.GENERAL,
                 new UserId(hostUid));
-        return newTx().execute(status -> partyroomRepository.saveAndFlush(p).getId());
+        long id = newTx().execute(status -> partyroomRepository.saveAndFlush(p).getId());
+        createdRoomIds.add(id);
+        return id;
+    }
+
+    @AfterEach
+    void cleanupCreatedRooms() {
+        if (createdRoomIds.isEmpty()) return;
+        newTx().executeWithoutResult(status ->
+                entityManager.createNativeQuery(
+                                "DELETE FROM partyroom WHERE partyroom_id IN (:ids)")
+                        .setParameter("ids", createdRoomIds)
+                        .executeUpdate()
+        );
+        createdRoomIds.clear();
     }
 
     @Test
