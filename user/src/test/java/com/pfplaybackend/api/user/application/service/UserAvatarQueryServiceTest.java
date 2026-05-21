@@ -11,7 +11,9 @@ import com.pfplaybackend.api.avatar.domain.entity.data.AvatarBodyResourceData;
 import com.pfplaybackend.api.user.domain.enums.ActivityType;
 import com.pfplaybackend.api.avatar.domain.enums.ObtainmentType;
 import com.pfplaybackend.api.user.domain.service.UserAvatarDomainService;
+import com.pfplaybackend.api.avatar.application.dto.AvatarIconDto;
 import com.pfplaybackend.api.avatar.domain.value.AvatarBodyUri;
+import com.pfplaybackend.api.avatar.domain.value.AvatarIconUri;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -24,6 +26,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
@@ -59,6 +62,30 @@ class UserAvatarQueryServiceTest {
 
         // then
         assertThat(result.getValue()).isEqualTo("default-body-uri");
+    }
+
+    @Test
+    @DisplayName("getDefaultAvatarBodyPairIconUri — 기본 바디의 페어 아이콘 URI를 반환한다")
+    void getDefaultAvatarBodyPairIconUriReturnsBodyPairIcon() {
+        // given: default body is the ghost body (non-combinable) — its pair icon is body-pair-icon-uri
+        AvatarBodyDto defaultBody = AvatarBodyDto.builder()
+                .id(3L).name("ava_body_basic_003").resourceUri("ghost-body-uri")
+                .obtainableType(ObtainmentType.BASIC).obtainableScore(0)
+                .combinable(false).defaultSetting(true)
+                .combinePositionX(0).combinePositionY(0)
+                .build();
+        when(avatarResourceQueryService.getDefaultSettingResourceAvatarBody()).thenReturn(defaultBody);
+
+        AvatarIconDto bodyPairIcon = new AvatarIconDto(0L, "ava_icon_body_basic_003", "body-pair-icon-uri", true);
+        when(avatarResourceQueryService.findPairAvatarIconByBodyUri(
+                argThat(uri -> "ghost-body-uri".equals(uri.getValue()))))
+                .thenReturn(bodyPairIcon);
+
+        // when
+        AvatarIconUri result = userAvatarQueryService.getDefaultAvatarBodyPairIconUri();
+
+        // then
+        assertThat(result.getValue()).isEqualTo("body-pair-icon-uri");
     }
 
     @Test

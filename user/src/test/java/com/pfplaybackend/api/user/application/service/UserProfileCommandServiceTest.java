@@ -1,5 +1,6 @@
 package com.pfplaybackend.api.user.application.service;
 
+import com.pfplaybackend.api.common.domain.enums.AvatarCompositionType;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.avatar.application.dto.AvatarBodyDto;
 import com.pfplaybackend.api.user.adapter.out.persistence.UserProfileRepository;
@@ -82,6 +83,35 @@ class UserProfileCommandServiceTest {
         // then
         assertThat(profile.getNicknameValue()).startsWith("Guest_");
         verify(userProfileRepository, times(2)).existsByNickname(any(Nickname.class));
+    }
+
+    @Test
+    @DisplayName("createProfileDataForGuest — 기본 바디가 combinable=false 면 SINGLE_BODY 모드로 face 미할당, icon은 body 페어")
+    void createProfileDataForGuestNonCombinableBodyYieldsSingleBody() {
+        // given: default body is the ghost body (combinable=false)
+        UserId userId = new UserId(10L);
+        AvatarBodyDto ghostBody = AvatarBodyDto.builder()
+                .id(3L).name("ava_body_basic_003").resourceUri("ghost-body-uri")
+                .obtainableType(ObtainmentType.BASIC).obtainableScore(0)
+                .combinable(false).defaultSetting(true)
+                .combinePositionX(0).combinePositionY(0)
+                .build();
+        when(userAvatarQueryService.getDefaultAvatarBody()).thenReturn(ghostBody);
+        when(userAvatarQueryService.getDefaultAvatarBodyUri()).thenReturn(new AvatarBodyUri("ghost-body-uri"));
+        when(userAvatarQueryService.getDefaultAvatarBodyPairIconUri()).thenReturn(new AvatarIconUri("ghost-body-pair-icon-uri"));
+        when(userProfileRepository.existsByNickname(any(Nickname.class))).thenReturn(false);
+
+        // when
+        ProfileData profile = userProfileCommandService.createProfileDataForGuest(userId);
+
+        // then
+        assertThat(profile.getUserId()).isEqualTo(userId);
+        assertThat(profile.getAvatarSetting().getAvatarCompositionType()).isEqualTo(AvatarCompositionType.SINGLE_BODY);
+        assertThat(profile.getAvatarSetting().getAvatarBodyUri().getValue()).isEqualTo("ghost-body-uri");
+        assertThat(profile.getAvatarSetting().getAvatarFaceUri().getValue()).isEmpty();
+        assertThat(profile.getAvatarSetting().getAvatarIconUri().getValue()).isEqualTo("ghost-body-pair-icon-uri");
+        assertThat(profile.getAvatarSetting().getCombinePositionX()).isZero();
+        assertThat(profile.getAvatarSetting().getCombinePositionY()).isZero();
     }
 
     @Test
