@@ -7,10 +7,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -20,10 +21,10 @@ class BugReportCommandControllerTest extends AbstractVocCommandWebMvcTest {
     @Test
     @DisplayName("submit — 201 Created + bugReportId 반환")
     void submitReturns201() throws Exception {
-        when(bugReportCommandService.submit(any(), any(), any(), any())).thenReturn(42L);
+        when(bugReportCommandService.submit(any(), any(), any(), any(), any())).thenReturn(42L);
 
         mockMvc.perform(post("/api/v1/voc/bug-reports")
-                        .with(jwt().authorities(() -> "ROLE_MEMBER"))
+                        .with(authedUser(100L))
                         .with(csrf())
                         .header("Referer", "https://pfplay.xyz/parties/7")
                         .header("User-Agent", "Mozilla/5.0")
@@ -34,10 +35,27 @@ class BugReportCommandControllerTest extends AbstractVocCommandWebMvcTest {
     }
 
     @Test
+    @DisplayName("submit — 인증 주체 userId 가 service 로 전달된다 (AuthContext aspect 부재 회귀 가드)")
+    void submitPassesAuthenticatedUserId() throws Exception {
+        when(bugReportCommandService.submit(eq(100L), any(), any(), any(), any())).thenReturn(42L);
+
+        mockMvc.perform(post("/api/v1/voc/bug-reports")
+                        .with(authedUser(100L))
+                        .with(csrf())
+                        .header("Referer", "https://pfplay.xyz/parties/7")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"재생이 안 됩니다\",\"partyroomId\":7}"))
+                .andExpect(status().isCreated());
+
+        verify(bugReportCommandService).submit(eq(100L), eq("재생이 안 됩니다"),
+                eq("https://pfplay.xyz/parties/7"), any(), eq(7L));
+    }
+
+    @Test
     @DisplayName("submit — content 너무 짧으면 400")
     void submitShortContentReturns400() throws Exception {
         mockMvc.perform(post("/api/v1/voc/bug-reports")
-                        .with(jwt().authorities(() -> "ROLE_MEMBER"))
+                        .with(authedUser(100L))
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"content\":\"abcd\"}"))
@@ -48,7 +66,7 @@ class BugReportCommandControllerTest extends AbstractVocCommandWebMvcTest {
     @DisplayName("submit — content blank 400")
     void submitBlankContentReturns400() throws Exception {
         mockMvc.perform(post("/api/v1/voc/bug-reports")
-                        .with(jwt().authorities(() -> "ROLE_MEMBER"))
+                        .with(authedUser(100L))
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"content\":\"\"}"))
@@ -59,7 +77,7 @@ class BugReportCommandControllerTest extends AbstractVocCommandWebMvcTest {
     @DisplayName("submit — partyroomId 0/negative 400")
     void submitInvalidPartyroomIdReturns400() throws Exception {
         mockMvc.perform(post("/api/v1/voc/bug-reports")
-                        .with(jwt().authorities(() -> "ROLE_MEMBER"))
+                        .with(authedUser(100L))
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"content\":\"long enough content\",\"partyroomId\":0}"))
@@ -80,10 +98,10 @@ class BugReportCommandControllerTest extends AbstractVocCommandWebMvcTest {
     @DisplayName("submit — rate-limit 시 429 + BUG-001")
     void submitRateLimitReturns429() throws Exception {
         doThrow(ExceptionCreator.create(BugReportException.RATE_LIMIT_EXCEEDED))
-                .when(bugReportCommandService).submit(any(), any(), any(), any());
+                .when(bugReportCommandService).submit(any(), any(), any(), any(), any());
 
         mockMvc.perform(post("/api/v1/voc/bug-reports")
-                        .with(jwt().authorities(() -> "ROLE_MEMBER"))
+                        .with(authedUser(100L))
                         .with(csrf())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"content\":\"valid content\"}"))
