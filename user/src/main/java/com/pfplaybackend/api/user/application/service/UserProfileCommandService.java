@@ -1,6 +1,7 @@
 package com.pfplaybackend.api.user.application.service;
 
 import com.pfplaybackend.api.avatar.application.dto.AvatarBodyDto;
+import com.pfplaybackend.api.avatar.domain.value.AvatarFaceUri;
 import com.pfplaybackend.api.common.domain.enums.AvatarCompositionType;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.user.adapter.out.persistence.UserProfileRepository;
@@ -21,18 +22,7 @@ public class UserProfileCommandService {
     private final UserProfileRepository userProfileRepository;
 
     public ProfileData createProfileDataForGuest(UserId userId) {
-        AvatarBodyDto avatarBodyResource = userAvatarQueryService.getDefaultAvatarBody();
-        return ProfileData.builder()
-                .userId(userId)
-                .nickname(new Nickname(generateUniqueGuestNickname()))
-                .avatarCompositionType(AvatarCompositionType.BODY_WITH_FACE)
-                .faceSourceType(FaceSourceType.INTERNAL_IMAGE)
-                .avatarBodyUri(userAvatarQueryService.getDefaultAvatarBodyUri())
-                .avatarFaceUri(userAvatarQueryService.getDefaultAvatarFaceUri())
-                .avatarIconUri(userAvatarQueryService.getDefaultAvatarIconUri())
-                .combinePositionX(avatarBodyResource.getCombinePositionX())
-                .combinePositionY(avatarBodyResource.getCombinePositionY())
-                .build();
+        return buildDefaultAvatarProfile(userId, new Nickname(generateUniqueGuestNickname()));
     }
 
     public ProfileData createProfileDataForMember(UserId userId) {
@@ -42,18 +32,35 @@ public class UserProfileCommandService {
     }
 
     public ProfileData createProfileDataForSuperAdmin(UserId userId) {
+        return buildDefaultAvatarProfile(userId, new Nickname("Super Admin"));
+    }
+
+    // 디폴트 아바타 바디의 is_combinable 에 따라 BODY_WITH_FACE vs SINGLE_BODY 를 분기.
+    // SINGLE_BODY 일 땐 face URI 는 비우고, icon 은 body 페어 아이콘으로 매단다.
+    private ProfileData buildDefaultAvatarProfile(UserId userId, Nickname nickname) {
         AvatarBodyDto avatarBodyResource = userAvatarQueryService.getDefaultAvatarBody();
-        return ProfileData.builder()
+        boolean combinable = avatarBodyResource.isCombinable();
+        AvatarCompositionType compositionType = combinable
+                ? AvatarCompositionType.BODY_WITH_FACE
+                : AvatarCompositionType.SINGLE_BODY;
+
+        ProfileData.ProfileDataBuilder builder = ProfileData.builder()
                 .userId(userId)
-                .nickname(new Nickname("Super Admin"))
-                .avatarCompositionType(AvatarCompositionType.BODY_WITH_FACE)
+                .nickname(nickname)
+                .avatarCompositionType(compositionType)
                 .faceSourceType(FaceSourceType.INTERNAL_IMAGE)
                 .avatarBodyUri(userAvatarQueryService.getDefaultAvatarBodyUri())
-                .avatarFaceUri(userAvatarQueryService.getDefaultAvatarFaceUri())
-                .avatarIconUri(userAvatarQueryService.getDefaultAvatarIconUri())
                 .combinePositionX(avatarBodyResource.getCombinePositionX())
-                .combinePositionY(avatarBodyResource.getCombinePositionY())
-                .build();
+                .combinePositionY(avatarBodyResource.getCombinePositionY());
+
+        if (combinable) {
+            builder.avatarFaceUri(userAvatarQueryService.getDefaultAvatarFaceUri())
+                    .avatarIconUri(userAvatarQueryService.getDefaultAvatarIconUri());
+        } else {
+            builder.avatarFaceUri(new AvatarFaceUri(""))
+                    .avatarIconUri(userAvatarQueryService.getDefaultAvatarBodyPairIconUri());
+        }
+        return builder.build();
     }
 
     private String generateUniqueGuestNickname() {
