@@ -1,6 +1,5 @@
 package com.pfplaybackend.realtime.event;
 
-import com.pfplaybackend.realtime.port.PresencePort;
 import com.pfplaybackend.realtime.port.SessionCachePort;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -28,14 +27,11 @@ class SubscriptionEventListenerTest {
     @Mock
     private SessionCachePort sessionCachePort;
 
-    @Mock
-    private PresencePort presencePort;
-
     @InjectMocks
     private SubscriptionEventListener listener;
 
     @Test
-    @DisplayName("유효한 Principal이면 세션 캐시에 저장한다")
+    @DisplayName("유효한 Principal이면 채팅용 세션 캐시를 저장한다 (presence는 디커플링되어 호출 없음)")
     void onApplicationEventValidPrincipalSavesSessionCache() {
         // given
         String sessionId = "session-abc";
@@ -55,9 +51,9 @@ class SubscriptionEventListenerTest {
         // when
         listener.onApplicationEvent(event);
 
-        // then
+        // then — 채팅이 read하는 세션 캐시를 write한다. presence(onSessionConnected)는
+        // CONNECT/DISCONNECT가 권위이므로 SUBSCRIBE에서 트리거하지 않는다 (#209 #31).
         verify(sessionCachePort).saveSessionCache(sessionId, userId, destination);
-        verify(presencePort).onSessionConnected(sessionId);
     }
 
     @Test

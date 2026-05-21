@@ -13,8 +13,10 @@ import com.pfplaybackend.api.party.adapter.out.persistence.DjQueueRepository;
 import com.pfplaybackend.api.party.adapter.out.persistence.PartyroomPlaybackRepository;
 import com.pfplaybackend.api.party.adapter.out.persistence.PartyroomRepository;
 import com.pfplaybackend.api.party.application.dto.command.CreatePartyroomCommand;
+import com.pfplaybackend.api.party.application.port.out.UserProfileQueryPort;
 import com.pfplaybackend.api.party.application.service.PartyroomCommandService;
 import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
+import com.pfplaybackend.api.user.application.dto.shared.ProfileSettingDto;
 import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.AfterEach;
@@ -22,6 +24,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Duration;
@@ -29,6 +32,9 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 
 /**
  * G4 end-to-end: 호스트 createGeneralPartyRoom 호출 → user_activity_log PARTYROOM_CREATED row 누적 검증.
@@ -55,10 +61,29 @@ class UserActivityLogListenerPartyroomCreatedIT extends AbstractIntegrationTest 
     @Autowired private UserActivityLogRepository userActivityLogRepository;
     @Autowired private TransactionTemplate transactionTemplate;
 
+    /**
+     * createGeneralPartyRoom → enterByHost → assertHasProfile(PA-7.1) 게이트만 무력화 —
+     * listener wiring 검증과 직교. (실제 ProfileData 행 구성은 fragile —
+     * ClusterAPresenceIntegrationTest 와 동일 패턴.)
+     */
+    @MockBean
+    private UserProfileQueryPort userProfileQueryPort;
+
     private static final Long HOST_USER_ID = 8961L;
 
     @BeforeEach
     void seed() {
+        // 어떤 userId 든 프로필 보유 상태로 — assertHasProfile 통과.
+        lenient().when(userProfileQueryPort.getUsersProfileSetting(any()))
+                .thenAnswer(inv -> {
+                    List<UserId> ids = inv.getArgument(0);
+                    Map<UserId, ProfileSettingDto> result = new java.util.HashMap<>();
+                    for (UserId id : ids) {
+                        result.put(id, mock(ProfileSettingDto.class));
+                    }
+                    return result;
+                });
+
         // host user_account — createGeneralPartyRoom의 hostId 기준 audit row 작성을 위해 필요.
         userAccountRepository.save(
                 UserAccountData.createForLocalWithMandatoryChange(

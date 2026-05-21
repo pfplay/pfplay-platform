@@ -233,6 +233,64 @@ class PartyroomPresenceServiceTest {
         verify(partyroomAccessCommandService, times(1)).exitInternal(roomId(), userId());
     }
 
+    /**
+     * SE10 backstop characterization (#225 #209).
+     *
+     * <p>STOMP heartbeat is only a fast-path: on mobile-network death with no TCP
+     * FIN the disconnect can take ~15-20s to surface (or never, if heartbeat
+     * detection fails entirely). The AUTHORITATIVE ghost upper bound is this
+     * reconcile cron. This test simulates "heartbeat-driven disconnect NEVER
+     * fired and the crew NEVER reconnected": the crew sits PENDING_EXIT with a
+     * {@code pending_exit_at} older than {@code now - (maxGrace +
+     * RECONCILE_BUFFER_SECONDS)}. We assert the cron still reclaims it —
+     * computing the threshold from grace+buffer and forcing OFFLINE
+     * ({@code exitInternal}) for that stale crew. If this ever fails, the cron is
+     * NOT the backstop the WebSocketConfig comment promises.
+     */
+    @Test
+    @DisplayName("reconcileStalePending — heartbeat 미발화 + 미재접속 PENDING은 cron이 상한선으로 회수 (SE10)")
+    void reconcileIsTheGhostUpperBoundWhenHeartbeatNeverFires() {
+        int djGrace = 30;
+        int listenerGrace = 10;
+        when(systemConfigCache.getDjGraceSeconds()).thenReturn(djGrace);
+        when(systemConfigCache.getListenerGraceSeconds()).thenReturn(listenerGrace);
+
+        // pending_exit_at well past grace(max=30s) + RECONCILE_BUFFER(30s): the
+        // heartbeat fast-path provably never reclaimed this crew.
+        LocalDateTime staleSince = LocalDateTime.now(clock).minusSeconds(djGrace + 30 + 5);
+        CrewData staleCrew = CrewData.builder()
+                .id(CREW_ID)
+                .partyroomId(roomId())
+                .userId(userId())
+                .isActive(true)
+                .pendingExitAt(staleSince)
+                .enteredAt(LocalDateTime.now(clock).minusHours(1))
+                .build();
+
+        org.mockito.ArgumentCaptor<LocalDateTime> thresholdCaptor =
+                org.mockito.ArgumentCaptor.forClass(LocalDateTime.class);
+        when(aggregatePort.findStalePendingCrews(any(LocalDateTime.class)))
+                .thenReturn(java.util.List.of(staleCrew));
+        when(aggregatePort.findCrewById(CREW_ID)).thenReturn(Optional.of(staleCrew));
+        org.mockito.Mockito.doAnswer(invocation -> {
+            java.util.function.Supplier<Void> action = invocation.getArgument(1);
+            action.get();
+            return null;
+        }).when(distributedLockExecutor).performTaskWithLock(anyString(), any());
+
+        service.reconcileStalePending();
+
+        // threshold = now - (max(djGrace,listenerGrace) + RECONCILE_BUFFER_SECONDS=30)
+        verify(aggregatePort).findStalePendingCrews(thresholdCaptor.capture());
+        LocalDateTime expectedThreshold =
+                LocalDateTime.now(clock).minusSeconds(djGrace + 30L);
+        assertThat(thresholdCaptor.getValue()).isEqualTo(expectedThreshold);
+        // the stale (older-than-threshold) crew is the upper-bound reclaim:
+        assertThat(staleCrew.getPendingExitAt()).isBefore(expectedThreshold);
+        // cron forces OFFLINE — exitInternal is the authoritative deactivation.
+        verify(partyroomAccessCommandService, times(1)).exitInternal(roomId(), userId());
+    }
+
     private PartyroomPlaybackData mockPlayback(boolean currentDj) {
         PartyroomPlaybackData playback = org.mockito.Mockito.mock(PartyroomPlaybackData.class);
         lenient().when(playback.isActivated()).thenReturn(currentDj);

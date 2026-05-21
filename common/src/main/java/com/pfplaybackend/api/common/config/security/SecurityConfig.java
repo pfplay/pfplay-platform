@@ -7,6 +7,8 @@ import com.pfplaybackend.api.common.config.security.csrf.EagerCsrfTokenRequestAt
 import com.pfplaybackend.api.common.config.security.csrf.properties.AdminCsrfProperties;
 import com.pfplaybackend.api.common.config.security.jwt.AdminCookieWriter;
 import com.pfplaybackend.api.common.config.security.jwt.AdminTokenRenewalFilter;
+import com.pfplaybackend.api.common.config.security.jwt.AuthEntryPointSkippingBearerTokenResolver;
+import com.pfplaybackend.api.common.config.security.jwt.AuthEntryPoints;
 import com.pfplaybackend.api.common.config.security.jwt.CookieBearerTokenResolver;
 import com.pfplaybackend.api.common.config.security.jwt.CustomJwtAuthenticationConverter;
 import com.pfplaybackend.api.common.config.security.jwt.JwtService;
@@ -99,9 +101,9 @@ public class SecurityConfig {
                 .formLogin(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(request -> request
                         .requestMatchers("/error").permitAll()
-                        .requestMatchers("/api/v1/auth/oauth/callback", "/api/v1/auth/oauth/url", "/api/v1/auth/logout",
-                                "/api/v1/auth/admin/login",
-                                "/api/v1/users/members/sign/**", "/api/v1/users/guests/sign/**", "/api/v1/partyrooms/link/**").permitAll()
+                        // F#220 — 인증 진입점 4경로는 AuthEntryPoints 단일 진실 원천에서 참조 (중복 0).
+                        .requestMatchers(AuthEntryPoints.paths()).permitAll()
+                        .requestMatchers("/api/v1/users/members/sign/**", "/api/v1/users/guests/sign/**", "/api/v1/partyrooms/link/**").permitAll()
                         // V14 시스템 공지 §4.4 — anonymous public status endpoint (10초 cache).
                         .requestMatchers("/api/v1/system/status").permitAll()
                         .requestMatchers("/actuator/health").permitAll()
@@ -116,7 +118,7 @@ public class SecurityConfig {
                         .anyRequest().denyAll()
                 )
                 .oauth2ResourceServer(oauth2 -> oauth2
-                        .bearerTokenResolver(customBearerTokenResolver)
+                        .bearerTokenResolver(authEntryPointSkippingBearerTokenResolver())
                         .jwt(jwt -> jwt
                                 .jwtAuthenticationConverter(jwtAuthenticationConverter)
                         )
@@ -124,6 +126,16 @@ public class SecurityConfig {
                 .addFilterBefore(adminOriginGuardFilter(), UsernamePasswordAuthenticationFilter.class)
                 .addFilterAfter(adminTokenRenewalFilter(), BearerTokenAuthenticationFilter.class);
         return http.build();
+    }
+
+    /**
+     * F#220 — 인증 진입점에서 토큰 검증을 생략하는 데코레이터.
+     * 진입점 매칭 시 null 반환, 그 외엔 기존 {@link CookieBearerTokenResolver}에 위임.
+     */
+    @Bean
+    public AuthEntryPointSkippingBearerTokenResolver authEntryPointSkippingBearerTokenResolver() {
+        return new AuthEntryPointSkippingBearerTokenResolver(
+                AuthEntryPoints.requestMatcher(), customBearerTokenResolver);
     }
 
     @Bean

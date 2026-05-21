@@ -1,5 +1,6 @@
 package com.pfplaybackend.api.common.config;
 
+import com.pfplaybackend.api.common.log.MdcTaskDecorator;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableAsync;
@@ -33,6 +34,7 @@ public class AsyncConfig {
         exec.setQueueCapacity(200);
         exec.setThreadNamePrefix("ual-");
         exec.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        exec.setTaskDecorator(new MdcTaskDecorator());
         exec.setWaitForTasksToCompleteOnShutdown(true);
         exec.setAwaitTerminationSeconds(10);
         exec.initialize();

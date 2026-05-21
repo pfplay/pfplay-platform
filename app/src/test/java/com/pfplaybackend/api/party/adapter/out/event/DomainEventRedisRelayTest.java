@@ -4,6 +4,7 @@ import com.pfplaybackend.api.common.config.redis.RedisMessagePublisher;
 import com.pfplaybackend.api.common.domain.enums.AvatarCompositionType;
 import com.pfplaybackend.api.common.domain.enums.MessageTopic;
 import com.pfplaybackend.api.common.domain.value.UserId;
+import com.pfplaybackend.api.party.adapter.in.listener.message.DjQueueChangeMessage;
 import com.pfplaybackend.api.party.adapter.out.persistence.CrewRepository;
 import com.pfplaybackend.api.party.application.dto.dj.DjWithProfileDto;
 import com.pfplaybackend.api.party.application.port.out.UserProfileQueryPort;
@@ -22,6 +23,7 @@ import com.pfplaybackend.api.user.application.dto.shared.ProfileSettingDto;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -29,6 +31,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -98,6 +101,44 @@ class DomainEventRedisRelayTest {
 
         // then
         verify(messagePublisher).publish(eq(MessageTopic.DJ_QUEUE_CHANGED.topic()), any());
+    }
+
+    @Test
+    @DisplayName("on(DjQueueChangedEvent) — DEACTIVATE 이벤트의 changeType/limit 분이 메시지로 전달된다")
+    void onDjQueueChangedEventDeactivatePassesChangeTypeAndLimit() {
+        // given
+        DjQueueChangedEvent event = new DjQueueChangedEvent(partyroomId, DjChangeType.DEACTIVATE, null, 5);
+        List<DjWithProfileDto> djs = List.of(new DjWithProfileDto(crewId.getId(), 1, "DJ1", "icon1"));
+        when(partyroomQueryService.getDjs(partyroomId)).thenReturn(djs);
+
+        // when
+        domainEventRedisRelay.on(event);
+
+        // then
+        ArgumentCaptor<DjQueueChangeMessage> captor = ArgumentCaptor.forClass(DjQueueChangeMessage.class);
+        verify(messagePublisher).publish(eq(MessageTopic.DJ_QUEUE_CHANGED.topic()), captor.capture());
+        DjQueueChangeMessage published = captor.getValue();
+        assertThat(published.changeType()).isEqualTo(DjChangeType.DEACTIVATE);
+        assertThat(published.playbackTimeLimitMinutes()).isEqualTo(5);
+    }
+
+    @Test
+    @DisplayName("on(DjQueueChangedEvent) — DEACTIVATE 외 changeType 은 limit 분이 null 로 전달된다")
+    void onDjQueueChangedEventNonDeactivatePassesNullLimit() {
+        // given
+        DjQueueChangedEvent event = new DjQueueChangedEvent(partyroomId, DjChangeType.ROTATE, crewId);
+        List<DjWithProfileDto> djs = List.of(new DjWithProfileDto(crewId.getId(), 1, "DJ1", "icon1"));
+        when(partyroomQueryService.getDjs(partyroomId)).thenReturn(djs);
+
+        // when
+        domainEventRedisRelay.on(event);
+
+        // then
+        ArgumentCaptor<DjQueueChangeMessage> captor = ArgumentCaptor.forClass(DjQueueChangeMessage.class);
+        verify(messagePublisher).publish(eq(MessageTopic.DJ_QUEUE_CHANGED.topic()), captor.capture());
+        DjQueueChangeMessage published = captor.getValue();
+        assertThat(published.changeType()).isEqualTo(DjChangeType.ROTATE);
+        assertThat(published.playbackTimeLimitMinutes()).isNull();
     }
 
     @Test

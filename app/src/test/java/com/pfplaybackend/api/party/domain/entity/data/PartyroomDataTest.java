@@ -41,7 +41,7 @@ class PartyroomDataTest {
             PartyroomData p = newPartyroom();
             assertThat(p.getStatus()).isEqualTo(PartyroomStatus.ACTIVE);
             assertThat(p.getDisplayFlag()).isEqualTo(DisplayFlag.NORMAL);
-            assertThat(p.getCrewCount()).isZero();
+            assertThat(p.getActiveCrewCount()).isZero();
             assertThat(p.getLastActivityAt()).isNull();
             assertThat(p.isActive()).isTrue();
             assertThat(p.isSuspended()).isFalse();

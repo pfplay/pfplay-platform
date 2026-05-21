@@ -29,12 +29,15 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
 public class TrackCommandService {
+
+    private static final int MAX_PLAYLIST_TRACK_COUNT = 15;
 
     private final PlaylistAggregatePort aggregatePort;
     private final PlaylistQueryPort queryPort;
@@ -52,7 +55,7 @@ public class TrackCommandService {
         if (optional.isPresent()) throw ExceptionCreator.create(TrackException.DUPLICATE_TRACK_IN_PLAYLIST);
         // 최대 보유 한계치 초과 검사
         PlaylistSummaryDto playlistSummary = playlistQueryService.getPlaylist(playlistId);
-        if (playlistSummary.musicCount() >= 15) throw ExceptionCreator.create(TrackException.EXCEEDED_TRACK_LIMIT);
+        if (playlistSummary.musicCount() >= MAX_PLAYLIST_TRACK_COUNT) throw ExceptionCreator.create(TrackException.EXCEEDED_TRACK_LIMIT);
 
         long nextMusicOrderNumber = playlistSummary.musicCount() == 0 ? 1 : playlistSummary.musicCount() + 1;
 
@@ -121,7 +124,7 @@ public class TrackCommandService {
         if (duplicate.isPresent()) throw ExceptionCreator.create(TrackException.DUPLICATE_TRACK_IN_PLAYLIST);
         // 타겟 트랙 개수 15개 제한 검사
         PlaylistSummaryDto targetSummary = playlistQueryService.getPlaylist(command.targetPlaylistId());
-        if (targetSummary.musicCount() >= 15) throw ExceptionCreator.create(TrackException.EXCEEDED_TRACK_LIMIT);
+        if (targetSummary.musicCount() >= MAX_PLAYLIST_TRACK_COUNT) throw ExceptionCreator.create(TrackException.EXCEEDED_TRACK_LIMIT);
         // 소스 orderNumber 재정렬
         aggregatePort.shiftUpTrackOrderByDelete(sourcePlaylistId, trackData.getOrderNumber());
         // 트랙을 타겟 플레이리스트로 이동
@@ -147,22 +150,18 @@ public class TrackCommandService {
         eventPublisher.publishEvent(new TrackRemovedEvent(new PlaylistId(playlistId), trackId, trackData.getLinkId(), trackData.getName()));
     }
 
-    @Transactional
-    public PlaybackTrackDto getFirstTrack(Long playlistId) {
-        Pageable pageable = PageRequest.of(0, 5, Sort.by(Sort.Direction.ASC, "orderNumber"));
+    @Transactional(readOnly = true)
+    public List<PlaybackTrackDto> peekOrderedTracks(Long playlistId) {
+        Pageable pageable = PageRequest.of(0, MAX_PLAYLIST_TRACK_COUNT, Sort.by(Sort.Direction.ASC, "orderNumber"));
         Page<PlaylistTrackDto> page = queryPort.getTracksWithPagination(new PlaylistId(playlistId), pageable);
-        rotateTrackOrder(playlistId, page.getTotalElements());
-        PlaylistTrackDto dto = page.getContent().get(0);
-        return new PlaybackTrackDto(
-                dto.linkId(),
-                dto.name(),
-                dto.thumbnailImage(),
-                dto.duration(),
-                dto.orderNumber()
-        );
+        return page.getContent().stream()
+                .map(dto -> new PlaybackTrackDto(dto.linkId(), dto.name(),
+                        dto.thumbnailImage(), dto.duration(), dto.orderNumber()))
+                .toList();
     }
 
-    public void rotateTrackOrder(Long playlistId, long totalCount) {
-        aggregatePort.rotateTrackOrder(playlistId, totalCount);
+    @Transactional
+    public void rotatePlayed(Long playlistId, int playedOrderNumber, long totalCount) {
+        aggregatePort.rotatePlayed(playlistId, playedOrderNumber, totalCount);
     }
 }

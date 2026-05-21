@@ -427,35 +427,6 @@ class TrackCommandServiceTest {
                 .isInstanceOf(BadRequestException.class);
     }
 
-    // ========== getFirstTrack ==========
-
-    @Test
-    @DisplayName("getFirstTrack — 첫 번째 트랙을 PlaybackTrackDto로 반환하고 순서를 회전시킨다")
-    void getFirstTrackReturnsFirstTrackAndRotates() {
-        // given
-        Long playlistId = 1L;
-        PlaylistTrackDto trackDto = new PlaylistTrackDto(10L, LINK_ID, "Song A", 1, Duration.fromString("3:30"), THUMBNAIL);
-
-        @SuppressWarnings("unchecked")
-        Page<PlaylistTrackDto> page = mock(Page.class);
-        when(page.getContent()).thenReturn(List.of(trackDto));
-        when(page.getTotalElements()).thenReturn(3L);
-
-        when(queryPort.getTracksWithPagination(eq(new PlaylistId(playlistId)), any(Pageable.class)))
-                .thenReturn(page);
-
-        // when
-        PlaybackTrackDto result = trackCommandService.getFirstTrack(playlistId);
-
-        // then
-        assertThat(result.linkId()).isEqualTo(LINK_ID);
-        assertThat(result.name()).isEqualTo("Song A");
-        assertThat(result.thumbnailImage()).isEqualTo(THUMBNAIL);
-        assertThat(result.duration()).isEqualTo(Duration.fromString("3:30"));
-        assertThat(result.orderNumber()).isEqualTo(1);
-        verify(aggregatePort).rotateTrackOrder(playlistId, 3L);
-    }
-
     // ========== 추가 예외 케이스 ==========
 
     @Test
@@ -557,5 +528,49 @@ class TrackCommandServiceTest {
         // when & then
         assertThatThrownBy(() -> trackCommandService.deleteTrackInPlaylist(playlistId, trackId))
                 .isInstanceOf(NotFoundException.class);
+    }
+
+    // ========== peekOrderedTracks ==========
+
+    @Test
+    @DisplayName("peekOrderedTracks — 순서 오름차순으로 반환하며 회전 없음")
+    void peekOrderedTracks_returns_ordered_without_rotation() {
+        // given
+        Long playlistId = 1L;
+        PlaylistTrackDto trackDto1 = new PlaylistTrackDto(10L, LINK_ID, "Song A", 1, Duration.fromString("3:30"), THUMBNAIL);
+        PlaylistTrackDto trackDto2 = new PlaylistTrackDto(11L, "linkId2", "Song B", 2, Duration.fromString("4:00"), THUMBNAIL);
+
+        @SuppressWarnings("unchecked")
+        Page<PlaylistTrackDto> page = mock(Page.class);
+        when(page.getContent()).thenReturn(List.of(trackDto1, trackDto2));
+
+        when(queryPort.getTracksWithPagination(eq(new PlaylistId(playlistId)), any(Pageable.class)))
+                .thenReturn(page);
+
+        // when
+        List<PlaybackTrackDto> result = trackCommandService.peekOrderedTracks(playlistId);
+
+        // then
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).orderNumber()).isEqualTo(1);
+        assertThat(result.get(0).linkId()).isEqualTo(LINK_ID);
+        assertThat(result.get(0).name()).isEqualTo("Song A");
+        assertThat(result.get(0).thumbnailImage()).isEqualTo(THUMBNAIL);
+        assertThat(result.get(0).duration()).isEqualTo(Duration.fromString("3:30"));
+        assertThat(result.get(1).orderNumber()).isEqualTo(2);
+
+        verify(aggregatePort, never()).rotatePlayed(anyLong(), anyInt(), anyLong());
+    }
+
+    // ========== rotatePlayed ==========
+
+    @Test
+    @DisplayName("rotatePlayed — aggregatePort.rotatePlayed에 위임한다")
+    void rotatePlayed_delegates() {
+        // when
+        trackCommandService.rotatePlayed(1L, 3, 5L);
+
+        // then
+        verify(aggregatePort).rotatePlayed(1L, 3, 5L);
     }
 }

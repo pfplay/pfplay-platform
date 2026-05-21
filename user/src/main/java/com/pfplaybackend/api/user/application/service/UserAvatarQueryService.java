@@ -51,6 +51,11 @@ public class UserAvatarQueryService {
         return new AvatarIconUri(avatarIconDto.resourceUri());
     }
 
+    public AvatarIconUri getDefaultAvatarBodyPairIconUri() {
+        AvatarIconDto avatarIconDto = avatarResourceQueryService.findPairAvatarIconByBodyUri(this.getDefaultAvatarBodyUri());
+        return new AvatarIconUri(avatarIconDto.resourceUri());
+    }
+
     public List<AvatarFaceDto> findMyAvatarFaces() {
         return avatarResourceQueryService.findAllAvatarFaces();
     }
