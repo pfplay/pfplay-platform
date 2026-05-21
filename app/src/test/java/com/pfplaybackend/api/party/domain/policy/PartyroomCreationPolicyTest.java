@@ -25,10 +25,9 @@ class PartyroomCreationPolicyTest {
     }
 
     @Test
-    @DisplayName("AM 회원은 파티룸 생성 불가")
-    void amCannotCreate() {
-        assertThatThrownBy(() -> policy.enforce(AuthorityTier.AM))
-                .isInstanceOf(ForbiddenException.class);
+    @DisplayName("AM 회원도 파티룸 생성 가능")
+    void amCanCreate() {
+        assertThatNoException().isThrownBy(() -> policy.enforce(AuthorityTier.AM));
     }
 
     @Test
