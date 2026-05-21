@@ -29,6 +29,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -94,6 +96,7 @@ class TemporaryUserInitializeServiceTest {
         AvatarIconUri iconUri = new AvatarIconUri("https://cdn/icon.png");
         when(userProfileRepository.existsByNickname(any(Nickname.class))).thenReturn(false);
         when(userAvatarQueryService.getDefaultAvatarBody()).thenReturn(bodyResource);
+        when(bodyResource.isCombinable()).thenReturn(true);
         when(bodyResource.getCombinePositionX()).thenReturn(60);
         when(bodyResource.getCombinePositionY()).thenReturn(41);
         when(userAvatarQueryService.getDefaultAvatarBodyUri()).thenReturn(bodyUri);
@@ -114,11 +117,40 @@ class TemporaryUserInitializeServiceTest {
         verify(member).updateWalletAddress(any());
         // avatar default attach (broadcaster NPE 방지)
         verify(member).updateAvatarBody(eq(bodyUri), eq(60), eq(41));
+        // scale 은 배율 단위(1.0=원본). 과거 100.0(=100배) 은 프론트에서 face 가
+        // 100배 확대돼 까맣게/가로스크롤을 유발했다. 기본은 1.0(원본).
         verify(member).updateAvatarFace(eq(faceUri), eq(FaceSourceType.INTERNAL_IMAGE),
-                eq(0.0), eq(0.0), eq(100.0));
+                eq(0.0), eq(0.0), eq(1.0));
         verify(member).updateAvatarIcon(eq(iconUri));
         // profile / wallet / avatar 각각 save
         verify(memberRepository, times(3)).save(member);
+    }
+
+    @Test
+    @DisplayName("upgradeMember — default body 가 combinable=false(유령) 면 SINGLE_BODY: face 비우고 body 페어 아이콘")
+    void upgradeMemberSingleBodyWhenDefaultBodyNotCombinable() {
+        // given: default body 가 유령(combinable=false)
+        MemberData member = mock(MemberData.class);
+        AvatarBodyDto bodyResource = mock(AvatarBodyDto.class);
+        AvatarBodyUri bodyUri = new AvatarBodyUri("https://cdn/ghost-body.png");
+        AvatarIconUri bodyPairIcon = new AvatarIconUri("https://cdn/ghost-body-pair-icon.png");
+        when(userProfileRepository.existsByNickname(any(Nickname.class))).thenReturn(false);
+        when(userAvatarQueryService.getDefaultAvatarBody()).thenReturn(bodyResource);
+        when(bodyResource.isCombinable()).thenReturn(false);
+        when(bodyResource.getCombinePositionX()).thenReturn(0);
+        when(bodyResource.getCombinePositionY()).thenReturn(0);
+        when(userAvatarQueryService.getDefaultAvatarBodyUri()).thenReturn(bodyUri);
+        when(userAvatarQueryService.getDefaultAvatarBodyPairIconUri()).thenReturn(bodyPairIcon);
+
+        // when
+        temporaryUserInitializeService.upgradeMember(member);
+
+        // then: SINGLE_BODY — face 빈 값(single-arg), body 페어 아이콘. face+transform(BODY_WITH_FACE) 미호출.
+        verify(member).updateAvatarBody(eq(bodyUri), eq(0), eq(0));
+        verify(member).updateAvatarFace(argThat((AvatarFaceUri u) -> u.getValue().isEmpty()));
+        verify(member).updateAvatarIcon(eq(bodyPairIcon));
+        verify(member, never()).updateAvatarFace(any(), any(), anyDouble(), anyDouble(), anyDouble());
+        verify(userAvatarQueryService, never()).getDefaultAvatarFaceUri();
     }
 
     @Test
@@ -132,6 +164,7 @@ class TemporaryUserInitializeServiceTest {
                 .thenReturn(true)
                 .thenReturn(false);
         when(userAvatarQueryService.getDefaultAvatarBody()).thenReturn(bodyResource);
+        when(bodyResource.isCombinable()).thenReturn(true);
         when(userAvatarQueryService.getDefaultAvatarBodyUri()).thenReturn(new AvatarBodyUri("u"));
         when(userAvatarQueryService.getDefaultAvatarFaceUri()).thenReturn(new AvatarFaceUri("u"));
         when(userAvatarQueryService.getDefaultAvatarIconUri()).thenReturn(new AvatarIconUri("u"));
