@@ -6,6 +6,7 @@ import com.pfplaybackend.api.administration.application.service.BugReportCommand
 import com.pfplaybackend.api.administration.domain.exception.BugReportException;
 import com.pfplaybackend.api.common.ApiCommonResponse;
 import com.pfplaybackend.api.common.config.swagger.ApiErrorCodes;
+import com.pfplaybackend.api.common.domain.value.UserId;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -15,6 +16,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -37,10 +39,12 @@ public class BugReportCommandController {
     @PostMapping
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<ApiCommonResponse<SubmitBugReportResponse>> submit(
+            @AuthenticationPrincipal UserId userId,
             @Valid @RequestBody SubmitBugReportRequest request,
             @RequestHeader(value = "Referer", required = false) String referer,
             @RequestHeader(value = "User-Agent", required = false) String userAgent) {
         Long id = bugReportCommandService.submit(
+                userId.getUid(),
                 request.getContent(),
                 referer,
                 userAgent,
