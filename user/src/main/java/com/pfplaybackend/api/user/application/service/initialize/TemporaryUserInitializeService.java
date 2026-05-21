@@ -1,6 +1,7 @@
 package com.pfplaybackend.api.user.application.service.initialize;
 
 import com.pfplaybackend.api.avatar.application.dto.AvatarBodyDto;
+import com.pfplaybackend.api.avatar.domain.value.AvatarFaceUri;
 import com.pfplaybackend.api.common.config.security.enums.ProviderType;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.user.adapter.out.persistence.GuestRepository;
@@ -128,11 +129,20 @@ public class TemporaryUserInitializeService {
                 userAvatarQueryService.getDefaultAvatarBodyUri(),
                 bodyResource.getCombinePositionX(),
                 bodyResource.getCombinePositionY());
-        member.updateAvatarFace(
-                userAvatarQueryService.getDefaultAvatarFaceUri(),
-                FaceSourceType.INTERNAL_IMAGE,
-                0.0, 0.0, 100.0);
-        member.updateAvatarIcon(userAvatarQueryService.getDefaultAvatarIconUri());
+        // 디폴트 바디의 is_combinable 에 따라 분기. combinable=0(유령 등)은 face 합성 불가이므로
+        // SINGLE_BODY: face 를 비우고 body 페어 아이콘을 매단다 (createProfileDataForGuest 와 동일 정책).
+        // V20 에서 디폴트 바디를 유령(ava_body_basic_003, combinable=0)으로 바꿨는데 이 경로만 누락돼
+        // '유령 몸통 + 과거 디폴트 바디(001) 세트 face/icon' 모순이 발생했던 것을 바로잡는다.
+        if (bodyResource.isCombinable()) {
+            member.updateAvatarFace(
+                    userAvatarQueryService.getDefaultAvatarFaceUri(),
+                    FaceSourceType.INTERNAL_IMAGE,
+                    0.0, 0.0, 100.0);
+            member.updateAvatarIcon(userAvatarQueryService.getDefaultAvatarIconUri());
+        } else {
+            member.updateAvatarFace(new AvatarFaceUri());
+            member.updateAvatarIcon(userAvatarQueryService.getDefaultAvatarBodyPairIconUri());
+        }
         memberRepository.save(member);
         return member;
     }
