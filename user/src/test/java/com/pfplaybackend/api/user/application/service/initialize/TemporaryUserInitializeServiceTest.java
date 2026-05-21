@@ -117,8 +117,10 @@ class TemporaryUserInitializeServiceTest {
         verify(member).updateWalletAddress(any());
         // avatar default attach (broadcaster NPE 방지)
         verify(member).updateAvatarBody(eq(bodyUri), eq(60), eq(41));
+        // scale 은 배율 단위(1.0=원본). 과거 100.0(=100배) 은 프론트에서 face 가
+        // 100배 확대돼 까맣게/가로스크롤을 유발했다. 기본은 1.0(원본).
         verify(member).updateAvatarFace(eq(faceUri), eq(FaceSourceType.INTERNAL_IMAGE),
-                eq(0.0), eq(0.0), eq(100.0));
+                eq(0.0), eq(0.0), eq(1.0));
         verify(member).updateAvatarIcon(eq(iconUri));
         // profile / wallet / avatar 각각 save
         verify(memberRepository, times(3)).save(member);

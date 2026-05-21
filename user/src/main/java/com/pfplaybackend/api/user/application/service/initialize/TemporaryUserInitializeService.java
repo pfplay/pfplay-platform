@@ -134,10 +134,12 @@ public class TemporaryUserInitializeService {
         // V20 에서 디폴트 바디를 유령(ava_body_basic_003, combinable=0)으로 바꿨는데 이 경로만 누락돼
         // '유령 몸통 + 과거 디폴트 바디(001) 세트 face/icon' 모순이 발생했던 것을 바로잡는다.
         if (bodyResource.isCombinable()) {
+            // scale 은 배율 단위(1.0=원본). 과거 100.0(=100배) 이라 프론트에서 face 가
+            // 100배 확대돼 까맣게 보이고 가로 스크롤이 생겼다. 기본은 1.0(원본).
             member.updateAvatarFace(
                     userAvatarQueryService.getDefaultAvatarFaceUri(),
                     FaceSourceType.INTERNAL_IMAGE,
-                    0.0, 0.0, 100.0);
+                    0.0, 0.0, 1.0);
             member.updateAvatarIcon(userAvatarQueryService.getDefaultAvatarIconUri());
         } else {
             member.updateAvatarFace(new AvatarFaceUri());
