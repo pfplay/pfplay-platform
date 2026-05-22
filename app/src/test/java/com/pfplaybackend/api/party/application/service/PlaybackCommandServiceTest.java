@@ -191,8 +191,8 @@ class PlaybackCommandServiceTest {
                 .id(1L).partyroomId(partyroomId).userId(userId).gradeType(GradeType.CLUBBER).build();
         when(aggregatePort.findCrewById(1L)).thenReturn(Optional.of(djCrew));
 
-        PlaybackTrackDto trackDto = new PlaybackTrackDto("linkId", "Song", "thumb.jpg", Duration.fromString("3:30"), 1);
-        when(playlistCommandPort.peekOrderedTracks(playlistId)).thenReturn(List.of(trackDto));
+        PlaybackTrackDto trackDto = new PlaybackTrackDto(1000L, "linkId", "Song", "thumb.jpg", Duration.fromString("3:30"), 1);
+        when(playlistCommandPort.peekTracksFromCursor(playlistId)).thenReturn(List.of(trackDto));
 
         PlaybackData savedPlayback = mock(PlaybackData.class);
         lenient().when(savedPlayback.getId()).thenReturn(1L);
@@ -214,10 +214,9 @@ class PlaybackCommandServiceTest {
         verify(userActivityPort).updateDjPointScore(userId, 1);
     }
 
-    // ── #222 회귀 잠금: skip(자의/타의) 시 DJ큐 회전 + 본인 플레이리스트 회전이 함께 wiring 되는지 ──
-    // DJ큐 산술(#1→맨뒤)은 PartyroomAggregateServiceTest.rotatesCorrectly,
-    // 트랙 회전 SQL(played→맨뒤)은 TrackRepositoryReorderIntegrationTest 가 별도로 잠금.
-    // 여기서는 "skip 경로가 rotateDjQueue + peekOrderedTracks/rotatePlayed(현재 DJ 플레이리스트)
+    // ── #222 회귀 잠금: skip(자의/타의) 시 DJ큐 회전 + 본인 플레이리스트 커서 갱신이 함께 wiring 되는지 ──
+    // DJ큐 산술(#1→맨뒤)은 PartyroomAggregateServiceTest.rotatesCorrectly 가 별도로 잠금.
+    // 여기서는 "skip 경로가 rotateDjQueue + peekTracksFromCursor/advancePlaybackCursor(현재 DJ 플레이리스트)
     // 양쪽을 호출한다"는 수렴 지점의 invariant 를 잠근다.
 
     private DjData stubDoStartWithQueuedDj(PlaybackTimeLimit timeLimit, Duration trackDuration) {
@@ -238,13 +237,13 @@ class PlaybackCommandServiceTest {
                 .id(1L).partyroomId(partyroomId).userId(userId).gradeType(GradeType.CLUBBER).build();
         when(aggregatePort.findCrewById(1L)).thenReturn(Optional.of(djCrew));
 
-        PlaybackTrackDto trackDto = new PlaybackTrackDto("linkId", "Song", "thumb.jpg", trackDuration, 1);
-        when(playlistCommandPort.peekOrderedTracks(playlistId)).thenReturn(List.of(trackDto));
+        PlaybackTrackDto trackDto = new PlaybackTrackDto(1000L, "linkId", "Song", "thumb.jpg", trackDuration, 1);
+        when(playlistCommandPort.peekTracksFromCursor(playlistId)).thenReturn(List.of(trackDto));
         return djData;
     }
 
     @Test
-    @DisplayName("#222 skipPlayback — 큐에 DJ가 있으면 DJ큐 회전과 현재 DJ 플레이리스트 회전(rotatePlayed)이 함께 호출된다")
+    @DisplayName("#222 skipPlayback — 큐에 DJ가 있으면 DJ큐 회전과 현재 DJ 플레이리스트 커서 갱신(advancePlaybackCursor)이 함께 호출된다")
     void skipPlaybackWithQueuedDjRotatesQueueAndPlaylist() {
         // given — 트랙 길이가 제한 이내(재생됨)
         DjData dj = stubDoStartWithQueuedDj(PlaybackTimeLimit.ofMinutes(10), Duration.fromString("3:30"));
@@ -258,16 +257,16 @@ class PlaybackCommandServiceTest {
         // when — 자의 skip (DELETE /playbacks/current → skipPlayback)
         playbackCommandService.skipPlayback(partyroomId);
 
-        // then — 스케줄 취소 + DJ큐 밀림 + 트랙 회전 양쪽 wiring
-        // position-1 트랙(orderNumber=1, size=1)이 제한 이내라 그대로 선택 → rotatePlayed(pl,1,1)
+        // then — 스케줄 취소 + DJ큐 밀림 + 커서 갱신 양쪽 wiring
+        // 커서 다음 첫 재생가능 트랙(trackId=1000)이 제한 이내라 선택 → advancePlaybackCursor(pl,1000)
         verify(expirationTaskPort).cancelExpiration(String.valueOf(partyroomId.getId()));
         verify(partyroomAggregateService).rotateDjQueue(partyroomId);
-        verify(playlistCommandPort).peekOrderedTracks(dj.getPlaylistId());
-        verify(playlistCommandPort).rotatePlayed(dj.getPlaylistId(), 1, 1L);
+        verify(playlistCommandPort).peekTracksFromCursor(dj.getPlaylistId());
+        verify(playlistCommandPort).advancePlaybackCursor(dj.getPlaylistId(), 1000L);
     }
 
     @Test
-    @DisplayName("#222 skipByManager — MODERATOR 타의 skip 도 DJ큐 회전 + 플레이리스트 회전(rotatePlayed)을 함께 호출한다")
+    @DisplayName("#222 skipByManager — MODERATOR 타의 skip 도 DJ큐 회전 + 플레이리스트 커서 갱신(advancePlaybackCursor)을 함께 호출한다")
     void skipByManagerWithQueuedDjRotatesQueueAndPlaylist() {
         // given — MODERATOR 권한 컨텍스트
         ActivePartyroomDto activeDto = new ActivePartyroomDto(partyroomId.getId(), false, 1L, true, new PlaybackId(1L), new CrewId(1L));
@@ -289,14 +288,14 @@ class PlaybackCommandServiceTest {
         // then
         verify(expirationTaskPort).cancelExpiration(String.valueOf(partyroomId.getId()));
         verify(partyroomAggregateService).rotateDjQueue(partyroomId);
-        verify(playlistCommandPort).peekOrderedTracks(dj.getPlaylistId());
-        verify(playlistCommandPort).rotatePlayed(dj.getPlaylistId(), 1, 1L);
+        verify(playlistCommandPort).peekTracksFromCursor(dj.getPlaylistId());
+        verify(playlistCommandPort).advancePlaybackCursor(dj.getPlaylistId(), 1000L);
     }
 
     // ── E/#3 트랙단위 스킵 동작 잠금 ──
 
     @Test
-    @DisplayName("E/#3 singleDj_allOverLimit — 단일 DJ의 트랙이 모두 제한 초과면 deactivate, rotatePlayed 미호출")
+    @DisplayName("E/#3 singleDj_allOverLimit — 단일 DJ의 트랙이 모두 제한 초과면 deactivate, advancePlaybackCursor 미호출")
     void singleDj_allOverLimit_deactivates() {
         // given — 단일 DJ, peek 트랙이 전부 제한(1분=60s) 초과
         PartyroomData partyroom = PartyroomData.builder()
@@ -317,17 +316,17 @@ class PlaybackCommandServiceTest {
         when(aggregatePort.findCrewById(1L)).thenReturn(Optional.of(djCrew));
 
         List<PlaybackTrackDto> overLimit = List.of(
-                new PlaybackTrackDto("l1", "T1", "t1.jpg", Duration.fromString("3:30"), 1),
-                new PlaybackTrackDto("l2", "T2", "t2.jpg", Duration.fromString("4:00"), 2));
-        when(playlistCommandPort.peekOrderedTracks(playlistId)).thenReturn(overLimit);
+                new PlaybackTrackDto(1L, "l1", "T1", "t1.jpg", Duration.fromString("3:30"), 1),
+                new PlaybackTrackDto(2L, "l2", "T2", "t2.jpg", Duration.fromString("4:00"), 2));
+        when(playlistCommandPort.peekTracksFromCursor(playlistId)).thenReturn(overLimit);
 
         // when — 자의 skip
         playbackCommandService.skipPlayback(partyroomId);
 
-        // then — deactivate, save/rotatePlayed 미호출(peek 부수효과 없음)
+        // then — deactivate, save/advancePlaybackCursor 미호출(peek 부수효과 없음)
         verify(partyroomAggregateService).deactivatePlayback(partyroomId);
         verify(playbackRepository, never()).save(any(PlaybackData.class));
-        verify(playlistCommandPort, never()).rotatePlayed(any(PlaylistId.class), anyInt(), anyLong());
+        verify(playlistCommandPort, never()).advancePlaybackCursor(any(PlaylistId.class), anyLong());
 
         // and — DEACTIVATE 이벤트에 changeType + 룸 limit 분(1)이 실린다
         ArgumentCaptor<Object> eventCaptor = ArgumentCaptor.forClass(Object.class);
@@ -363,9 +362,9 @@ class PlaybackCommandServiceTest {
                 .id(1L).partyroomId(partyroomId).userId(userId).gradeType(GradeType.CLUBBER).build();
         when(aggregatePort.findCrewById(1L)).thenReturn(Optional.of(djCrew));
 
-        PlaybackTrackDto overLimit = new PlaybackTrackDto("over", "Over", "o.jpg", Duration.fromString("6:00"), 1);
-        PlaybackTrackDto playable = new PlaybackTrackDto("ok", "Playable", "p.jpg", Duration.fromString("3:00"), 2);
-        when(playlistCommandPort.peekOrderedTracks(playlistId)).thenReturn(List.of(overLimit, playable));
+        PlaybackTrackDto overLimit = new PlaybackTrackDto(1L, "over", "Over", "o.jpg", Duration.fromString("6:00"), 1);
+        PlaybackTrackDto playable = new PlaybackTrackDto(2002L, "ok", "Playable", "p.jpg", Duration.fromString("3:00"), 2);
+        when(playlistCommandPort.peekTracksFromCursor(playlistId)).thenReturn(List.of(overLimit, playable));
 
         PlaybackData savedPlayback = mock(PlaybackData.class);
         lenient().when(savedPlayback.getId()).thenReturn(1L);
@@ -381,11 +380,11 @@ class PlaybackCommandServiceTest {
         // when — 자의 skip
         playbackCommandService.skipPlayback(partyroomId);
 
-        // then — t2(orderNumber=2) 재생 + rotatePlayed(pl,2,2), deactivate 미호출
+        // then — t2(trackId=2002) 재생 + advancePlaybackCursor(pl,2002), deactivate 미호출
         PlaybackData saved = playbackCaptor.getValue();
         assertThat(saved.getLinkId()).isEqualTo("ok");
         assertThat(saved.getName()).isEqualTo("Playable");
-        verify(playlistCommandPort).rotatePlayed(playlistId, 2, 2L);
+        verify(playlistCommandPort).advancePlaybackCursor(playlistId, 2002L);
         verify(eventPublisher).publishEvent(any(PlaybackStartedEvent.class));
         verify(partyroomAggregateService, never()).deactivatePlayback(any(PartyroomId.class));
     }
@@ -418,10 +417,10 @@ class PlaybackCommandServiceTest {
         when(aggregatePort.findCrewById(1L)).thenReturn(Optional.of(djCrew1));
         when(aggregatePort.findCrewById(2L)).thenReturn(Optional.of(djCrew2));
 
-        when(playlistCommandPort.peekOrderedTracks(pl1)).thenReturn(List.of(
-                new PlaybackTrackDto("o1", "Over1", "o1.jpg", Duration.fromString("6:00"), 1)));
-        when(playlistCommandPort.peekOrderedTracks(pl2)).thenReturn(List.of(
-                new PlaybackTrackDto("ok2", "Playable2", "p2.jpg", Duration.fromString("3:00"), 1)));
+        when(playlistCommandPort.peekTracksFromCursor(pl1)).thenReturn(List.of(
+                new PlaybackTrackDto(1L, "o1", "Over1", "o1.jpg", Duration.fromString("6:00"), 1)));
+        when(playlistCommandPort.peekTracksFromCursor(pl2)).thenReturn(List.of(
+                new PlaybackTrackDto(3002L, "ok2", "Playable2", "p2.jpg", Duration.fromString("3:00"), 1)));
 
         PlaybackData savedPlayback = mock(PlaybackData.class);
         lenient().when(savedPlayback.getId()).thenReturn(1L);
@@ -440,8 +439,8 @@ class PlaybackCommandServiceTest {
         // then — dj2 트랙 재생 + rotateDjQueue 정확히 1회(이중 회전 없음), deactivate 미호출
         PlaybackData saved = playbackCaptor.getValue();
         assertThat(saved.getLinkId()).isEqualTo("ok2");
-        verify(playlistCommandPort).rotatePlayed(pl2, 1, 1L);
-        verify(playlistCommandPort, never()).rotatePlayed(eq(pl1), anyInt(), anyLong());
+        verify(playlistCommandPort).advancePlaybackCursor(pl2, 3002L);
+        verify(playlistCommandPort, never()).advancePlaybackCursor(eq(pl1), anyLong());
         verify(partyroomAggregateService, times(1)).rotateDjQueue(partyroomId);
         verify(partyroomAggregateService, never()).deactivatePlayback(any(PartyroomId.class));
     }

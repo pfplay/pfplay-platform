@@ -9,6 +9,7 @@ import com.pfplaybackend.api.playlist.application.dto.GrabbedTrackDto;
 import com.pfplaybackend.api.playlist.application.dto.command.AddTrackCommand;
 import com.pfplaybackend.api.playlist.domain.entity.data.PlaylistData;
 import com.pfplaybackend.api.playlist.domain.entity.data.TrackData;
+import com.pfplaybackend.api.playlist.domain.enums.InsertPosition;
 import com.pfplaybackend.api.playlist.domain.enums.PlaylistType;
 import com.pfplaybackend.api.playlist.domain.port.PlaylistAggregatePort;
 import org.junit.jupiter.api.DisplayName;
@@ -66,13 +67,13 @@ class GrabTrackServiceTest {
         when(aggregatePort.findFirstTrackByLink(LINK_ID)).thenReturn(track);
         when(aggregatePort.findPlaylistByOwnerAndType(USER_ID, PlaylistType.GRABLIST)).thenReturn(grablist);
         when(aggregatePort.findTrackByPlaylistAndLink(new PlaylistId(grablist.getId()), LINK_ID)).thenReturn(Optional.empty());
-        when(trackCommandService.addTrackInPlaylist(eq(grablist.getId()), any(AddTrackCommand.class))).thenReturn(777L);
+        when(trackCommandService.insertTrack(eq(grablist.getId()), any(AddTrackCommand.class), eq(InsertPosition.TAIL))).thenReturn(777L);
 
         // when
         GrabbedTrackDto result = grabTrackService.grabTrack(USER_ID, LINK_ID);
 
-        // then
-        verify(trackCommandService).addTrackInPlaylist(eq(grablist.getId()), any(AddTrackCommand.class));
+        // then — grab 은 GRABLIST 맨 뒤(TAIL)로 추가 (스펙 §9)
+        verify(trackCommandService).insertTrack(eq(grablist.getId()), any(AddTrackCommand.class), eq(InsertPosition.TAIL));
         assertThat(result.trackId()).isEqualTo(777L);
         assertThat(result.playlistId()).isEqualTo(grablist.getId());
     }
@@ -122,7 +123,7 @@ class GrabTrackServiceTest {
         grabTrackService.grabTrack(USER_ID, LINK_ID);
 
         // then
-        verify(trackCommandService).addTrackInPlaylist(eq(grablist.getId()), captor.capture());
+        verify(trackCommandService).insertTrack(eq(grablist.getId()), captor.capture(), eq(InsertPosition.TAIL));
         AddTrackCommand command = captor.getValue();
         assertThat(command.name()).isEqualTo("Test Song");
         assertThat(command.linkId()).isEqualTo(LINK_ID);
