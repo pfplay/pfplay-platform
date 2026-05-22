@@ -7,6 +7,7 @@ import com.pfplaybackend.api.playlist.application.dto.GrabbedTrackDto;
 import com.pfplaybackend.api.playlist.application.dto.command.AddTrackCommand;
 import com.pfplaybackend.api.playlist.domain.entity.data.PlaylistData;
 import com.pfplaybackend.api.playlist.domain.entity.data.TrackData;
+import com.pfplaybackend.api.playlist.domain.enums.InsertPosition;
 import com.pfplaybackend.api.playlist.domain.enums.PlaylistType;
 import com.pfplaybackend.api.playlist.domain.exception.TrackException;
 import com.pfplaybackend.api.playlist.domain.port.PlaylistAggregatePort;
@@ -39,7 +40,8 @@ public class GrabTrackService {
                 targetTrackData.getDuration().toDisplayString(),
                 targetTrackData.getThumbnailImage()
         );
-        Long trackId = trackCommandService.addTrackInPlaylist(playlistData.getId(), command);
+        // grab(GRABLIST)은 현행 tail 보존 — head-insert는 명시적 add 한정 (스펙 §9).
+        Long trackId = trackCommandService.insertTrack(playlistData.getId(), command, InsertPosition.TAIL);
         return new GrabbedTrackDto(trackId, playlistData.getId());
     }
 }

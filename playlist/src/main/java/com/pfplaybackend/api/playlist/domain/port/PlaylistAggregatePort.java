@@ -18,6 +18,8 @@ public interface PlaylistAggregatePort {
     PlaylistData findPlaylistByOwnerAndType(UserId userId, PlaylistType type);
     Optional<PlaylistData> findPlaylistByIdAndOwnerAndType(Long playlistId, UserId userId, PlaylistType type);
     Optional<PlaylistData> findPlaylistByIdAndOwner(Long playlistId, UserId userId);
+    Optional<PlaylistData> findPlaylistById(Long playlistId);
+    void advancePlaybackCursor(Long playlistId, Long trackId);
     Long deletePlaylistsByIds(List<Long> playlistIds);
 
     // ===== Child: TrackData =====
@@ -29,7 +31,7 @@ public interface PlaylistAggregatePort {
     boolean hasTracksByPlaylist(PlaylistId playlistId);
 
     // ===== Track Reordering (batch operations) =====
-    void rotatePlayed(Long playlistId, int playedOrderNumber, long totalCount);
+    void shiftAllOrdersDown(Long playlistId);
     void shiftUpTrackOrderByDelete(Long playlistId, Integer deleteOrderNumber);
     void shiftUpTrackOrderByDnD(Long playlistId, Integer prevOrderNumber, Integer nextOrderNumber);
     void shiftDownTrackOrderByDnD(Long playlistId, Integer prevOrderNumber, Integer nextOrderNumber);
