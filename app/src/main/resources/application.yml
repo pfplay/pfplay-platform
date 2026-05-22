@@ -80,6 +80,12 @@ logging:
   level:
     org.springframework.security: DEBUG
     org.springframework.web.reactive.function.client: DEBUG
+    # 비즈니스 critical-path 명시 INFO 고정 — Spring Boot 기본 변경에 영향받지 않게.
+    # profile별 logging.level 은 key 단위 merge 라 prod/staging 에도 상속된다.
+    com.pfplaybackend.api.party: INFO
+    com.pfplaybackend.api.administration: INFO
+    com.pfplaybackend.api.playlist: INFO
+    com.pfplaybackend.realtime: INFO
 
 service-api:
   pytube:
@@ -279,6 +285,7 @@ logging:
   level:
     org.springframework.security: INFO
     org.springframework.web.reactive.function.client: INFO
+    p6spy: WARN   # SQL 로그 누출 차단 (개발 편의는 local/dev 기본 INFO 유지)
 
 app:
   jwt:
@@ -339,6 +346,7 @@ logging:
   level:
     org.springframework.security: WARN
     org.springframework.web.reactive.function.client: WARN
+    p6spy: WARN   # prod SQL 로그 누출 차단
 
 app:
   jwt:

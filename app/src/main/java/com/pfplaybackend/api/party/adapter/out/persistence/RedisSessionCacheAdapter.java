@@ -6,27 +6,64 @@ import com.pfplaybackend.api.party.application.dto.partyroom.PartyroomSessionDto
 import com.pfplaybackend.api.party.application.port.out.PartyroomQueryPort;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import com.pfplaybackend.realtime.port.SessionCachePort;
-import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 
+/**
+ * Chat-only session cache: {@code sessionId → (partyroom, user, crew)} written on
+ * STOMP SUBSCRIBE and read by {@code PartyroomChatCommandService.sendMessage}.
+ *
+ * <p><b>Two parallel, deliberately distinct session-tracking mechanisms.</b>
+ * Presence authority is the user-session <i>registry</i> driven by WS
+ * CONNECT/DISCONNECT (#209 #31, {@code RedisUserSessionStoreAdapter}). This
+ * session <i>cache</i> is a SEPARATE chat-only mechanism keyed on SUBSCRIBE
+ * write / UNSUBSCRIBE delete / TTL backstop. Do NOT collapse them: routing
+ * presence back through this subscribe-timed cache would reintroduce the #31 bug.
+ */
 @Service
-@RequiredArgsConstructor
 public class RedisSessionCacheAdapter implements SessionCachePort {
     private static final Logger logger = LoggerFactory.getLogger(RedisSessionCacheAdapter.class);
     private final RedisTemplate<String, Object> redisTemplate;
     private final PartyroomQueryPort partyroomQueryPort;
 
+    /**
+     * Self-healing backstop TTL (seconds) applied on every {@link #saveSessionCache}.
+     * The clean path still deletes on UNSUBSCRIBE; this only bounds abnormal-close
+     * orphans (1006, no UNSUBSCRIBE — DisconnectionEventListener correctly does not
+     * delete since Task 1.5). Default 24h — far longer than any realistic live
+     * subscribed session, and a re-SUBSCRIBE rewrites/refreshes the row.
+     */
+    private final long ttlSeconds;
+
+    public RedisSessionCacheAdapter(
+            RedisTemplate<String, Object> redisTemplate,
+            PartyroomQueryPort partyroomQueryPort,
+            @Value("${presence.session-cache.ttl-seconds:86400}") long ttlSeconds) {
+        this.redisTemplate = redisTemplate;
+        this.partyroomQueryPort = partyroomQueryPort;
+        this.ttlSeconds = ttlSeconds;
+    }
+
     @Transactional
     public void saveSessionCache(String sessionId, String userId, String destination) {
         UserId userIdObj = UserId.fromString(userId);
         String[] parts = destination.split("/");
-        if(parts[1].equals("sub")) {
+        // fail-closed: id 세그먼트 없는 malformed destination(예: "/sub/partyrooms",
+        // split 결과 length 3)이면 parts[3]가 AIOOBE. #30 가드가 parts[3](룸 id)에
+        // 의미상 의존하므로, 룸 id 판정 불가 시 캐시를 쓰지 않고 거부한다.
+        if (parts.length <= 3) {
+            logger.warn("[guard] malformed destination — no id segment, fail-closed (no cache write); userId={}, sessionId={}, destination={}",
+                    userId, sessionId, destination);
+            return;
+        }
+        if (parts[1].equals("sub")) {
             String topic = parts[2];
             String separator = parts[3];
             if (topic.equals("partyrooms")) {
@@ -36,7 +73,22 @@ public class RedisSessionCacheAdapter implements SessionCachePort {
                     return;
                 }
                 PartyroomSessionDto sessionData = partyroomSessionDto.get();
-                redisTemplate.opsForValue().set(sessionId, sessionData);
+                // #30 단일룸 가드 (백엔드 방어): 구독한 룸 id가 사용자의 권위 활성 룸
+                // (REST tryEnter로 입장한 룸, getActivePartyroomByUserId)과 다르면
+                // cross-room 거부 — 서버 측 연관(세션 캐시)을 기록하지 않는다.
+                // STOMP는 negative-ACK가 없으므로 reject = silent non-registration.
+                // 이 가드가 채팅 세션캐시 adapter에 있는 이유: 모듈 경계상 realtime이
+                // 권위 판정 불가, SUBSCRIBE의 유일한 app-side side-effect가 이 write라
+                // #30(presence 방어)의 유일한 서버 가로채기 지점이기 때문.
+                long authoritativeRoomId = sessionData.partyroomId().getId();
+                if (!String.valueOf(authoritativeRoomId).equals(separator)) {
+                    logger.warn("[guard] cross-room SUBSCRIBE rejected — userId={}, subscribedRoom={}, authoritativeRoom={}",
+                            userId, separator, authoritativeRoomId);
+                    return;
+                }
+                // TTL 백스톱: clean path는 UNSUBSCRIBE에서 delete하지만, 비정상 종료
+                // orphan(1006, UNSUBSCRIBE 없음)은 이 TTL로만 self-heal된다.
+                redisTemplate.opsForValue().set(sessionId, sessionData, ttlSeconds, TimeUnit.SECONDS);
             }
         }
     }

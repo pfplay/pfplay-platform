@@ -73,6 +73,10 @@ public class DjData extends BaseEntity {
         this.orderNumber = orderNumber;
     }
 
+    public void updatePlaylist(PlaylistId playlistId) {
+        this.playlistId = playlistId;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;

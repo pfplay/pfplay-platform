@@ -6,8 +6,10 @@ import com.pfplaybackend.api.admin.application.service.AdminUserService;
 import com.pfplaybackend.api.admin.application.service.ChatSimulationService;
 import com.pfplaybackend.api.administration.adapter.in.web.AdminAnnouncementController;
 import com.pfplaybackend.api.administration.adapter.in.web.AdminAvatarCommandController;
+import com.pfplaybackend.api.administration.adapter.in.web.AdminBugReportQueryController;
 import com.pfplaybackend.api.administration.adapter.in.web.AdminAvatarQueryController;
 import com.pfplaybackend.api.administration.adapter.in.web.AdminCrewPenaltyCommandController;
+import com.pfplaybackend.api.administration.adapter.in.web.AdminGuestQueryController;
 import com.pfplaybackend.api.administration.adapter.in.web.AdminMemberQueryController;
 import com.pfplaybackend.api.administration.adapter.in.web.AdminMemberTierCommandController;
 import com.pfplaybackend.api.administration.adapter.in.web.AdminMemberWithdrawCommandController;
@@ -20,8 +22,10 @@ import com.pfplaybackend.api.administration.adapter.in.web.AdminPasswordControll
 import com.pfplaybackend.api.avatar.application.port.in.AvatarAdminCatalogQueryUseCase;
 import com.pfplaybackend.api.avatar.application.port.in.AvatarCatalogCommandUseCase;
 import com.pfplaybackend.api.administration.application.AdminContext;
+import com.pfplaybackend.api.administration.application.service.AdminBugReportQueryService;
 import com.pfplaybackend.api.administration.application.service.AdminBulkPartyroomActionService;
 import com.pfplaybackend.api.administration.application.service.AdminCrewPenaltyCommandService;
+import com.pfplaybackend.api.administration.application.service.AdminGuestQueryService;
 import com.pfplaybackend.api.administration.application.service.AdminMemberQueryService;
 import com.pfplaybackend.api.administration.application.service.AdminMemberTierCommandService;
 import com.pfplaybackend.api.administration.application.service.AdminMemberWithdrawCommandService;
@@ -60,11 +64,13 @@ import org.springframework.test.web.servlet.MockMvc;
         AdminAvatarCommandController.class,
         AdminAvatarQueryController.class,
         AdminMemberQueryController.class,
+        AdminGuestQueryController.class,
         AdminMemberTierCommandController.class,
         AdminMemberWithdrawCommandController.class,
         AdminReportQueryController.class,
         AdminReportCommandController.class,
-        AdminAnnouncementController.class
+        AdminAnnouncementController.class,
+        AdminBugReportQueryController.class
 })
 @Import({
         AbstractAdminWebMvcTest.SharedMethodSecurityConfig.class,
@@ -93,6 +99,7 @@ public abstract class AbstractAdminWebMvcTest {
     @MockBean protected AdminPartyroomCommandService adminPartyroomCommandService;
     @MockBean protected AdminPartyroomQueryService adminPartyroomQueryService;
     @MockBean protected AdminMemberQueryService adminMemberQueryService;
+    @MockBean protected AdminGuestQueryService adminGuestQueryService;
     @MockBean protected AdminMemberTierCommandService adminMemberTierCommandService;
     @MockBean protected AdminMemberWithdrawCommandService adminMemberWithdrawCommandService;
     @MockBean protected AdminBulkPartyroomActionService adminBulkPartyroomActionService;
@@ -103,4 +110,5 @@ public abstract class AbstractAdminWebMvcTest {
     @MockBean protected AdminReportCommandService adminReportCommandService;
     @MockBean protected SystemAnnouncementCommandService systemAnnouncementCommandService;
     @MockBean protected SystemAnnouncementRepository systemAnnouncementRepository;
+    @MockBean protected AdminBugReportQueryService adminBugReportQueryService;
 }

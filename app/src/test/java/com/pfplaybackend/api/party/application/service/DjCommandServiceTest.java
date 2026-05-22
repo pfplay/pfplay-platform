@@ -27,6 +27,9 @@ import org.springframework.context.ApplicationEventPublisher;
 
 import java.util.Collections;
 
+import com.pfplaybackend.api.common.exception.http.NotFoundException;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
@@ -100,6 +103,7 @@ class DjCommandServiceTest {
         when(aggregatePort.findDjQueueState(partyroomId)).thenReturn(djQueue);
         when(partyroomQueryService.getCrewOrThrow(partyroomId, userId)).thenReturn(crew);
         when(aggregatePort.isDjRegistered(partyroomId, new CrewId(1L))).thenReturn(true);
+        when(playlistQueryPort.isOwnedBy(playlistId.getId(), userId.getUid())).thenReturn(true);
         when(playlistQueryPort.isEmptyPlaylist(playlistId.getId())).thenReturn(false);
 
         // when & then
@@ -124,6 +128,7 @@ class DjCommandServiceTest {
         when(aggregatePort.findDjQueueState(partyroomId)).thenReturn(djQueue);
         when(partyroomQueryService.getCrewOrThrow(partyroomId, userId)).thenReturn(crew);
         when(aggregatePort.isDjRegistered(partyroomId, new CrewId(1L))).thenReturn(false);
+        when(playlistQueryPort.isOwnedBy(playlistId.getId(), userId.getUid())).thenReturn(true);
         when(playlistQueryPort.isEmptyPlaylist(playlistId.getId())).thenReturn(true);
 
         // when & then
@@ -148,6 +153,7 @@ class DjCommandServiceTest {
         when(aggregatePort.findDjQueueState(partyroomId)).thenReturn(djQueue);
         when(partyroomQueryService.getCrewOrThrow(partyroomId, userId)).thenReturn(crew);
         when(aggregatePort.isDjRegistered(partyroomId, new CrewId(1L))).thenReturn(false);
+        when(playlistQueryPort.isOwnedBy(playlistId.getId(), userId.getUid())).thenReturn(true);
         when(playlistQueryPort.isEmptyPlaylist(playlistId.getId())).thenReturn(false);
         when(aggregatePort.findDjsOrdered(partyroomId)).thenReturn(Collections.emptyList());
         when(aggregatePort.saveDj(any(DjData.class))).thenReturn(mock(DjData.class));
@@ -157,6 +163,186 @@ class DjCommandServiceTest {
 
         // then
         verify(playbackControlPort).startPlayback(partyroom);
+    }
+
+    @Test
+    @DisplayName("enqueueDj — 타인 소유 playlist 면 NOT_OWNED_PLAYLIST (Task 4/10 회귀 가드)")
+    void enqueueDjNotOwnedThrows() {
+        PartyroomData partyroom = PartyroomData.builder()
+                .id(partyroomId.getId()).partyroomId(partyroomId).build();
+        PartyroomPlaybackData playbackState = PartyroomPlaybackData.createFor(partyroomId);
+        DjQueueData djQueue = DjQueueData.createFor(partyroomId);
+        CrewData crew = CrewData.builder()
+                .id(1L).partyroomId(partyroomId).userId(userId).gradeType(GradeType.CLUBBER).build();
+
+        when(partyroomQueryService.getPartyroomById(partyroomId)).thenReturn(partyroom);
+        when(aggregatePort.findPlaybackState(partyroomId)).thenReturn(playbackState);
+        when(aggregatePort.findDjQueueState(partyroomId)).thenReturn(djQueue);
+        when(partyroomQueryService.getCrewOrThrow(partyroomId, userId)).thenReturn(crew);
+        when(aggregatePort.isDjRegistered(partyroomId, new CrewId(1L))).thenReturn(false);
+        when(playlistQueryPort.isOwnedBy(playlistId.getId(), userId.getUid())).thenReturn(false);
+
+        assertThatThrownBy(() -> djCommandService.enqueueDj(partyroomId, playlistId))
+                .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("changePlaylist — 큐에 없으면 NOT_FOUND_DJ")
+    void changePlaylistNotInQueueThrows() {
+        PartyroomData partyroom = PartyroomData.builder()
+                .id(partyroomId.getId()).partyroomId(partyroomId).build();
+        PartyroomPlaybackData playbackState = PartyroomPlaybackData.createFor(partyroomId);
+        DjQueueData djQueue = DjQueueData.createFor(partyroomId);
+        CrewData crew = CrewData.builder()
+                .id(1L).partyroomId(partyroomId).userId(userId).gradeType(GradeType.CLUBBER).build();
+
+        when(partyroomQueryService.getPartyroomById(partyroomId)).thenReturn(partyroom);
+        when(aggregatePort.findPlaybackState(partyroomId)).thenReturn(playbackState);
+        when(aggregatePort.findDjQueueState(partyroomId)).thenReturn(djQueue);
+        when(partyroomQueryService.getCrewOrThrow(partyroomId, userId)).thenReturn(crew);
+        when(aggregatePort.findDj(partyroomId, new CrewId(1L))).thenReturn(java.util.Optional.empty());
+
+        assertThatThrownBy(() -> djCommandService.changePlaylist(partyroomId, new PlaylistId(200L)))
+                .isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("changePlaylist — 재생 중 DJ 면 CURRENT_DJ_CANNOT_CHANGE_PLAYLIST")
+    void changePlaylistCurrentDjThrows() {
+        PartyroomData partyroom = PartyroomData.builder()
+                .id(partyroomId.getId()).partyroomId(partyroomId).build();
+        PartyroomPlaybackData playbackState = PartyroomPlaybackData.createFor(partyroomId);
+        playbackState.activate(null, new CrewId(1L));
+        DjQueueData djQueue = DjQueueData.createFor(partyroomId);
+        CrewData crew = CrewData.builder()
+                .id(1L).partyroomId(partyroomId).userId(userId).gradeType(GradeType.CLUBBER).build();
+        DjData me = DjData.create(partyroomId, playlistId, new CrewId(1L), 1);
+
+        when(partyroomQueryService.getPartyroomById(partyroomId)).thenReturn(partyroom);
+        when(aggregatePort.findPlaybackState(partyroomId)).thenReturn(playbackState);
+        when(aggregatePort.findDjQueueState(partyroomId)).thenReturn(djQueue);
+        when(partyroomQueryService.getCrewOrThrow(partyroomId, userId)).thenReturn(crew);
+        when(aggregatePort.findDj(partyroomId, new CrewId(1L))).thenReturn(java.util.Optional.of(me));
+
+        assertThatThrownBy(() -> djCommandService.changePlaylist(partyroomId, new PlaylistId(200L)))
+                .isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    @DisplayName("changePlaylist — 타인 소유 playlist 면 NOT_OWNED_PLAYLIST")
+    void changePlaylistNotOwnedThrows() {
+        PartyroomData partyroom = PartyroomData.builder()
+                .id(partyroomId.getId()).partyroomId(partyroomId).build();
+        PartyroomPlaybackData playbackState = PartyroomPlaybackData.createFor(partyroomId);
+        DjQueueData djQueue = DjQueueData.createFor(partyroomId);
+        CrewData crew = CrewData.builder()
+                .id(1L).partyroomId(partyroomId).userId(userId).gradeType(GradeType.CLUBBER).build();
+        DjData me = DjData.create(partyroomId, playlistId, new CrewId(1L), 1);
+
+        when(partyroomQueryService.getPartyroomById(partyroomId)).thenReturn(partyroom);
+        when(aggregatePort.findPlaybackState(partyroomId)).thenReturn(playbackState);
+        when(aggregatePort.findDjQueueState(partyroomId)).thenReturn(djQueue);
+        when(partyroomQueryService.getCrewOrThrow(partyroomId, userId)).thenReturn(crew);
+        when(aggregatePort.findDj(partyroomId, new CrewId(1L))).thenReturn(java.util.Optional.of(me));
+        when(playlistQueryPort.isOwnedBy(200L, userId.getUid())).thenReturn(false);
+
+        assertThatThrownBy(() -> djCommandService.changePlaylist(partyroomId, new PlaylistId(200L)))
+                .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("changePlaylist — 미존재 playlistId 도 isOwnedBy=false 로 NOT_OWNED_PLAYLIST (security boundary)")
+    void changePlaylistNonExistentPlaylistThrows() {
+        PartyroomData partyroom = PartyroomData.builder()
+                .id(partyroomId.getId()).partyroomId(partyroomId).build();
+        PartyroomPlaybackData playbackState = PartyroomPlaybackData.createFor(partyroomId);
+        DjQueueData djQueue = DjQueueData.createFor(partyroomId);
+        CrewData crew = CrewData.builder()
+                .id(1L).partyroomId(partyroomId).userId(userId).gradeType(GradeType.CLUBBER).build();
+        DjData me = DjData.create(partyroomId, playlistId, new CrewId(1L), 1);
+
+        when(partyroomQueryService.getPartyroomById(partyroomId)).thenReturn(partyroom);
+        when(aggregatePort.findPlaybackState(partyroomId)).thenReturn(playbackState);
+        when(aggregatePort.findDjQueueState(partyroomId)).thenReturn(djQueue);
+        when(partyroomQueryService.getCrewOrThrow(partyroomId, userId)).thenReturn(crew);
+        when(aggregatePort.findDj(partyroomId, new CrewId(1L))).thenReturn(java.util.Optional.of(me));
+        when(playlistQueryPort.isOwnedBy(999_999L, userId.getUid())).thenReturn(false);
+
+        assertThatThrownBy(() -> djCommandService.changePlaylist(partyroomId, new PlaylistId(999_999L)))
+                .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("changePlaylist — 빈 playlist 면 EMPTY_PLAYLIST")
+    void changePlaylistEmptyThrows() {
+        PartyroomData partyroom = PartyroomData.builder()
+                .id(partyroomId.getId()).partyroomId(partyroomId).build();
+        PartyroomPlaybackData playbackState = PartyroomPlaybackData.createFor(partyroomId);
+        DjQueueData djQueue = DjQueueData.createFor(partyroomId);
+        CrewData crew = CrewData.builder()
+                .id(1L).partyroomId(partyroomId).userId(userId).gradeType(GradeType.CLUBBER).build();
+        DjData me = DjData.create(partyroomId, playlistId, new CrewId(1L), 1);
+
+        when(partyroomQueryService.getPartyroomById(partyroomId)).thenReturn(partyroom);
+        when(aggregatePort.findPlaybackState(partyroomId)).thenReturn(playbackState);
+        when(aggregatePort.findDjQueueState(partyroomId)).thenReturn(djQueue);
+        when(partyroomQueryService.getCrewOrThrow(partyroomId, userId)).thenReturn(crew);
+        when(aggregatePort.findDj(partyroomId, new CrewId(1L))).thenReturn(java.util.Optional.of(me));
+        when(playlistQueryPort.isOwnedBy(200L, userId.getUid())).thenReturn(true);
+        when(playlistQueryPort.isEmptyPlaylist(200L)).thenReturn(true);
+
+        assertThatThrownBy(() -> djCommandService.changePlaylist(partyroomId, new PlaylistId(200L)))
+                .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("changePlaylist — happy path: me.playlistId 갱신 + 이벤트 발행 0회")
+    void changePlaylistHappy() {
+        PartyroomData partyroom = PartyroomData.builder()
+                .id(partyroomId.getId()).partyroomId(partyroomId).build();
+        PartyroomPlaybackData playbackState = PartyroomPlaybackData.createFor(partyroomId);
+        DjQueueData djQueue = DjQueueData.createFor(partyroomId);
+        CrewData crew = CrewData.builder()
+                .id(1L).partyroomId(partyroomId).userId(userId).gradeType(GradeType.CLUBBER).build();
+        DjData me = DjData.create(partyroomId, playlistId, new CrewId(1L), 1);
+
+        when(partyroomQueryService.getPartyroomById(partyroomId)).thenReturn(partyroom);
+        when(aggregatePort.findPlaybackState(partyroomId)).thenReturn(playbackState);
+        when(aggregatePort.findDjQueueState(partyroomId)).thenReturn(djQueue);
+        when(partyroomQueryService.getCrewOrThrow(partyroomId, userId)).thenReturn(crew);
+        when(aggregatePort.findDj(partyroomId, new CrewId(1L))).thenReturn(java.util.Optional.of(me));
+        when(playlistQueryPort.isOwnedBy(200L, userId.getUid())).thenReturn(true);
+        when(playlistQueryPort.isEmptyPlaylist(200L)).thenReturn(false);
+
+        djCommandService.changePlaylist(partyroomId, new PlaylistId(200L));
+
+        assertThat(me.getPlaylistId()).isEqualTo(new PlaylistId(200L));
+        assertThat(me.getOrderNumber()).isEqualTo(1);
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    @DisplayName("changePlaylist — idempotent: 같은 playlistId 입력 예외 없음")
+    void changePlaylistIdempotent() {
+        PartyroomData partyroom = PartyroomData.builder()
+                .id(partyroomId.getId()).partyroomId(partyroomId).build();
+        PartyroomPlaybackData playbackState = PartyroomPlaybackData.createFor(partyroomId);
+        DjQueueData djQueue = DjQueueData.createFor(partyroomId);
+        CrewData crew = CrewData.builder()
+                .id(1L).partyroomId(partyroomId).userId(userId).gradeType(GradeType.CLUBBER).build();
+        DjData me = DjData.create(partyroomId, playlistId, new CrewId(1L), 1);
+
+        when(partyroomQueryService.getPartyroomById(partyroomId)).thenReturn(partyroom);
+        when(aggregatePort.findPlaybackState(partyroomId)).thenReturn(playbackState);
+        when(aggregatePort.findDjQueueState(partyroomId)).thenReturn(djQueue);
+        when(partyroomQueryService.getCrewOrThrow(partyroomId, userId)).thenReturn(crew);
+        when(aggregatePort.findDj(partyroomId, new CrewId(1L))).thenReturn(java.util.Optional.of(me));
+        when(playlistQueryPort.isOwnedBy(playlistId.getId(), userId.getUid())).thenReturn(true);
+        when(playlistQueryPort.isEmptyPlaylist(playlistId.getId())).thenReturn(false);
+
+        djCommandService.changePlaylist(partyroomId, playlistId);
+
+        assertThat(me.getPlaylistId()).isEqualTo(playlistId);
     }
 
     @Test

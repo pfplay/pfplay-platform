@@ -512,6 +512,126 @@ class PartyroomAccessCommandServiceTest {
     }
 
     @Test
+    @DisplayName("tryEnter: same-room 재입장 시 pending_exit_at을 해제한다 — SE4 레이스 이중방어 (#225)")
+    void tryEnter_sameRoomReentry_clearsPendingExit() {
+        // given — user already active in SAME room (page refresh: STOMP DISCONNECT set
+        // pending_exit_at; reload triggers REST tryEnter same-room path)
+        CrewData crew = CrewData.builder()
+                .id(10L)
+                .userId(userId)
+                .gradeType(GradeType.LISTENER)
+                .isActive(true)
+                .build();
+
+        PartyroomData partyroomData = PartyroomData.builder()
+                .id(1L)
+                .partyroomId(partyroomId)
+                .status(PartyroomStatus.ACTIVE)
+                .build();
+
+        when(partyroomQueryService.getPartyroomById(partyroomId)).thenReturn(partyroomData);
+        when(aggregatePort.countActiveCrews(partyroomId)).thenReturn(10L);
+        when(aggregatePort.findCrew(partyroomId, userId)).thenReturn(Optional.of(crew));
+        when(aggregatePort.saveCrew(any(CrewData.class))).thenReturn(crew);
+
+        ActivePartyroomDto activeRoomInfo = mock(ActivePartyroomDto.class);
+        when(activeRoomInfo.id()).thenReturn(1L);
+        when(partyroomQueryService.getMyActivePartyroom(userId)).thenReturn(Optional.of(activeRoomInfo));
+
+        // when
+        partyroomAccessCommandService.tryEnter(partyroomId, null);
+
+        // then — SE4 defense-in-depth: REST same-room re-entry cancels grace exactly once
+        verify(aggregatePort, times(1)).clearCrewPending(partyroomId, userId);
+    }
+
+    @Test
+    @DisplayName("tryEnter: 신규 진입(fresh)에서는 pending 해제를 호출하지 않는다 — same-room 분기 전용")
+    void tryEnter_freshEntry_doesNotClearPending() {
+        // given — no existing active room, fresh entry path
+        PartyroomData partyroom = mock(PartyroomData.class);
+        when(partyroom.getPartyroomId()).thenReturn(partyroomId);
+        when(partyroom.getStatus()).thenReturn(PartyroomStatus.ACTIVE);
+        when(partyroom.isSuspended()).thenReturn(false);
+
+        when(partyroomQueryService.getPartyroomById(partyroomId)).thenReturn(partyroom);
+        when(aggregatePort.countActiveCrews(partyroomId)).thenReturn(0L);
+        when(partyroomQueryService.getMyActivePartyroom(userId)).thenReturn(Optional.empty());
+        when(aggregatePort.findCrew(partyroomId, userId)).thenReturn(Optional.empty());
+        when(aggregatePort.activateCrew(eq(partyroomId), eq(userId), any())).thenReturn(0);
+        when(aggregatePort.saveCrew(any(CrewData.class)))
+                .thenAnswer(inv -> {
+                    CrewData input = inv.getArgument(0);
+                    ReflectionTestUtils.setField(input, "id", 100L);
+                    return input;
+                });
+
+        // when
+        partyroomAccessCommandService.tryEnter(partyroomId, null);
+
+        // then — pending clear belongs only to the same-room re-entry branch
+        verify(aggregatePort, never()).clearCrewPending(any(), any());
+    }
+
+    @Test
+    @DisplayName("tryEnter: 다른 룸에서 옮겨오는 신규 진입에서는 pending 해제를 호출하지 않는다 — same-room 분기 전용")
+    void tryEnter_otherRoomAutoExit_doesNotClearPending() {
+        // given — same scenario as tryEnterAnotherRoomActiveShouldAutoExitInsteadOfException
+        PartyroomId newRoomId = new PartyroomId(2L);
+        PartyroomId oldRoomId = new PartyroomId(1L);
+
+        CrewData newRoomCrew = CrewData.builder()
+                .id(20L)
+                .userId(userId)
+                .gradeType(GradeType.LISTENER)
+                .isActive(false)
+                .build();
+
+        PartyroomData newPartyroomData = PartyroomData.builder()
+                .id(2L)
+                .partyroomId(newRoomId)
+                .status(PartyroomStatus.ACTIVE)
+                .build();
+
+        when(partyroomQueryService.getPartyroomById(newRoomId)).thenReturn(newPartyroomData);
+        when(aggregatePort.countActiveCrews(newRoomId)).thenReturn(5L);
+        when(aggregatePort.findCrew(newRoomId, userId)).thenReturn(Optional.of(newRoomCrew));
+
+        ActivePartyroomDto activeRoomInfo = mock(ActivePartyroomDto.class);
+        when(activeRoomInfo.id()).thenReturn(oldRoomId.getId());
+        when(partyroomQueryService.getMyActivePartyroom(userId)).thenReturn(Optional.of(activeRoomInfo));
+
+        CrewData oldCrew = CrewData.builder()
+                .id(5L)
+                .userId(userId)
+                .gradeType(GradeType.LISTENER)
+                .isActive(true)
+                .build();
+
+        PartyroomData oldPartyroomData = PartyroomData.builder()
+                .id(1L)
+                .partyroomId(oldRoomId)
+                .status(PartyroomStatus.ACTIVE)
+                .build();
+
+        PartyroomPlaybackData oldPlaybackState = PartyroomPlaybackData.createFor(new PartyroomId(1L));
+
+        when(partyroomQueryService.getPartyroomById(oldRoomId)).thenReturn(oldPartyroomData);
+        when(aggregatePort.findCrew(oldRoomId, userId)).thenReturn(Optional.of(oldCrew));
+        when(aggregatePort.findDj(oldRoomId, new CrewId(5L))).thenReturn(Optional.empty());
+        when(aggregatePort.findPlaybackState(oldRoomId)).thenReturn(oldPlaybackState);
+        when(aggregatePort.deactivateCrew(eq(oldRoomId), eq(userId), any(LocalDateTime.class))).thenReturn(1);
+        when(aggregatePort.activateCrew(eq(newRoomId), eq(userId), any(LocalDateTime.class))).thenReturn(1);
+        when(aggregatePort.saveCrew(any(CrewData.class))).thenReturn(newRoomCrew);
+
+        // when
+        partyroomAccessCommandService.tryEnter(newRoomId, null);
+
+        // then — auto-exit-then-fresh-entry must NOT clear pending (not the same-room branch)
+        verify(aggregatePort, never()).clearCrewPending(any(), any());
+    }
+
+    @Test
     @DisplayName("tryEnter healing: grade promotion is silent — no CrewGradeChangedEvent published")
     void tryEnter_healing_doesNotPublishGradeChangeEvent() {
         // given — same setup pattern as Test #3 (LISTENER → HOST healing path via re-activate)

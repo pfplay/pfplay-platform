@@ -149,7 +149,7 @@ class TrackCommandServiceTest {
     }
 
     @Test
-    @DisplayName("트랙 추가 실패 — 15개 초과 시 ConflictException")
+    @DisplayName("트랙 추가 실패 — 100개 초과 시 ConflictException")
     void addTrackInPlaylistExceededLimit() {
         // given
         Long playlistId = 1L;
@@ -161,11 +161,41 @@ class TrackCommandServiceTest {
         when(aggregatePort.findPlaylistByIdAndOwner(playlistId, userId)).thenReturn(Optional.of(playlistData));
         when(aggregatePort.findTrackByPlaylistAndLink(new PlaylistId(playlistId), LINK_ID)).thenReturn(Optional.empty());
         when(playlistQueryService.getPlaylist(playlistId))
-                .thenReturn(new PlaylistSummaryDto(playlistId, TEST_PLAYLIST_NAME, 0, PlaylistType.PLAYLIST, 15L));
+                .thenReturn(new PlaylistSummaryDto(playlistId, TEST_PLAYLIST_NAME, 0, PlaylistType.PLAYLIST, 100L));
 
         // when & then
         assertThatThrownBy(() -> trackCommandService.addTrackInPlaylist(playlistId, command))
                 .isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    @DisplayName("트랙 추가 성공 — 상한 직전(99개)이면 추가된다")
+    void addTrackInPlaylistAtLimitBoundary() {
+        // given
+        Long playlistId = 1L;
+        PlaylistData playlistData = PlaylistData.builder()
+                .id(playlistId).ownerId(userId).name(TEST_PLAYLIST_NAME).type(PlaylistType.PLAYLIST).orderNumber(0).build();
+
+        AddTrackCommand command = new AddTrackCommand(SONG_NAME, LINK_ID, DURATION, THUMBNAIL);
+
+        when(aggregatePort.findPlaylistByIdAndOwner(playlistId, userId)).thenReturn(Optional.of(playlistData));
+        when(aggregatePort.findTrackByPlaylistAndLink(new PlaylistId(playlistId), LINK_ID)).thenReturn(Optional.empty());
+        when(playlistQueryService.getPlaylist(playlistId))
+                .thenReturn(new PlaylistSummaryDto(playlistId, TEST_PLAYLIST_NAME, 0, PlaylistType.PLAYLIST, 99L));
+        when(aggregatePort.saveTrack(any())).thenAnswer(invocation -> {
+            TrackData track = invocation.getArgument(0);
+            TrackData saved = TrackData.builder().playlistId(track.getPlaylistId()).name(track.getName())
+                    .linkId(track.getLinkId()).duration(track.getDuration()).orderNumber(track.getOrderNumber())
+                    .thumbnailImage(track.getThumbnailImage()).build();
+            ReflectionTestUtils.setField(saved, "id", 100L);
+            return saved;
+        });
+
+        // when
+        trackCommandService.addTrackInPlaylist(playlistId, command);
+
+        // then — musicCount 99 < 100 이므로 추가되고 orderNumber 는 100
+        verify(aggregatePort, times(1)).saveTrack(argThat(track -> track.getOrderNumber() == 100));
     }
 
     // ========== deleteTrackInPlaylist ==========
@@ -316,7 +346,7 @@ class TrackCommandServiceTest {
     }
 
     @Test
-    @DisplayName("트랙 이동 실패 — 타겟 15개 초과 시 ConflictException")
+    @DisplayName("트랙 이동 실패 — 타겟 100개 초과 시 ConflictException")
     void moveTrackToPlaylistExceededLimit() {
         // given
         Long sourcePlaylistId = 1L;
@@ -339,7 +369,7 @@ class TrackCommandServiceTest {
         when(aggregatePort.findTrackByIdAndPlaylist(trackId, new PlaylistId(sourcePlaylistId))).thenReturn(Optional.of(trackData));
         when(aggregatePort.findTrackByPlaylistAndLink(new PlaylistId(targetPlaylistId), LINK_ID)).thenReturn(Optional.empty());
         when(playlistQueryService.getPlaylist(targetPlaylistId))
-                .thenReturn(new PlaylistSummaryDto(targetPlaylistId, TARGET_PLAYLIST, 1, PlaylistType.PLAYLIST, 15L));
+                .thenReturn(new PlaylistSummaryDto(targetPlaylistId, TARGET_PLAYLIST, 1, PlaylistType.PLAYLIST, 100L));
 
         // when & then
         assertThatThrownBy(() -> trackCommandService.moveTrackToPlaylist(sourcePlaylistId, trackId, command))
@@ -425,35 +455,6 @@ class TrackCommandServiceTest {
         // when & then
         assertThatThrownBy(() -> trackCommandService.updateTrackOrderInPlaylist(playlistId, trackId, command))
                 .isInstanceOf(BadRequestException.class);
-    }
-
-    // ========== getFirstTrack ==========
-
-    @Test
-    @DisplayName("getFirstTrack — 첫 번째 트랙을 PlaybackTrackDto로 반환하고 순서를 회전시킨다")
-    void getFirstTrackReturnsFirstTrackAndRotates() {
-        // given
-        Long playlistId = 1L;
-        PlaylistTrackDto trackDto = new PlaylistTrackDto(10L, LINK_ID, "Song A", 1, Duration.fromString("3:30"), THUMBNAIL);
-
-        @SuppressWarnings("unchecked")
-        Page<PlaylistTrackDto> page = mock(Page.class);
-        when(page.getContent()).thenReturn(List.of(trackDto));
-        when(page.getTotalElements()).thenReturn(3L);
-
-        when(queryPort.getTracksWithPagination(eq(new PlaylistId(playlistId)), any(Pageable.class)))
-                .thenReturn(page);
-
-        // when
-        PlaybackTrackDto result = trackCommandService.getFirstTrack(playlistId);
-
-        // then
-        assertThat(result.linkId()).isEqualTo(LINK_ID);
-        assertThat(result.name()).isEqualTo("Song A");
-        assertThat(result.thumbnailImage()).isEqualTo(THUMBNAIL);
-        assertThat(result.duration()).isEqualTo(Duration.fromString("3:30"));
-        assertThat(result.orderNumber()).isEqualTo(1);
-        verify(aggregatePort).rotateTrackOrder(playlistId, 3L);
     }
 
     // ========== 추가 예외 케이스 ==========
@@ -557,5 +558,49 @@ class TrackCommandServiceTest {
         // when & then
         assertThatThrownBy(() -> trackCommandService.deleteTrackInPlaylist(playlistId, trackId))
                 .isInstanceOf(NotFoundException.class);
+    }
+
+    // ========== peekOrderedTracks ==========
+
+    @Test
+    @DisplayName("peekOrderedTracks — 순서 오름차순으로 반환하며 회전 없음")
+    void peekOrderedTracks_returns_ordered_without_rotation() {
+        // given
+        Long playlistId = 1L;
+        PlaylistTrackDto trackDto1 = new PlaylistTrackDto(10L, LINK_ID, "Song A", 1, Duration.fromString("3:30"), THUMBNAIL);
+        PlaylistTrackDto trackDto2 = new PlaylistTrackDto(11L, "linkId2", "Song B", 2, Duration.fromString("4:00"), THUMBNAIL);
+
+        @SuppressWarnings("unchecked")
+        Page<PlaylistTrackDto> page = mock(Page.class);
+        when(page.getContent()).thenReturn(List.of(trackDto1, trackDto2));
+
+        when(queryPort.getTracksWithPagination(eq(new PlaylistId(playlistId)), any(Pageable.class)))
+                .thenReturn(page);
+
+        // when
+        List<PlaybackTrackDto> result = trackCommandService.peekOrderedTracks(playlistId);
+
+        // then
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).orderNumber()).isEqualTo(1);
+        assertThat(result.get(0).linkId()).isEqualTo(LINK_ID);
+        assertThat(result.get(0).name()).isEqualTo("Song A");
+        assertThat(result.get(0).thumbnailImage()).isEqualTo(THUMBNAIL);
+        assertThat(result.get(0).duration()).isEqualTo(Duration.fromString("3:30"));
+        assertThat(result.get(1).orderNumber()).isEqualTo(2);
+
+        verify(aggregatePort, never()).rotatePlayed(anyLong(), anyInt(), anyLong());
+    }
+
+    // ========== rotatePlayed ==========
+
+    @Test
+    @DisplayName("rotatePlayed — aggregatePort.rotatePlayed에 위임한다")
+    void rotatePlayed_delegates() {
+        // when
+        trackCommandService.rotatePlayed(1L, 3, 5L);
+
+        // then
+        verify(aggregatePort).rotatePlayed(1L, 3, 5L);
     }
 }

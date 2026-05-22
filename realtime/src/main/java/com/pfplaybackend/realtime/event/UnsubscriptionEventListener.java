@@ -27,8 +27,11 @@ public class UnsubscriptionEventListener implements ApplicationListener<SessionU
             logger.warn("Unauthorized session requested, UserId is null, Session ID: {}", sessionId);
             throw new AuthenticationServiceException("Unauthorized Session Requested");
         }
+        // 세션캐시 delete는 채팅 세션 캐시의 clean-path 정리다. 비정상 종료(1006,
+        // UNSUBSCRIBE 없음) orphan은 RedisSessionCacheAdapter의 24h TTL 백스톱으로
+        // self-heal되며 DisconnectionEventListener는 재추가하지 않는다 (#209 #31).
         sessionCachePort.deleteSessionCache(sessionId);
 
-        logger.info("Session has unsubscribed, sessionId : {}", sessionId);
+        logger.info("Session has unsubscribed, sessionId : {}, userId : {}", sessionId, principal.getName());
     }
 }

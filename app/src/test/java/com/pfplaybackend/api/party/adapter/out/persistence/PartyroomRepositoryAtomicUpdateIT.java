@@ -50,7 +50,7 @@ class PartyroomRepositoryAtomicUpdateIT extends AbstractIntegrationTest {
 
         assertThat(affected).isEqualTo(1);
         PartyroomData reloaded = partyroomRepository.findById(p.getId()).orElseThrow();
-        assertThat(reloaded.getCrewCount()).isEqualTo(1);
+        assertThat(reloaded.getActiveCrewCount()).isEqualTo(1);
         assertThat(reloaded.getLastActivityAt()).isEqualToIgnoringNanos(now);
     }
 
@@ -85,7 +85,7 @@ class PartyroomRepositoryAtomicUpdateIT extends AbstractIntegrationTest {
 
         assertThat(affected).isEqualTo(1);
         PartyroomData reloaded = partyroomRepository.findById(p.getId()).orElseThrow();
-        assertThat(reloaded.getCrewCount()).isEqualTo(1);
+        assertThat(reloaded.getActiveCrewCount()).isEqualTo(1);
         assertThat(reloaded.getLastActivityAt()).isEqualToIgnoringNanos(decrementAt);
     }
 
@@ -100,7 +100,7 @@ class PartyroomRepositoryAtomicUpdateIT extends AbstractIntegrationTest {
         // — what matters is the underflow guard kept the count at 0.
         assertThat(affected).isIn(0, 1);
         PartyroomData reloaded = partyroomRepository.findById(p.getId()).orElseThrow();
-        assertThat(reloaded.getCrewCount()).isZero();
+        assertThat(reloaded.getActiveCrewCount()).isZero();
     }
 
     @Test
@@ -164,7 +164,7 @@ class PartyroomRepositoryAtomicUpdateIT extends AbstractIntegrationTest {
 
         assertThat(affected).isEqualTo(1);
         PartyroomData reloaded = partyroomRepository.findById(p.getId()).orElseThrow();
-        assertThat(reloaded.getCrewCount()).isZero();
+        assertThat(reloaded.getActiveCrewCount()).isZero();
     }
 
     @Test
@@ -178,7 +178,7 @@ class PartyroomRepositoryAtomicUpdateIT extends AbstractIntegrationTest {
         int affected = partyroomRepository.resetCrewCount(p.getId());
 
         assertThat(affected).isEqualTo(1);
-        assertThat(partyroomRepository.findById(p.getId()).orElseThrow().getCrewCount()).isZero();
+        assertThat(partyroomRepository.findById(p.getId()).orElseThrow().getActiveCrewCount()).isZero();
     }
 
     // ── findNonTerminatedHostRoom (status 시맨틱 변경 회귀) ────────────────
@@ -219,9 +219,13 @@ class PartyroomRepositoryAtomicUpdateIT extends AbstractIntegrationTest {
         PartyroomData active = createAndSaveActive(2010L);
         PartyroomData terminated = createAndSaveTerminated(2011L);
 
-        // when: days=0 so updatedAt.before(now.minusDays(0)) == updatedAt.before(now) —
-        // all recently-saved rows qualify as "unused" (created microseconds before the query)
-        List<PartyroomData> unused = partyroomRepository.findAllUnusedPartyroomDataByDay(0);
+        // when: days=-1 → cutoff = now + 1 day → freshly-inserted 행이 항상 cutoff 보다 작도록.
+        // days=0 은 MySQL DATETIME(0) 라운딩 flake 노출 — BaseEntity.updatedAt 는 @LastModifiedDate
+        // 가 JVM nanos 로 채우지만 컬럼이 DATETIME(0) 라 fractional > 0.5 일 때 다음 초로 라운드 업,
+        // 직후 LocalDateTime.now() 보다 updated_at 이 더 미래가 되어 row 가 query 에서 제외됨
+        // (empirical: ~50% iteration 라운딩 UP, delta 최대 ~500ms). 본 테스트의 spec 목표는 status
+        // 필터(TERMINATED 제외) 검증이지 cutoff 경계가 아니므로 days=-1 로 시간축 변동성 흡수.
+        List<PartyroomData> unused = partyroomRepository.findAllUnusedPartyroomDataByDay(-1);
 
         // then: ACTIVE room is in the result, TERMINATED room is excluded
         assertThat(unused).extracting(PartyroomData::getId)

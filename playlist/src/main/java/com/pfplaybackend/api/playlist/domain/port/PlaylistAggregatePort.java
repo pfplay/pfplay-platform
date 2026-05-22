@@ -29,7 +29,7 @@ public interface PlaylistAggregatePort {
     boolean hasTracksByPlaylist(PlaylistId playlistId);
 
     // ===== Track Reordering (batch operations) =====
-    void rotateTrackOrder(Long playlistId, long totalCount);
+    void rotatePlayed(Long playlistId, int playedOrderNumber, long totalCount);
     void shiftUpTrackOrderByDelete(Long playlistId, Integer deleteOrderNumber);
     void shiftUpTrackOrderByDnD(Long playlistId, Integer prevOrderNumber, Integer nextOrderNumber);
     void shiftDownTrackOrderByDnD(Long playlistId, Integer prevOrderNumber, Integer nextOrderNumber);
