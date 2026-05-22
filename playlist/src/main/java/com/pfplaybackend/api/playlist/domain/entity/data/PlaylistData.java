@@ -45,6 +45,10 @@ public class PlaylistData extends BaseEntity {
     @Enumerated(EnumType.STRING)
     private PlaylistType type;
 
+    @Comment("재생 커서 — 마지막 재생 트랙 id")
+    @Column(name = "last_played_track_id", columnDefinition = "bigint unsigned")
+    private Long lastPlayedTrackId;
+
     protected PlaylistData() {
     }
 

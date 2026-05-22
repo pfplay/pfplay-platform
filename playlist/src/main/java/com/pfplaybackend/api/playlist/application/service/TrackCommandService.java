@@ -155,7 +155,7 @@ public class TrackCommandService {
         Pageable pageable = PageRequest.of(0, MAX_PLAYLIST_TRACK_COUNT, Sort.by(Sort.Direction.ASC, "orderNumber"));
         Page<PlaylistTrackDto> page = queryPort.getTracksWithPagination(new PlaylistId(playlistId), pageable);
         return page.getContent().stream()
-                .map(dto -> new PlaybackTrackDto(dto.linkId(), dto.name(),
+                .map(dto -> new PlaybackTrackDto(dto.trackId(), dto.linkId(), dto.name(),
                         dto.thumbnailImage(), dto.duration(), dto.orderNumber()))
                 .toList();
     }
