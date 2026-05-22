@@ -41,7 +41,7 @@
 - 신규 컬럼 `PLAYLIST.last_played_track_id` (nullable `bigint unsigned`, hard FK 없음 — 코드베이스의 application-level FK 스타일 준수) = 재생 커서. **플레이리스트별 영속**(디제잉을 다시 시작해도 중단 지점부터 이어짐).
 
 ### 3.2 곡 선택 알고리즘 (DJ 턴, `PlaybackCommandService.doStart`)
-1. 커서가 가리키는 트랙의 현재 `orderNumber` `c`를 조회. 커서가 `null`이거나 가리키던 트랙이 삭제되어 없으면 `c = 0`으로 취급.
+1. 커서가 가리키는 트랙의 현재 `orderNumber` `c`를 조회. 구현상 `last_played_track_id`를 peek된 목록의 `trackId`와 매칭해 `c`를 얻는다(트랙 id는 `PlaylistTrackDto.trackId`에 이미 존재 → 쿼리 변경 불필요). 커서가 `null`이거나 매칭되는 트랙이 목록에 없으면(삭제됨) `c = 0`으로 취급.
 2. `orderNumber` 오름차순 목록에서 **`c` 다음 위치부터 wrap 스캔**하며 첫 재생가능(`playbackTimeLimit` 이내) 트랙을 선택. `playbackTimeLimit` 필터는 party 모듈에 유지(현행 위치 보존), 커서 mechanics는 playlist 모듈이 담당.
 3. 선택된 트랙으로 커서 갱신: `last_played_track_id = chosen.id`.
 4. 재생가능 트랙이 하나도 없으면 현행대로 다음 DJ로 skip(`DJ_NO_PLAYABLE_TRACK`); 모든 DJ가 불가면 deactivate.
@@ -54,13 +54,16 @@ over-limit으로 건너뛴 트랙에는 커서가 머물지 않는다(실제 재
 - 멀티 `[A(1),B(2),C(3)]` 커서=B → **C** → wrap → A → …
 - 멀티 커서=B, D top 추가 `[D(1),A(2),B(3),C(4)]` → 남은 사이클 **C** → 그다음 wrap → **D**
   - = "다음 사이클 top에서 재생" (결정 Q1). 커서 위치를 흩트리지 않아 깨끗하며, 1곡 케이스는 wrap으로 즉시 다음 재생이 보장된다.
+- over-limit + wrap: 커서=C(order 3)인데 order > 3 트랙이 전부 over-limit이고 A(order 1)가 재생가능 → wrap 스캔이 A를 선택. "wrap"은 "목록 끝에서 멈춤"이 아니라 처음으로 되돌아 계속 스캔함을 의미.
 
 ### 3.3 신규 곡 추가 = 맨 위로 (`addTrackInPlaylist`)
 - 기존: `nextMusicOrderNumber = count == 0 ? 1 : count + 1` (tail).
 - 변경: 기존 트랙 전체 `orderNumber + 1` shift 후 신규 곡 `orderNumber = 1` (head).
-- 신규 repository 쿼리 `shiftAllOrdersDown(playlistId)` (`UPDATE TrackData SET orderNumber = orderNumber + 1 WHERE playlistId.id = :playlistId`) 추가.
+- 신규 repository 쿼리 `shiftAllOrdersDown(playlistId)` (`UPDATE TrackData SET orderNumber = orderNumber + 1 WHERE playlistId.id = :playlistId`) 추가. `(playlist_id, order_number)` unique 제약이 없어(V15는 nickname/link_domain만) 전체 +1 shift 시 transient 충돌 없음.
 - `MAX_PLAYLIST_TRACK_COUNT`(100) 초과 검사, 중복 검사 등 기존 가드 유지.
 - 커서는 track-id 기반이라 renumber 영향 없음.
+
+**grab 경로는 현행(tail) 보존.** `addTrackInPlaylist`는 `GrabTrackService.grabTrack`(GRABLIST에 grab)도 공유하는데, 기획 요청은 DJ가 편집하는 `PLAYLIST` 한정이다. 불필요한 동작 변경을 피하기 위해 head-insert는 명시적 add 경로에만 적용한다. 구현: 공유 내부 메서드 `insertTrack(playlistId, command, InsertPosition)` 로 추출 → 공개 `addTrackInPlaylist`는 `HEAD`, grab은 `TAIL` 전달(중복 검사/한계 검사 로직 공유, inline 분기 없음).
 
 ### 3.4 결함 A(#262) 해소 — 부수 효과
 재생이 `orderNumber`를 더 이상 변경하지 않으므로 디제잉 중 클라이언트 뷰가 stale될 일이 없다 → 기존 `updateTrackOrderInPlaylist`의 절대 슬롯 검증이 그대로 정상 동작한다. **reorder 로직/프론트 변경 불필요.** (멀티탭 동시 편집 시 `prev == nextOrderNumber` 엣지는 잔존하나 허용 범위 — 회전起因 staleness만 제거하면 #262 제보 시나리오는 소멸.)
@@ -80,16 +83,20 @@ ALTER TABLE playlist
 
 추가/변경:
 - `PlaylistData`: `lastPlayedTrackId` 필드 + 갱신 메서드.
-- playlist command port: `peekTracksFromCursor(playlistId)`, `advancePlaybackCursor(playlistId, chosenTrackId)` 추가.
-- `TrackCommandService`: `addTrackInPlaylist`(head 삽입), 커서 기반 peek/advance 구현.
-- `TrackRepository`: `shiftAllOrdersDown` 추가.
-- `PlaybackTrackDto`: `trackId` 필드 추가(커서 갱신용).
+- playlist command port(party측 `PlaylistCommandPort` + 어댑터): `peekTracksFromCursor(playlistId)`, `advancePlaybackCursor(playlistId, chosenTrackId)` 추가.
+- `TrackCommandService`: 내부 `insertTrack(playlistId, command, InsertPosition)` 추출(`addTrackInPlaylist`→HEAD, grab→TAIL), 커서 기반 peek-from-cursor / advance-cursor 구현.
+- `TrackRepository`: `shiftAllOrdersDown(playlistId)` 추가.
+- `PlaybackTrackDto`: `trackId` 필드 추가(커서 갱신용). 소스인 `PlaylistTrackDto`에 `trackId`가 이미 있어 `peekOrderedTracks` 매핑만 보강하면 됨(쿼리 변경 불필요).
 - `PlaybackCommandService.doStart` / `startPlaybackFor`: peek+filter+rotate → peek-from-cursor+filter+advance-cursor.
 
 제거:
 - `TrackRepository.rotatePlayedOrder` 쿼리.
-- `TrackCommandService.rotatePlayed` + playlist command port의 `rotatePlayed` + 어댑터.
-- `TrackRepositoryReorderIntegrationTest` 중 **회전(rotate) 전용 케이스만** 제거. shiftUp(delete)/shiftDown(DnD) reorder 케이스는 유지.
+- `rotatePlayed` 전체 체인: `TrackCommandService.rotatePlayed`, `PlaylistAggregatePort.rotatePlayed` + `PlaylistAggregateAdapter`, party측 `PlaylistCommandPort.rotatePlayed` + `PlaylistCommandAdapter`.
+
+테스트 영향(기존 깨지는 테스트 — 명시):
+- `TrackRepositoryReorderIntegrationTest`: **rotatePlayedOrder 전용 2케이스뿐**이라 파일 전체를 제거(또는 신규 `shiftAllOrdersDown` 검증용으로 repurpose). ⚠️ DnD/delete reorder 커버리지는 이 파일이 아니라 `TrackCommandServiceTest`(mock-verify)에 있고 영향 없음.
+- `PlaybackCommandServiceTest`: `rotatePlayed(...)`를 verify하는 케이스들(`#222 skipPlayback`, `#222 skipByManager`, `E/#3 singleDj_allOverLimit`의 `never().rotatePlayed`, 멀티 DJ over-limit) → `advancePlaybackCursor(...)` 검증으로 rewire.
+- `TrackCommandServiceTest`: `rotatePlayed_delegates` 삭제, `peekOrderedTracks_returns_ordered_without_rotation` 는 신규 커서 peek 동작에 맞게 갱신.
 
 `peekOrderedTracks`(자연 순서)는 표시용 등 다른 소비자가 있으면 유지하고, 재생 경로만 커서 변형으로 교체한다(구현 시 usage audit).
 
@@ -127,3 +134,4 @@ reorder 회귀(#262):
 - Q1 멀티곡 add-to-head: **다음 사이클 top에서 재생**(대안: 무조건 즉시 다음 — 기각, 커서 강제 이동으로 사이클 위치 훼손/starvation).
 - Q2 커서 영속성: **플레이리스트별 영속**(대안: 세션마다 top 리셋 — 기각, 리셋 시점 정의로 범위 증가 + 현 동작과 괴리).
 - 마이그레이션: 기존 `order_number` 보존(현 상태=안정 순서), 커서 NULL 시작.
+- grab 경로: **현행 tail 보존**(head-insert는 명시적 add 한정). 기획 요청 범위(DJ PLAYLIST)에 맞춰 GRABLIST 동작 변경을 회피.
