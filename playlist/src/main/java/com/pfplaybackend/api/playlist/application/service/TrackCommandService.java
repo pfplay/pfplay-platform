@@ -37,7 +37,7 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class TrackCommandService {
 
-    private static final int MAX_PLAYLIST_TRACK_COUNT = 15;
+    private static final int MAX_PLAYLIST_TRACK_COUNT = 100;
 
     private final PlaylistAggregatePort aggregatePort;
     private final PlaylistQueryPort queryPort;

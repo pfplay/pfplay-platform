@@ -149,7 +149,7 @@ class TrackCommandServiceTest {
     }
 
     @Test
-    @DisplayName("트랙 추가 실패 — 15개 초과 시 ConflictException")
+    @DisplayName("트랙 추가 실패 — 100개 초과 시 ConflictException")
     void addTrackInPlaylistExceededLimit() {
         // given
         Long playlistId = 1L;
@@ -161,11 +161,41 @@ class TrackCommandServiceTest {
         when(aggregatePort.findPlaylistByIdAndOwner(playlistId, userId)).thenReturn(Optional.of(playlistData));
         when(aggregatePort.findTrackByPlaylistAndLink(new PlaylistId(playlistId), LINK_ID)).thenReturn(Optional.empty());
         when(playlistQueryService.getPlaylist(playlistId))
-                .thenReturn(new PlaylistSummaryDto(playlistId, TEST_PLAYLIST_NAME, 0, PlaylistType.PLAYLIST, 15L));
+                .thenReturn(new PlaylistSummaryDto(playlistId, TEST_PLAYLIST_NAME, 0, PlaylistType.PLAYLIST, 100L));
 
         // when & then
         assertThatThrownBy(() -> trackCommandService.addTrackInPlaylist(playlistId, command))
                 .isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    @DisplayName("트랙 추가 성공 — 상한 직전(99개)이면 추가된다")
+    void addTrackInPlaylistAtLimitBoundary() {
+        // given
+        Long playlistId = 1L;
+        PlaylistData playlistData = PlaylistData.builder()
+                .id(playlistId).ownerId(userId).name(TEST_PLAYLIST_NAME).type(PlaylistType.PLAYLIST).orderNumber(0).build();
+
+        AddTrackCommand command = new AddTrackCommand(SONG_NAME, LINK_ID, DURATION, THUMBNAIL);
+
+        when(aggregatePort.findPlaylistByIdAndOwner(playlistId, userId)).thenReturn(Optional.of(playlistData));
+        when(aggregatePort.findTrackByPlaylistAndLink(new PlaylistId(playlistId), LINK_ID)).thenReturn(Optional.empty());
+        when(playlistQueryService.getPlaylist(playlistId))
+                .thenReturn(new PlaylistSummaryDto(playlistId, TEST_PLAYLIST_NAME, 0, PlaylistType.PLAYLIST, 99L));
+        when(aggregatePort.saveTrack(any())).thenAnswer(invocation -> {
+            TrackData track = invocation.getArgument(0);
+            TrackData saved = TrackData.builder().playlistId(track.getPlaylistId()).name(track.getName())
+                    .linkId(track.getLinkId()).duration(track.getDuration()).orderNumber(track.getOrderNumber())
+                    .thumbnailImage(track.getThumbnailImage()).build();
+            ReflectionTestUtils.setField(saved, "id", 100L);
+            return saved;
+        });
+
+        // when
+        trackCommandService.addTrackInPlaylist(playlistId, command);
+
+        // then — musicCount 99 < 100 이므로 추가되고 orderNumber 는 100
+        verify(aggregatePort, times(1)).saveTrack(argThat(track -> track.getOrderNumber() == 100));
     }
 
     // ========== deleteTrackInPlaylist ==========
@@ -316,7 +346,7 @@ class TrackCommandServiceTest {
     }
 
     @Test
-    @DisplayName("트랙 이동 실패 — 타겟 15개 초과 시 ConflictException")
+    @DisplayName("트랙 이동 실패 — 타겟 100개 초과 시 ConflictException")
     void moveTrackToPlaylistExceededLimit() {
         // given
         Long sourcePlaylistId = 1L;
@@ -339,7 +369,7 @@ class TrackCommandServiceTest {
         when(aggregatePort.findTrackByIdAndPlaylist(trackId, new PlaylistId(sourcePlaylistId))).thenReturn(Optional.of(trackData));
         when(aggregatePort.findTrackByPlaylistAndLink(new PlaylistId(targetPlaylistId), LINK_ID)).thenReturn(Optional.empty());
         when(playlistQueryService.getPlaylist(targetPlaylistId))
-                .thenReturn(new PlaylistSummaryDto(targetPlaylistId, TARGET_PLAYLIST, 1, PlaylistType.PLAYLIST, 15L));
+                .thenReturn(new PlaylistSummaryDto(targetPlaylistId, TARGET_PLAYLIST, 1, PlaylistType.PLAYLIST, 100L));
 
         // when & then
         assertThatThrownBy(() -> trackCommandService.moveTrackToPlaylist(sourcePlaylistId, trackId, command))
