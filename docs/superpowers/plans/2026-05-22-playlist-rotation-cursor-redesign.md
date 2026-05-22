@@ -416,7 +416,7 @@ public void advancePlaybackCursor(Long playlistId, Long trackId) {
 Run: `JAVA_HOME="C:/Users/Eisen/.jdks/ms-21.0.7" ./gradlew :playlist:test --tests "*TrackCommandServiceTest" -q`
 Expected: PASS
 
-- [ ] **Step 5: rotatePlayed_delegates 테스트 삭제** (있다면) — 제거된 메서드 검증 테스트.
+- [ ] **Step 5: 회전 관련 테스트 정리** — `rotatePlayed_delegates` 삭제. `peekOrderedTracks_returns_ordered_without_rotation` 는 신규 커서 동작에 맞게 갱신하거나(자연순서 케이스 = 커서 null로 흡수 가능) 신규 peekTracksFromCursor 테스트로 대체.
 
 - [ ] **Step 6: Commit**
 
@@ -512,7 +512,8 @@ git commit -m "feat(party): 재생 곡 선택을 커서 기반으로 교체 (pee
   - `given(playlistCommandPort.peekOrderedTracks(any())).willReturn(...)` → `peekTracksFromCursor`
   - `verify(playlistCommandPort).rotatePlayed(any(), anyInt(), anyLong())` → `verify(playlistCommandPort).advancePlaybackCursor(eq(playlistId), eq(<chosen trackId>))`
   - `verify(...,never()).rotatePlayed(...)` (singleDj_allOverLimit) → `never().advancePlaybackCursor(...)`
-  - peeked 트랙 fixture 의 `PlaybackTrackDto` 생성에 `trackId` 추가(첫 인자).
+  - ⚠️ **`new PlaybackTrackDto(...)` 생성처가 8곳**(대략 line 194, 241, 320/321, 366/367, 422/424) — Task 2에서 record 첫 필드로 `trackId`가 추가되므로 **8곳 모두** 첫 인자에 결정적(deterministic) trackId를 부여한다.
+  - fixture에 부여한 trackId로 advance 검증을 맞춘다. 예: 기존 `verify(...).rotatePlayed(pl, 2, 2L)`(order=2 곡 재생) → 그 order=2 곡 fixture의 trackId가 `T2`라면 `verify(...).advancePlaybackCursor(pl, T2)`. (peekTracksFromCursor stub이 반환하는 목록의 첫 재생가능 곡 = 선택 곡이므로, 그 곡의 trackId가 advance 인자가 됨.)
 
 - [ ] **Step 2: app 테스트 컴파일+실행**
 
@@ -532,7 +533,7 @@ git add -A && git commit -m "test(party): PlaybackCommandServiceTest 커서 기�
 
 - [ ] **Step 1: rotatePlayedOrder 2케이스 삭제, shiftAllOrdersDown 통합 테스트로 교체**
 
-기존 DB 셋업(@DataJpaTest 등) 패턴 유지하고:
+⚠️ 베이스 클래스 `AbstractIntegrationTest` 는 `@SpringBootTest`(풀 컨텍스트)이고 `flushAndClear()` + `entityManager` 를 노출한다(`@DataJpaTest` 아님). 따라서 `@Autowired PlaylistRepository` 주입 가능, flush는 `flushAndClear()` 사용. 기존 셋업 패턴 유지하고:
 
 ```java
 @Test
@@ -587,7 +588,7 @@ git add -A && git commit -m "test: rotate IT를 shiftAllOrdersDown + #262 커서
 Run: `JAVA_HOME="C:/Users/Eisen/.jdks/ms-21.0.7" ./gradlew build -q`
 Expected: BUILD SUCCESSFUL (모든 모듈 테스트 GREEN)
 
-- [ ] **Step 2: rotatePlayed 잔존 참조 0 확인** — `rotatePlayed`/`rotatePlayedOrder`/`peekOrderedTracks`(party port) 검색해 dead reference 없음 확인.
+- [ ] **Step 2: rotatePlayed 잔존 참조 0 확인** — `rotatePlayed`/`rotatePlayedOrder`/`peekOrderedTracks`(party port) 검색해 dead reference 없음 확인. 또한 playlist-module `TrackCommandService.peekOrderedTracks` 가 party port 제거 후 production 소비자가 없으면(audit) 삭제 결정(테스트만 남으면 dead code).
 
 - [ ] **Step 3: 미세 커밋 정리(squash) — push 전** (메모리: push 전 논리 단위 통합). develop 기준 논리 단위로 정리.
 
