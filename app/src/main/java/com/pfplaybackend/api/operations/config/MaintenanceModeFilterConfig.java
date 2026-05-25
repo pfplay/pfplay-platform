@@ -1,7 +1,7 @@
 package com.pfplaybackend.api.operations.config;
 
 import com.pfplaybackend.api.operations.adapter.in.web.MaintenanceModeFilter;
-import com.pfplaybackend.api.operations.application.service.SystemConfigCache;
+import com.pfplaybackend.api.operations.application.port.out.MaintenanceGate;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -19,9 +19,9 @@ public class MaintenanceModeFilterConfig {
      */
     @Bean
     public FilterRegistrationBean<MaintenanceModeFilter> maintenanceModeFilterRegistration(
-            SystemConfigCache cache) {
+            MaintenanceGate gate) {
         FilterRegistrationBean<MaintenanceModeFilter> bean = new FilterRegistrationBean<>();
-        bean.setFilter(new MaintenanceModeFilter(cache));
+        bean.setFilter(new MaintenanceModeFilter(gate));
         bean.addUrlPatterns("/*");
         bean.setOrder(Ordered.HIGHEST_PRECEDENCE);
         bean.setName("maintenanceModeFilter");
