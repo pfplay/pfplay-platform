@@ -16,8 +16,12 @@ import java.util.List;
 /**
  * Returns HTTP 503 for non-admin traffic when maintenance mode is enabled.
  *
- * Bypass paths: /api/v1/admin/** , /actuator/health.
+ * Bypass paths: /api/v1/admin/** , /api/v1/auth/admin/** , /actuator/health.
  * Bypass means "always pass through to next filter" — ignores maintenance flag.
+ *
+ * <p>/api/v1/auth/admin/** (어드민 로그인/로그아웃) 도 bypass — 세션 없는 운영자가 점검 중
+ * 콘솔에 로그인해 점검을 종료할 수 있어야 한다(잠금 방지). 일반 유저 OAuth(/api/v1/auth/oauth/**)
+ * 는 bypass 대상이 아니므로 점검 중 차단된다.
  *
  * Spec: docs/superpowers/specs/2026-04-19-admin-platform-features.md §6.E-1
  *       docs/superpowers/specs/2026-04-19-admin-platform-schema.md §4.6.2
@@ -26,6 +30,7 @@ public class MaintenanceModeFilter extends OncePerRequestFilter {
 
     private static final List<String> BYPASS_PATTERNS = List.of(
         "/api/v1/admin/**",
+        "/api/v1/auth/admin/**",
         "/actuator/health"
     );
     private static final AntPathMatcher MATCHER = new AntPathMatcher();
