@@ -6,6 +6,6 @@ import com.pfplaybackend.api.playlist.application.dto.PlaybackTrackDto;
 
 public interface PlaylistCommandPort {
     AddedTrackInfo grabTrack(UserId userId, String linkId);
-    java.util.List<PlaybackTrackDto> peekOrderedTracks(PlaylistId playlistId);
-    void rotatePlayed(PlaylistId playlistId, int playedOrderNumber, long totalCount);
+    java.util.List<PlaybackTrackDto> peekTracksFromCursor(PlaylistId playlistId);
+    void advancePlaybackCursor(PlaylistId playlistId, Long trackId);
 }

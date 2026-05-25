@@ -57,6 +57,16 @@ public class PlaylistAggregateAdapter implements PlaylistAggregatePort, Playlist
     }
 
     @Override
+    public Optional<PlaylistData> findPlaylistById(Long playlistId) {
+        return playlistRepository.findById(playlistId);
+    }
+
+    @Override
+    public void advancePlaybackCursor(Long playlistId, Long trackId) {
+        playlistRepository.updateLastPlayedTrackId(playlistId, trackId);
+    }
+
+    @Override
     public Long deletePlaylistsByIds(List<Long> playlistIds) {
         return playlistRepository.deleteByListIds(playlistIds);
     }
@@ -96,8 +106,8 @@ public class PlaylistAggregateAdapter implements PlaylistAggregatePort, Playlist
     // ===== Track Reordering =====
 
     @Override
-    public void rotatePlayed(Long playlistId, int playedOrderNumber, long totalCount) {
-        trackRepository.rotatePlayedOrder(playlistId, playedOrderNumber, totalCount);
+    public void shiftAllOrdersDown(Long playlistId) {
+        trackRepository.shiftAllOrdersDown(playlistId);
     }
 
     @Override

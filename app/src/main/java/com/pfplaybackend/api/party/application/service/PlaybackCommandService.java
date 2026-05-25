@@ -119,7 +119,7 @@ public class PlaybackCommandService implements PlaybackControlPort {
         for (DjData dj : orderedDjs) {
             CrewData djCrew = aggregatePort.findCrewById(dj.getCrewId().getId()).orElseThrow();
             long djCrewId = djCrew.getId();
-            List<PlaybackTrackDto> peeked = playlistCommandPort.peekOrderedTracks(dj.getPlaylistId());
+            List<PlaybackTrackDto> peeked = playlistCommandPort.peekTracksFromCursor(dj.getPlaylistId());
 
             PlaybackTrackDto chosen = peeked.stream()
                     .filter(t -> !partyroom.getPlaybackTimeLimit().exceedsDuration(t.duration()))
@@ -135,7 +135,7 @@ public class PlaybackCommandService implements PlaybackControlPort {
             log.debug("[doStart] PLAYABLE_TRACK - partyroomId={}, djCrewId={}, trackName={}, durationSec={}, orderNumber={}, limitMin={}",
                     partyroomIdValue, djCrewId, chosen.name(), chosen.duration().toSeconds(), chosen.orderNumber(), limitMin);
 
-            startPlaybackFor(partyroom, dj, djCrew, chosen, peeked.size());
+            startPlaybackFor(partyroom, dj, djCrew, chosen);
             return;
         }
 
@@ -144,10 +144,10 @@ public class PlaybackCommandService implements PlaybackControlPort {
         deactivateAndNotify(partyroom);
     }
 
-    private void startPlaybackFor(PartyroomData partyroom, DjData dj, CrewData djCrew, PlaybackTrackDto chosen, long total) {
+    private void startPlaybackFor(PartyroomData partyroom, DjData dj, CrewData djCrew, PlaybackTrackDto chosen) {
         PlaybackData nextPlayback = PlaybackData.create(partyroom.getPartyroomId(), djCrew.getUserId(),
                 chosen.name(), chosen.duration(), chosen.linkId(), chosen.thumbnailImage(), clock.instant());
-        playlistCommandPort.rotatePlayed(dj.getPlaylistId(), chosen.orderNumber(), total);
+        playlistCommandPort.advancePlaybackCursor(dj.getPlaylistId(), chosen.trackId());
 
         PlaybackData playbackData = playbackRepository.save(nextPlayback);
         playbackAggregationRepository.save(PlaybackAggregationData.createFor(new PlaybackId(playbackData.getId())));
