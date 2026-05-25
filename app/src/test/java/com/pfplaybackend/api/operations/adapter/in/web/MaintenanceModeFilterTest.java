@@ -94,6 +94,37 @@ class MaintenanceModeFilterTest {
     }
 
     @Test
+    void bypasses_admin_auth_login_even_when_enabled() throws ServletException, IOException {
+        // 점검 중에도 어드민은 콘솔에 로그인해 점검을 끌 수 있어야 한다(잠금 방지).
+        // 어드민 로그인은 /api/v1/auth/admin/** (운영 엔드포인트 /api/v1/admin/** 와 별도 경로).
+        lenient().when(gate.isUnderMaintenance()).thenReturn(true);
+
+        MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/auth/admin/login");
+        MockHttpServletResponse res = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        filter.doFilter(req, res, chain);
+
+        assertThat(chain.getRequest()).isSameAs(req);
+        assertThat(res.getContentAsString()).isEmpty();
+    }
+
+    @Test
+    void does_not_bypass_regular_user_oauth_even_when_enabled() throws ServletException, IOException {
+        when(gate.isUnderMaintenance()).thenReturn(true);
+        when(gate.getMaintenanceMessage()).thenReturn("점검중");
+
+        // 일반 유저 OAuth 로그인은 점검 중 차단되어야 한다(어드민 인증만 예외).
+        MockHttpServletRequest req = new MockHttpServletRequest("POST", "/api/v1/auth/oauth/callback");
+        MockHttpServletResponse res = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        filter.doFilter(req, res, chain);
+
+        assertThat(res.getStatus()).isEqualTo(503);
+    }
+
+    @Test
     void does_not_bypass_admin_lookalike_path() throws ServletException, IOException {
         when(gate.isUnderMaintenance()).thenReturn(true);
         when(gate.getMaintenanceMessage()).thenReturn("점검중");
