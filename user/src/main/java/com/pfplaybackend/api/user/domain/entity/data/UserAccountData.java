@@ -69,10 +69,25 @@ public class UserAccountData extends BaseEntity {
         if (providerType == ProviderType.LOCAL) {
             throw new IllegalArgumentException("Use createForLocal for LOCAL provider");
         }
+        if (providerType == ProviderType.GUEST) {
+            throw new IllegalArgumentException("Use createForGuest for GUEST provider");
+        }
         return UserAccountData.builder()
             .userId(userId)
             .email(email)
             .providerType(providerType)
+            .build();
+    }
+
+    /**
+     * 임시 게스트 계정. OAuth 를 거치지 않으므로 provider_type 은 GUEST 이며, email 은
+     * NOT NULL UNIQUE 제약을 만족시키기 위한 합성 placeholder({@code guest-...@guest.local})다.
+     */
+    public static UserAccountData createForGuest(UserId userId, String email) {
+        return UserAccountData.builder()
+            .userId(userId)
+            .email(email)
+            .providerType(ProviderType.GUEST)
             .build();
     }
 

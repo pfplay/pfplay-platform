@@ -1,6 +1,5 @@
 package com.pfplaybackend.api.user.application.service;
 
-import com.pfplaybackend.api.common.config.security.enums.ProviderType;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.user.adapter.out.persistence.GuestRepository;
 import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
@@ -30,10 +29,9 @@ public class GuestSignService {
         UserId userId = new UserId();
 
         // Synthetic placeholder email — guests do not log in via OAuth.
-        UserAccountData userAccount = UserAccountData.createForSocial(
+        UserAccountData userAccount = UserAccountData.createForGuest(
                 userId,
-                "guest-" + userId.getUid() + "@guest.local",
-                ProviderType.GOOGLE);
+                "guest-" + userId.getUid() + "@guest.local");
         userAccountRepository.save(userAccount);
 
         GuestData guest = GuestData.createForUserAccount(userId.getUid(), "N/A");
