@@ -4,10 +4,12 @@ import com.pfplaybackend.api.user.adapter.out.persistence.GuestRepository;
 import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
 import com.pfplaybackend.api.user.domain.entity.data.GuestData;
 import com.pfplaybackend.api.user.domain.entity.data.ProfileData;
+import com.pfplaybackend.api.common.config.security.enums.ProviderType;
 import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -57,5 +59,19 @@ class GuestSignServiceTest {
         // then
         assertThat(result.getProfileData()).isEqualTo(profile);
         assertThat(result.isProfileUpdated()).isTrue();
+    }
+
+    @Test
+    @DisplayName("getGuestOrCreate — provider_type 을 GUEST 로 저장한다 (게스트는 OAuth 미사용)")
+    void getGuestOrCreate_assigns_guest_provider_type() {
+        ProfileData profile = mock(ProfileData.class);
+        when(userProfileCommandService.createProfileDataForGuest(any())).thenReturn(profile);
+        when(guestRepository.save(any(GuestData.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        guestSignService.getGuestOrCreate();
+
+        ArgumentCaptor<UserAccountData> captor = ArgumentCaptor.forClass(UserAccountData.class);
+        verify(userAccountRepository).save(captor.capture());
+        assertThat(captor.getValue().getProviderType()).isEqualTo(ProviderType.GUEST);
     }
 }
