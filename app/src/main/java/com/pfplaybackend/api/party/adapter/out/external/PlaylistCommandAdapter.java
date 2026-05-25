@@ -27,12 +27,12 @@ public class PlaylistCommandAdapter implements PlaylistCommandPort {
     }
 
     @Override
-    public List<PlaybackTrackDto> peekOrderedTracks(PlaylistId playlistId) {
-        return trackCommandService.peekOrderedTracks(playlistId.getId());
+    public List<PlaybackTrackDto> peekTracksFromCursor(PlaylistId playlistId) {
+        return trackCommandService.peekTracksFromCursor(playlistId.getId());
     }
 
     @Override
-    public void rotatePlayed(PlaylistId playlistId, int playedOrderNumber, long totalCount) {
-        trackCommandService.rotatePlayed(playlistId.getId(), playedOrderNumber, totalCount);
+    public void advancePlaybackCursor(PlaylistId playlistId, Long trackId) {
+        trackCommandService.advancePlaybackCursor(playlistId.getId(), trackId);
     }
 }

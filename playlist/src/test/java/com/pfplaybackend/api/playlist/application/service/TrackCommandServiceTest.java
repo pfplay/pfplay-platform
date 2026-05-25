@@ -18,6 +18,7 @@ import com.pfplaybackend.api.playlist.application.dto.command.UpdateTrackOrderCo
 import com.pfplaybackend.api.playlist.application.port.out.PlaylistQueryPort;
 import com.pfplaybackend.api.playlist.domain.entity.data.PlaylistData;
 import com.pfplaybackend.api.playlist.domain.entity.data.TrackData;
+import com.pfplaybackend.api.playlist.domain.enums.InsertPosition;
 import com.pfplaybackend.api.playlist.domain.enums.PlaylistType;
 import com.pfplaybackend.api.playlist.domain.port.PlaylistAggregatePort;
 import org.junit.jupiter.api.AfterEach;
@@ -31,6 +32,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 
 import java.util.List;
@@ -84,7 +86,7 @@ class TrackCommandServiceTest {
     // ========== addTrackInPlaylist ==========
 
     @Test
-    @DisplayName("트랙 추가 성공 — save 호출 및 orderNumber 정확")
+    @DisplayName("트랙 추가 성공 — 맨 위(order 1) 삽입 + 기존 전체 shift")
     void addTrackInPlaylistSuccess() {
         // given
         Long playlistId = 1L;
@@ -109,10 +111,33 @@ class TrackCommandServiceTest {
         // when
         trackCommandService.addTrackInPlaylist(playlistId, command);
 
-        // then
+        // then — 신규 곡은 맨 위(order 1), 기존 전체 +1 shift
+        verify(aggregatePort).shiftAllOrdersDown(playlistId);
         verify(aggregatePort, times(1)).saveTrack(argThat(track ->
-                track.getOrderNumber() == 4 && LINK_ID.equals(track.getLinkId())
+                track.getOrderNumber() == 1 && LINK_ID.equals(track.getLinkId())
         ));
+    }
+
+    @Test
+    @DisplayName("insertTrack(TAIL) — 맨 뒤(order=count+1) 추가, shift 없음 (grab 경로)")
+    void insertTrack_tail_appendsAtEnd() {
+        // given
+        Long playlistId = 1L;
+        PlaylistData playlistData = PlaylistData.builder()
+                .id(playlistId).ownerId(userId).name(TEST_PLAYLIST_NAME).type(PlaylistType.GRABLIST).orderNumber(0).build();
+        AddTrackCommand command = new AddTrackCommand(SONG_NAME, LINK_ID, DURATION, THUMBNAIL);
+        when(aggregatePort.findPlaylistByIdAndOwner(playlistId, userId)).thenReturn(Optional.of(playlistData));
+        when(aggregatePort.findTrackByPlaylistAndLink(new PlaylistId(playlistId), LINK_ID)).thenReturn(Optional.empty());
+        when(playlistQueryService.getPlaylist(playlistId))
+                .thenReturn(new PlaylistSummaryDto(playlistId, TEST_PLAYLIST_NAME, 0, PlaylistType.GRABLIST, 3L));
+        when(aggregatePort.saveTrack(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        // when
+        trackCommandService.insertTrack(playlistId, command, InsertPosition.TAIL);
+
+        // then — 기존 동작: count(3)+1 = 4, shift 없음
+        verify(aggregatePort, never()).shiftAllOrdersDown(anyLong());
+        verify(aggregatePort).saveTrack(argThat(track -> track.getOrderNumber() == 4));
     }
 
     @Test
@@ -194,8 +219,9 @@ class TrackCommandServiceTest {
         // when
         trackCommandService.addTrackInPlaylist(playlistId, command);
 
-        // then — musicCount 99 < 100 이므로 추가되고 orderNumber 는 100
-        verify(aggregatePort, times(1)).saveTrack(argThat(track -> track.getOrderNumber() == 100));
+        // then — musicCount 99 < 100 이므로 추가됨. add-to-head 라 order 1 + 기존 전체 shift.
+        verify(aggregatePort).shiftAllOrdersDown(playlistId);
+        verify(aggregatePort, times(1)).saveTrack(argThat(track -> track.getOrderNumber() == 1));
     }
 
     // ========== deleteTrackInPlaylist ==========
@@ -560,47 +586,69 @@ class TrackCommandServiceTest {
                 .isInstanceOf(NotFoundException.class);
     }
 
-    // ========== peekOrderedTracks ==========
+    // ========== peekTracksFromCursor ==========
 
-    @Test
-    @DisplayName("peekOrderedTracks — 순서 오름차순으로 반환하며 회전 없음")
-    void peekOrderedTracks_returns_ordered_without_rotation() {
-        // given
-        Long playlistId = 1L;
-        PlaylistTrackDto trackDto1 = new PlaylistTrackDto(10L, LINK_ID, "Song A", 1, Duration.fromString("3:30"), THUMBNAIL);
-        PlaylistTrackDto trackDto2 = new PlaylistTrackDto(11L, "linkId2", "Song B", 2, Duration.fromString("4:00"), THUMBNAIL);
-
-        @SuppressWarnings("unchecked")
-        Page<PlaylistTrackDto> page = mock(Page.class);
-        when(page.getContent()).thenReturn(List.of(trackDto1, trackDto2));
-
-        when(queryPort.getTracksWithPagination(eq(new PlaylistId(playlistId)), any(Pageable.class)))
-                .thenReturn(page);
-
-        // when
-        List<PlaybackTrackDto> result = trackCommandService.peekOrderedTracks(playlistId);
-
-        // then
-        assertThat(result).hasSize(2);
-        assertThat(result.get(0).orderNumber()).isEqualTo(1);
-        assertThat(result.get(0).linkId()).isEqualTo(LINK_ID);
-        assertThat(result.get(0).name()).isEqualTo("Song A");
-        assertThat(result.get(0).thumbnailImage()).isEqualTo(THUMBNAIL);
-        assertThat(result.get(0).duration()).isEqualTo(Duration.fromString("3:30"));
-        assertThat(result.get(1).orderNumber()).isEqualTo(2);
-
-        verify(aggregatePort, never()).rotatePlayed(anyLong(), anyInt(), anyLong());
+    private Page<PlaylistTrackDto> pageOf(PlaylistTrackDto... dtos) {
+        return new PageImpl<>(List.of(dtos));
     }
 
-    // ========== rotatePlayed ==========
+    private PlaylistData playlistWithCursor(Long playlistId, Long cursorTrackId) {
+        PlaylistData p = PlaylistData.builder()
+                .id(playlistId).ownerId(userId).name(TEST_PLAYLIST_NAME).type(PlaylistType.PLAYLIST).orderNumber(0).build();
+        ReflectionTestUtils.setField(p, "lastPlayedTrackId", cursorTrackId);
+        return p;
+    }
 
     @Test
-    @DisplayName("rotatePlayed — aggregatePort.rotatePlayed에 위임한다")
-    void rotatePlayed_delegates() {
-        // when
-        trackCommandService.rotatePlayed(1L, 3, 5L);
+    @DisplayName("peekTracksFromCursor — 커서 null이면 자연순서(top부터)")
+    void peek_nullCursor_naturalOrder() {
+        Long playlistId = 1L;
+        PlaylistTrackDto a = new PlaylistTrackDto(10L, "a", "A", 1, Duration.fromString("3:00"), THUMBNAIL);
+        PlaylistTrackDto b = new PlaylistTrackDto(20L, "b", "B", 2, Duration.fromString("3:00"), THUMBNAIL);
+        PlaylistTrackDto c = new PlaylistTrackDto(30L, "c", "C", 3, Duration.fromString("3:00"), THUMBNAIL);
+        when(queryPort.getTracksWithPagination(eq(new PlaylistId(playlistId)), any(Pageable.class))).thenReturn(pageOf(a, b, c));
+        when(aggregatePort.findPlaylistById(playlistId)).thenReturn(Optional.of(playlistWithCursor(playlistId, null)));
 
-        // then
-        verify(aggregatePort).rotatePlayed(1L, 3, 5L);
+        List<PlaybackTrackDto> result = trackCommandService.peekTracksFromCursor(playlistId);
+
+        assertThat(result).extracting(PlaybackTrackDto::trackId).containsExactly(10L, 20L, 30L);
+    }
+
+    @Test
+    @DisplayName("peekTracksFromCursor — 커서=B(20) 다음부터 wrap (C,A,B)")
+    void peek_wrapsAfterCursor() {
+        Long playlistId = 1L;
+        PlaylistTrackDto a = new PlaylistTrackDto(10L, "a", "A", 1, Duration.fromString("3:00"), THUMBNAIL);
+        PlaylistTrackDto b = new PlaylistTrackDto(20L, "b", "B", 2, Duration.fromString("3:00"), THUMBNAIL);
+        PlaylistTrackDto c = new PlaylistTrackDto(30L, "c", "C", 3, Duration.fromString("3:00"), THUMBNAIL);
+        when(queryPort.getTracksWithPagination(eq(new PlaylistId(playlistId)), any(Pageable.class))).thenReturn(pageOf(a, b, c));
+        when(aggregatePort.findPlaylistById(playlistId)).thenReturn(Optional.of(playlistWithCursor(playlistId, 20L)));
+
+        List<PlaybackTrackDto> result = trackCommandService.peekTracksFromCursor(playlistId);
+
+        assertThat(result).extracting(PlaybackTrackDto::trackId).containsExactly(30L, 10L, 20L);
+    }
+
+    @Test
+    @DisplayName("peekTracksFromCursor — 커서 트랙이 목록에 없으면(삭제) 자연순서(top부터)")
+    void peek_deletedCursor_naturalOrder() {
+        Long playlistId = 1L;
+        PlaylistTrackDto a = new PlaylistTrackDto(10L, "a", "A", 1, Duration.fromString("3:00"), THUMBNAIL);
+        PlaylistTrackDto b = new PlaylistTrackDto(20L, "b", "B", 2, Duration.fromString("3:00"), THUMBNAIL);
+        when(queryPort.getTracksWithPagination(eq(new PlaylistId(playlistId)), any(Pageable.class))).thenReturn(pageOf(a, b));
+        when(aggregatePort.findPlaylistById(playlistId)).thenReturn(Optional.of(playlistWithCursor(playlistId, 999L)));
+
+        List<PlaybackTrackDto> result = trackCommandService.peekTracksFromCursor(playlistId);
+
+        assertThat(result).extracting(PlaybackTrackDto::trackId).containsExactly(10L, 20L);
+    }
+
+    // ========== advancePlaybackCursor ==========
+
+    @Test
+    @DisplayName("advancePlaybackCursor — aggregatePort.advancePlaybackCursor에 위임한다")
+    void advance_delegates() {
+        trackCommandService.advancePlaybackCursor(1L, 30L);
+        verify(aggregatePort).advancePlaybackCursor(1L, 30L);
     }
 }

@@ -15,6 +15,7 @@ import com.pfplaybackend.api.playlist.application.dto.command.UpdateTrackOrderCo
 import com.pfplaybackend.api.playlist.application.port.out.PlaylistQueryPort;
 import com.pfplaybackend.api.playlist.domain.entity.data.PlaylistData;
 import com.pfplaybackend.api.playlist.domain.entity.data.TrackData;
+import com.pfplaybackend.api.playlist.domain.enums.InsertPosition;
 import com.pfplaybackend.api.playlist.domain.event.TrackAddedEvent;
 import com.pfplaybackend.api.playlist.domain.event.TrackRemovedEvent;
 import com.pfplaybackend.api.playlist.domain.exception.PlaylistException;
@@ -22,13 +23,13 @@ import com.pfplaybackend.api.playlist.domain.exception.TrackException;
 import com.pfplaybackend.api.playlist.domain.port.PlaylistAggregatePort;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -46,6 +47,12 @@ public class TrackCommandService {
 
     @Transactional
     public Long addTrackInPlaylist(Long playlistId, AddTrackCommand command) {
+        // 명시적 곡 추가는 맨 위(order 1)로 — 다음 내 차례에 가장 먼저 재생되도록.
+        return insertTrack(playlistId, command, InsertPosition.HEAD);
+    }
+
+    @Transactional
+    public Long insertTrack(Long playlistId, AddTrackCommand command, InsertPosition position) {
         AuthContext authContext = ThreadLocalContext.getAuthContext();
         // 플레이리스트 접근 권한 검사
         PlaylistData playlistData = aggregatePort.findPlaylistByIdAndOwner(playlistId, authContext.getUserId())
@@ -57,14 +64,22 @@ public class TrackCommandService {
         PlaylistSummaryDto playlistSummary = playlistQueryService.getPlaylist(playlistId);
         if (playlistSummary.musicCount() >= MAX_PLAYLIST_TRACK_COUNT) throw ExceptionCreator.create(TrackException.EXCEEDED_TRACK_LIMIT);
 
-        long nextMusicOrderNumber = playlistSummary.musicCount() == 0 ? 1 : playlistSummary.musicCount() + 1;
+        int orderNumber;
+        if (position == InsertPosition.HEAD) {
+            // 기존 전체를 +1 밀고 신규 곡을 맨 위(1)로.
+            aggregatePort.shiftAllOrdersDown(playlistData.getId());
+            orderNumber = 1;
+        } else {
+            // TAIL — 기존 동작 보존 (grab 경로).
+            orderNumber = playlistSummary.musicCount() == 0 ? 1 : (int) (playlistSummary.musicCount() + 1);
+        }
 
         TrackData trackData = TrackData.builder()
                 .playlistId(new PlaylistId(playlistData.getId()))
                 .name(command.name())
                 .linkId(command.linkId())
                 .duration(Duration.fromString(command.duration()))
-                .orderNumber((int) nextMusicOrderNumber)
+                .orderNumber(orderNumber)
                 .thumbnailImage(command.thumbnailImage())
                 .build();
 
@@ -150,18 +165,42 @@ public class TrackCommandService {
         eventPublisher.publishEvent(new TrackRemovedEvent(new PlaylistId(playlistId), trackId, trackData.getLinkId(), trackData.getName()));
     }
 
+    /**
+     * 재생 커서(last_played_track_id) 다음 위치부터 wrap 정렬한 트랙 목록을 반환한다.
+     * 커서가 null이거나 가리키던 트랙이 목록에 없으면(삭제) 자연 순서(top부터)로 반환한다.
+     * 호출자(party)는 이 목록에서 첫 재생가능 곡을 고르고 {@link #advancePlaybackCursor}로 커서를 갱신한다.
+     */
     @Transactional(readOnly = true)
-    public List<PlaybackTrackDto> peekOrderedTracks(Long playlistId) {
+    public List<PlaybackTrackDto> peekTracksFromCursor(Long playlistId) {
         Pageable pageable = PageRequest.of(0, MAX_PLAYLIST_TRACK_COUNT, Sort.by(Sort.Direction.ASC, "orderNumber"));
-        Page<PlaylistTrackDto> page = queryPort.getTracksWithPagination(new PlaylistId(playlistId), pageable);
-        return page.getContent().stream()
-                .map(dto -> new PlaybackTrackDto(dto.linkId(), dto.name(),
-                        dto.thumbnailImage(), dto.duration(), dto.orderNumber()))
-                .toList();
+        List<PlaylistTrackDto> ordered = queryPort.getTracksWithPagination(new PlaylistId(playlistId), pageable).getContent();
+
+        Long cursor = aggregatePort.findPlaylistById(playlistId)
+                .map(PlaylistData::getLastPlayedTrackId)
+                .orElse(null);
+
+        int start = 0; // 커서 null 또는 미발견 → top(0)부터
+        if (cursor != null) {
+            for (int i = 0; i < ordered.size(); i++) {
+                if (cursor.equals(ordered.get(i).trackId())) {
+                    start = i + 1; // 커서 "다음"부터
+                    break;
+                }
+            }
+        }
+
+        int n = ordered.size();
+        List<PlaybackTrackDto> rotated = new ArrayList<>(n);
+        for (int k = 0; k < n; k++) {
+            PlaylistTrackDto dto = ordered.get((start + k) % n);
+            rotated.add(new PlaybackTrackDto(dto.trackId(), dto.linkId(), dto.name(),
+                    dto.thumbnailImage(), dto.duration(), dto.orderNumber()));
+        }
+        return rotated;
     }
 
     @Transactional
-    public void rotatePlayed(Long playlistId, int playedOrderNumber, long totalCount) {
-        aggregatePort.rotatePlayed(playlistId, playedOrderNumber, totalCount);
+    public void advancePlaybackCursor(Long playlistId, Long trackId) {
+        aggregatePort.advancePlaybackCursor(playlistId, trackId);
     }
 }
