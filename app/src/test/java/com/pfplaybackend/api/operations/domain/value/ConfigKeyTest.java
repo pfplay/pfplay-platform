@@ -50,7 +50,7 @@ class ConfigKeyTest {
 
     @Test
     void provides_well_known_constants() {
-        assertThat(ConfigKey.MAINTENANCE_ENABLED.value()).isEqualTo("maintenance.enabled");
-        assertThat(ConfigKey.MAINTENANCE_MESSAGE.value()).isEqualTo("maintenance.message");
+        assertThat(ConfigKey.PRESENCE_DJ_GRACE_SECONDS.value()).isEqualTo("presence.dj_grace_seconds");
+        assertThat(ConfigKey.PRESENCE_LISTENER_GRACE_SECONDS.value()).isEqualTo("presence.listener_grace_seconds");
     }
 }

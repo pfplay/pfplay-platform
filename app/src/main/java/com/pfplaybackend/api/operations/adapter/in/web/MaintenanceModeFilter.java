@@ -1,6 +1,6 @@
 package com.pfplaybackend.api.operations.adapter.in.web;
 
-import com.pfplaybackend.api.operations.application.service.SystemConfigCache;
+import com.pfplaybackend.api.operations.application.port.out.MaintenanceGate;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -30,17 +30,17 @@ public class MaintenanceModeFilter extends OncePerRequestFilter {
     );
     private static final AntPathMatcher MATCHER = new AntPathMatcher();
 
-    private final SystemConfigCache cache;
+    private final MaintenanceGate gate;
 
-    public MaintenanceModeFilter(SystemConfigCache cache) {
-        this.cache = cache;
+    public MaintenanceModeFilter(MaintenanceGate gate) {
+        this.gate = gate;
     }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain chain) throws ServletException, IOException {
-        if (isBypassed(request) || !cache.isMaintenanceMode()) {
+        if (isBypassed(request) || !gate.isUnderMaintenance()) {
             chain.doFilter(request, response);
             return;
         }
@@ -60,7 +60,7 @@ public class MaintenanceModeFilter extends OncePerRequestFilter {
     private void respond503(HttpServletResponse response) throws IOException {
         response.setStatus(HttpStatus.SERVICE_UNAVAILABLE.value());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE + ";charset=UTF-8");
-        String body = "{\"message\":" + jsonString(cache.getMaintenanceMessage()) + "}";
+        String body = "{\"message\":" + jsonString(gate.getMaintenanceMessage()) + "}";
         response.getWriter().write(body);
         response.getWriter().flush();
     }
