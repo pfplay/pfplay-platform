@@ -3,7 +3,6 @@ package com.pfplaybackend.api.party.application.service;
 import com.pfplaybackend.api.common.ThreadLocalContext;
 import com.pfplaybackend.api.common.aspect.context.AuthContext;
 import com.pfplaybackend.api.common.domain.value.UserId;
-import com.pfplaybackend.api.common.enums.AuthorityTier;
 import com.pfplaybackend.api.common.exception.ExceptionCreator;
 import com.pfplaybackend.api.party.application.dto.command.CreatePartyroomCommand;
 import com.pfplaybackend.api.party.application.dto.command.UpdateDjQueueStatusCommand;
@@ -111,12 +110,14 @@ public class PartyroomCommandService {
 
     @Transactional
     public void deletePartyRoom(PartyroomId partyroomId) {
+        // 권한 체크: host 본인만 삭제 가능. AuthorityTier 비대칭 fix —
+        // createGeneralPartyRoom 은 PartyroomCreationPolicy (FM || AM) 허용이지만
+        // 종전 deletePartyRoom 은 하드코딩 FM 만 허용해 AM 가 만든 룸을 본인이 종료 못 했음.
+        // updatePartyroom (line 105) 의 host validate 와 동일 패턴.
         AuthContext authContext = ThreadLocalContext.getAuthContext();
-        if (authContext.getAuthorityTier() != AuthorityTier.FM) {
-            throw ExceptionCreator.create(PartyroomException.RESTRICTED_AUTHORITY);
-        }
         PartyroomData partyroom = aggregatePort.findPartyroomById(partyroomId.getId())
                 .orElseThrow(() -> ExceptionCreator.create(PartyroomException.NOT_FOUND_ROOM));
+        partyroom.validateHost(authContext.getUserId());
         partyroom.terminate();
         aggregatePort.savePartyroom(partyroom);
         partyroom.pollDomainEvents().forEach(eventPublisher::publishEvent);
