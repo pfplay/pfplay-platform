@@ -229,18 +229,47 @@ class PartyroomCommandServiceTest {
     }
 
     @Test
-    @DisplayName("deletePartyRoom — FM이 아닌 사용자는 파티룸을 삭제할 수 없다")
-    void deletePartyRoomRestrictedAuthority() {
-        // given
-        AuthContext authContext = mock(AuthContext.class);
-        when(authContext.getAuthorityTier()).thenReturn(AuthorityTier.AM);
-        ThreadLocalContext.setContext(authContext);
-
+    @DisplayName("deletePartyRoom — host 가 아닌 사용자는 파티룸을 삭제할 수 없다 (validateHost)")
+    void deletePartyRoomNonHost() {
+        // given — partyroom 의 host 는 다른 사용자
         PartyroomId partyroomId = new PartyroomId(1L);
+        UserId otherHostId = new UserId(999L);
+        PartyroomData partyroom = PartyroomData.builder()
+                .id(1L).partyroomId(partyroomId).hostId(otherHostId).stageType(StageType.GENERAL)
+                .title("Room").introduction("Intro")
+                .linkDomain(LinkDomain.of("link")).playbackTimeLimit(PlaybackTimeLimit.ofMinutes(5))
+                .noticeContent("").status(PartyroomStatus.ACTIVE).build();
+        when(aggregatePort.findPartyroomById(1L)).thenReturn(Optional.of(partyroom));
 
         // when & then
         assertThatThrownBy(() -> partyroomCommandService.deletePartyRoom(partyroomId))
                 .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("deletePartyRoom — AM 권한 사용자도 본인 host 인 파티룸은 삭제 가능 (tier 비대칭 fix)")
+    void deletePartyRoomAsAmHost() {
+        // given — AuthContext 를 AM 으로 override (host 는 본인)
+        AuthContext authContext = mock(AuthContext.class);
+        when(authContext.getUserId()).thenReturn(userId);
+        // NOTE: deletePartyRoom 는 더이상 authorityTier 를 검사하지 않음 — validateHost 만 의존.
+        ThreadLocalContext.setContext(authContext);
+
+        PartyroomId partyroomId = new PartyroomId(1L);
+        PartyroomData partyroom = PartyroomData.builder()
+                .id(1L).partyroomId(partyroomId).hostId(userId).stageType(StageType.GENERAL)
+                .title("Room").introduction("Intro")
+                .linkDomain(LinkDomain.of("link")).playbackTimeLimit(PlaybackTimeLimit.ofMinutes(5))
+                .noticeContent("").status(PartyroomStatus.ACTIVE).build();
+        when(aggregatePort.findPartyroomById(1L)).thenReturn(Optional.of(partyroom));
+
+        // when
+        partyroomCommandService.deletePartyRoom(partyroomId);
+
+        // then
+        assertThat(partyroom.isTerminated()).isTrue();
+        verify(aggregatePort).savePartyroom(partyroom);
+        verify(eventPublisher, atLeastOnce()).publishEvent(any(Object.class));
     }
 
     // ========== deleteUnusedPartyroom ==========
