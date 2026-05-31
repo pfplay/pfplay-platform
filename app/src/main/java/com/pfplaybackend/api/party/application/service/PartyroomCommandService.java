@@ -118,6 +118,9 @@ public class PartyroomCommandService {
         PartyroomData partyroom = aggregatePort.findPartyroomById(partyroomId.getId())
                 .orElseThrow(() -> ExceptionCreator.create(PartyroomException.NOT_FOUND_ROOM));
         partyroom.validateHost(authContext.getUserId());
+        // #280 root-cause fix — MAIN 시스템 stage 는 host 본인 (super-admin) 이라도 종료 불가.
+        // super-admin 토큰 + DELETE /v1/partyrooms/1 footgun 차단.
+        partyroom.validateNotMainStage();
         partyroom.terminate();
         aggregatePort.savePartyroom(partyroom);
         partyroom.pollDomainEvents().forEach(eventPublisher::publishEvent);
@@ -146,13 +149,27 @@ public class PartyroomCommandService {
         aggregatePort.saveDjQueueState(djQueue);
     }
 
+    /**
+     * #280 안전망 — 부팅 시 MAIN 자동 복원.
+     * <p>termination 경로 3곳에 가드 추가 (root-cause fix) 한 위에 추가 layer 로,
+     * 어떤 식으로든 (수동 SQL / 과거 footgun row / 마이그레이션 사고) MAIN 이 비-ACTIVE
+     * 상태로 남아 있어도 다음 부팅에서 자동 ACTIVE 로 복원한다. manual SQL UPDATE 외 자동
+     * 복구 경로 0 이었던 상태 (이슈 #280) 를 해소.
+     */
+    @Transactional
     public void initializeMainStage(UserId adminId) {
         CreatePartyroomCommand command = new CreatePartyroomCommand(
                 "Main Stage",
                 "Welcome to the main stage",
                 "main",
                 10);
-        if (aggregatePort.findByLinkDomain(LinkDomain.of(command.linkDomain())).isPresent()) {
+        Optional<PartyroomData> existing = aggregatePort.findByLinkDomain(LinkDomain.of(command.linkDomain()));
+        if (existing.isPresent()) {
+            PartyroomData mainStage = existing.get();
+            if (!mainStage.isActive()) {
+                mainStage.reactivateAsMainStage();
+                aggregatePort.savePartyroom(mainStage);
+            }
             return;
         }
         createMainStage(command, adminId);
