@@ -213,6 +213,16 @@ class AdminPartyroomQueryRepositoryImplIT extends AbstractIntegrationTest {
                 new PartyroomId(roomId), null, new CrewId(crew.getId()), orderNumber));
     }
 
+    /** 주어진 봇 uid 를 해당 룸의 비활성(is_active=false) crew + DJ 로 배치 (stale 시나리오). */
+    private void placeInactiveBotDj(long roomId, long botUid, int orderNumber) {
+        CrewData crew = crewRepository.saveAndFlush(CrewData.create(
+                new PartyroomId(roomId), new UserId(botUid), GradeType.LISTENER, null));
+        crew.deactivatePresence();
+        crewRepository.saveAndFlush(crew);
+        djRepository.saveAndFlush(DjData.create(
+                new PartyroomId(roomId), null, new CrewId(crew.getId()), orderNumber));
+    }
+
     private void seedManagedConfig(long roomId, int targetCount) {
         PartyroomVirtualDjConfigData cfg = PartyroomVirtualDjConfigData.create(roomId);
         cfg.applyManaged(targetCount, 1, null);
@@ -279,6 +289,30 @@ class AdminPartyroomQueryRepositoryImplIT extends AbstractIntegrationTest {
         assertThat(row.virtualDj()).isNotNull();
         assertThat(row.virtualDj().status()).isEqualTo(VirtualDjStatus.MANAGED);
         assertThat(row.virtualDj().botDjCount()).isEqualTo(0L);
+    }
+
+    @Test
+    @DisplayName("비활성 crew 의 봇 DJ 는 botDjCount 에서 제외 (stale DJ 방어, canonical 정렬)")
+    void inactive_crew_bot_dj_not_counted() {
+        // 봇 계정 2개 준비: 한 명은 활성 crew, 한 명은 비활성(stale) crew.
+        seedBotAccount(7301L, "bot-7301@vdj-test.local");
+        seedBotAccount(7302L, "bot-7302@vdj-test.local");
+
+        PartyroomData room = seedRoom(aliceUid, "stale-bot-room", PartyroomStatus.ACTIVE);
+        long roomId = room.getId();
+        placeBotDj(roomId, 7301L, 1);           // is_active=true  → 집계 포함
+        placeInactiveBotDj(roomId, 7302L, 2);   // is_active=false → 집계 제외
+        seedManagedConfig(roomId, 2);
+
+        Page<AdminPartyroomListRow> result = queryRepository.findAdminList(
+                new AdminPartyroomListFilter(null, null, null, null, null),
+                PageRequest.of(0, 20));
+
+        AdminPartyroomListRow row = result.getContent().stream()
+                .filter(r -> r.partyroomId().equals(roomId))
+                .findFirst().orElseThrow();
+        assertThat(row.virtualDj()).isNotNull();
+        assertThat(row.virtualDj().botDjCount()).isEqualTo(1L);
     }
 
     @Test

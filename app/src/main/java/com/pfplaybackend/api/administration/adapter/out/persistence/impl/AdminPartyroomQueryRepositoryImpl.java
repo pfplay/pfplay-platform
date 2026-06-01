@@ -93,16 +93,18 @@ public class AdminPartyroomQueryRepositoryImpl implements AdminPartyroomQueryRep
                 .from(dj)
                 .where(dj.partyroomId.id.eq(p.id));
 
-        // 봇 DJ 카운트: DJ → CrewData(is_active 무관, snapshot 의미는 ActiveDjSnapshot 과 동일한
-        // crew_id 조인키) → user_account(is_dummy=true). DjData 에는 userId 가 없어 crew 를 경유한다.
-        // 조인키는 ActiveDjSnapshotQueryRepositoryImpl 의 canonical 조인을 그대로 미러링한다.
+        // 봇 DJ 카운트: DJ → CrewData(is_active=true 단언, stale DJ 방어) → user_account(is_dummy=true).
+        // DjData 에는 userId 가 없어 crew 를 경유한다.
+        // 조인키 + is_active 단언은 ActiveDjSnapshotQueryRepositoryImpl 의 canonical 패턴을 그대로 미러링한다.
         QDjData botDj = new QDjData("botDj");
         JPQLQuery<Long> botDjCountSubquery = JPAExpressions
                 .select(botDj.count())
                 .from(botDj)
                 .join(botCrew).on(botCrew.id.eq(botDj.crewId.id))
                 .join(botUa).on(botUa.userId.uid.eq(botCrew.userId.uid))
-                .where(botDj.partyroomId.id.eq(p.id).and(botUa.isDummy.isTrue()));
+                .where(botDj.partyroomId.id.eq(p.id)
+                        .and(botCrew.isActive.isTrue())
+                        .and(botUa.isDummy.isTrue()));
 
         BooleanBuilder where = buildPredicates(filter, p, ua, nicknameLikeExpr);
 
