@@ -1,7 +1,10 @@
 package com.pfplaybackend.api.virtualdj.adapter.out.persistence.impl;
 
 import com.pfplaybackend.api.common.domain.value.UserId;
+import com.pfplaybackend.api.party.domain.enums.PartyroomStatus;
 import com.pfplaybackend.api.virtualdj.adapter.out.persistence.BotPoolQueryRepository;
+import com.pfplaybackend.api.virtualdj.application.dto.PoolPlacementRow;
+import com.querydsl.core.Tuple;
 import com.querydsl.jpa.JPAExpressions;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import lombok.RequiredArgsConstructor;
@@ -11,6 +14,7 @@ import java.util.Collections;
 import java.util.List;
 
 import static com.pfplaybackend.api.party.domain.entity.data.QCrewData.crewData;
+import static com.pfplaybackend.api.party.domain.entity.data.QPartyroomData.partyroomData;
 import static com.pfplaybackend.api.user.domain.entity.data.QUserAccountData.userAccountData;
 
 /**
@@ -48,5 +52,61 @@ public class BotPoolQueryRepositoryImpl implements BotPoolQueryRepository {
                 .fetch();
 
         return uids.stream().map(UserId::new).toList();
+    }
+
+    @Override
+    public long countBots() {
+        Long count = queryFactory
+                .select(userAccountData.count())
+                .from(userAccountData)
+                .where(
+                        userAccountData.isDummy.isTrue(),
+                        userAccountData.withdrawnAt.isNull())
+                .fetchOne();
+        return count == null ? 0L : count;
+    }
+
+    @Override
+    public long countIdleBots() {
+        Long count = queryFactory
+                .select(userAccountData.count())
+                .from(userAccountData)
+                .where(
+                        userAccountData.isDummy.isTrue(),
+                        userAccountData.withdrawnAt.isNull(),
+                        JPAExpressions.selectOne()
+                                .from(crewData)
+                                .where(crewData.userId.uid.eq(userAccountData.userId.uid)
+                                        .and(crewData.isActive.isTrue()))
+                                .notExists())
+                .fetchOne();
+        return count == null ? 0L : count;
+    }
+
+    @Override
+    public List<PoolPlacementRow> findPlacements() {
+        List<Tuple> tuples = queryFactory
+                .select(
+                        partyroomData.id,
+                        partyroomData.title,
+                        crewData.count())
+                .from(crewData)
+                .join(userAccountData).on(userAccountData.userId.uid.eq(crewData.userId.uid))
+                .join(partyroomData).on(partyroomData.id.eq(crewData.partyroomId.id))
+                .where(
+                        crewData.isActive.isTrue(),
+                        userAccountData.isDummy.isTrue(),
+                        userAccountData.withdrawnAt.isNull(),
+                        partyroomData.status.eq(PartyroomStatus.ACTIVE))
+                .groupBy(partyroomData.id, partyroomData.title)
+                .orderBy(crewData.count().desc())
+                .fetch();
+
+        return tuples.stream()
+                .map(t -> new PoolPlacementRow(
+                        t.get(partyroomData.id),
+                        t.get(partyroomData.title),
+                        t.get(crewData.count()) == null ? 0L : t.get(crewData.count())))
+                .toList();
     }
 }

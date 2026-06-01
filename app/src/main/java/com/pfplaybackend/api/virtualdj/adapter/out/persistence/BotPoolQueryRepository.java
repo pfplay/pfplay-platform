@@ -1,6 +1,7 @@
 package com.pfplaybackend.api.virtualdj.adapter.out.persistence;
 
 import com.pfplaybackend.api.common.domain.value.UserId;
+import com.pfplaybackend.api.virtualdj.application.dto.PoolPlacementRow;
 
 import java.util.List;
 
@@ -17,4 +18,21 @@ public interface BotPoolQueryRepository {
      * 탈퇴(withdrawn) 계정은 제외한다. {@code limit <= 0} 이면 빈 리스트.
      */
     List<UserId> findIdleBotUserIds(int limit);
+
+    /**
+     * 탈퇴하지 않은 봇 계정(is_dummy=true, withdrawn_at IS NULL) 전체 수를 반환한다.
+     */
+    long countBots();
+
+    /**
+     * 활성 crew 가 없는(=어느 방에도 배치되지 않은) idle 봇 수를 반환한다.
+     * 탈퇴 계정은 제외한다.
+     */
+    long countIdleBots();
+
+    /**
+     * 현재 활성 crew 로 배치된 봇을 파티룸 별로 집계해 반환한다.
+     * 봇이 배치된 파티룸만 포함된다(botCount > 0 보장).
+     */
+    List<PoolPlacementRow> findPlacements();
 }

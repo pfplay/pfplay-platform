@@ -17,6 +17,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 송 팩(VirtualSongPack) CRUD 서비스.
@@ -42,6 +44,52 @@ public class VirtualSongPackService {
     private final VirtualSongPackTrackRepository trackRepository;
     private final PartyroomVirtualDjConfigRepository configRepository;
     private final PlaylistRepository playlistRepository;
+
+    // ── 서비스 내부 타입 ──
+
+    /**
+     * 송 팩 목록 아이템 — 트랙 수 포함.
+     */
+    public record PackListItem(Long id, String name, String description, long trackCount) {}
+
+    /**
+     * 송 팩 상세 — 트랙 목록 포함.
+     */
+    public record PackDetail(Long id, String name, String description, List<PackTrack> tracks) {
+        public record PackTrack(Long trackId, String name, String linkId, String duration, String thumbnailImage) {}
+    }
+
+    // ── 읽기 ──
+
+    /**
+     * 전체 송 팩 목록 (트랙 수 포함, N+1 없음).
+     */
+    @Transactional(readOnly = true)
+    public List<PackListItem> listPacks() {
+        List<VirtualSongPackData> packs = packRepository.findAll();
+        Map<Long, Long> countByPackId = trackRepository.countGroupBySongPackId().stream()
+                .collect(Collectors.toMap(
+                        VirtualSongPackTrackRepository.TrackCountView::getPackId,
+                        VirtualSongPackTrackRepository.TrackCountView::getCnt));
+        return packs.stream()
+                .map(p -> new PackListItem(p.getId(), p.getName(), p.getDescription(),
+                        countByPackId.getOrDefault(p.getId(), 0L)))
+                .toList();
+    }
+
+    /**
+     * 단일 송 팩 상세 — 트랙 목록(orderNumber 오름차순) 포함.
+     */
+    @Transactional(readOnly = true)
+    public PackDetail getPack(Long packId) {
+        VirtualSongPackData pack = packRepository.findById(packId)
+                .orElseThrow(() -> ExceptionCreator.create(VirtualDjException.SONG_PACK_NOT_FOUND));
+        List<PackDetail.PackTrack> tracks = trackRepository.findBySongPackIdOrderByOrderNumberAsc(packId).stream()
+                .map(t -> new PackDetail.PackTrack(t.getId(), t.getName(), t.getLinkId(),
+                        t.getDuration(), t.getThumbnailImage()))
+                .toList();
+        return new PackDetail(pack.getId(), pack.getName(), pack.getDescription(), tracks);
+    }
 
     // ── Pack CRUD ──
 

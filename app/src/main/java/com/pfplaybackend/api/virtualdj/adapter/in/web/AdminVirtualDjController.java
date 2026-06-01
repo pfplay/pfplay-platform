@@ -2,13 +2,18 @@ package com.pfplaybackend.api.virtualdj.adapter.in.web;
 
 import com.pfplaybackend.api.common.ApiCommonResponse;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
+import com.pfplaybackend.api.playlist.adapter.in.web.payload.response.QueryMusicSearchResponse;
+import com.pfplaybackend.api.playlist.application.service.search.MusicSearchService;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.AddPackTrackRequest;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.ApplyVirtualDjConfigRequest;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.BulkApplyVirtualDjConfigRequest;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.CreateSongPackRequest;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.CreatedIdResponse;
+import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.PoolSummaryResponse;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.ProvisionPoolRequest;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.RenameSongPackRequest;
+import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.SongPackDetailResponse;
+import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.SongPackListItemResponse;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.VirtualDjLiveStatusResponse;
 import com.pfplaybackend.api.virtualdj.application.service.VirtualDjAdminService;
 import com.pfplaybackend.api.virtualdj.application.service.VirtualSongPackService;
@@ -17,6 +22,7 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -27,6 +33,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -45,8 +52,29 @@ public class AdminVirtualDjController {
 
     private final VirtualDjAdminService adminService;
     private final VirtualSongPackService songPackService;
+    private final MusicSearchService musicSearchService;
+
+    // ── 음악 검색 (어드민 프록시) ──
+
+    @Operation(summary = "어드민 음악 검색 (송팩 빌더용)",
+            description = "회원전용 /music-search 와 동일 서비스, 어드민 인증 경로")
+    @SecurityRequirement(name = "cookieAuth")
+    @PreAuthorize("@adminAuth.canManageVirtualDj()")
+    @GetMapping("/virtual-dj/music-search")
+    public ResponseEntity<ApiCommonResponse<QueryMusicSearchResponse>> searchMusic(@RequestParam("q") String q) {
+        return ResponseEntity.ok(ApiCommonResponse.success(
+                QueryMusicSearchResponse.from(musicSearchService.getSearchList(q))));
+    }
 
     // ── 봇 풀 ──
+
+    @Operation(summary = "봇 풀 요약 조회")
+    @SecurityRequirement(name = "cookieAuth")
+    @PreAuthorize("@adminAuth.canManageVirtualDj()")
+    @GetMapping("/virtual-dj/pool")
+    public ResponseEntity<ApiCommonResponse<PoolSummaryResponse>> poolSummary() {
+        return ResponseEntity.ok(ApiCommonResponse.success(PoolSummaryResponse.from(adminService.poolSummary())));
+    }
 
     @Operation(summary = "봇 풀 프로비저닝")
     @SecurityRequirement(name = "cookieAuth")
@@ -59,6 +87,27 @@ public class AdminVirtualDjController {
     }
 
     // ── 송 팩 CRUD ──
+
+    @Operation(summary = "송 팩 목록 조회", description = "전체 송 팩 목록 (트랙 수 포함)")
+    @SecurityRequirement(name = "cookieAuth")
+    @PreAuthorize("@adminAuth.canManageVirtualDj()")
+    @GetMapping("/virtual-dj/song-packs")
+    public ResponseEntity<ApiCommonResponse<List<SongPackListItemResponse>>> listSongPacks() {
+        List<SongPackListItemResponse> items = songPackService.listPacks().stream()
+                .map(SongPackListItemResponse::from)
+                .toList();
+        return ResponseEntity.ok(ApiCommonResponse.success(items));
+    }
+
+    @Operation(summary = "송 팩 상세 조회", description = "트랙 목록(orderNumber 오름차순) 포함")
+    @SecurityRequirement(name = "cookieAuth")
+    @PreAuthorize("@adminAuth.canManageVirtualDj()")
+    @GetMapping("/virtual-dj/song-packs/{id}")
+    public ResponseEntity<ApiCommonResponse<SongPackDetailResponse>> getSongPack(
+            @PathVariable("id") Long id) {
+        return ResponseEntity.ok(ApiCommonResponse.success(
+                SongPackDetailResponse.from(songPackService.getPack(id))));
+    }
 
     @Operation(summary = "송 팩 생성")
     @SecurityRequirement(name = "cookieAuth")
