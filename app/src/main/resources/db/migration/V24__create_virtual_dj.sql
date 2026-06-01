@@ -39,7 +39,7 @@ CREATE TABLE virtual_song_pack_track (
 
 CREATE TABLE partyroom_virtual_dj_config (
     partyroom_id     BIGINT UNSIGNED NOT NULL,
-    status           VARCHAR(16)     NOT NULL DEFAULT 'OFF' COMMENT 'OFF/MANAGED/FROZEN',
+    status           ENUM('OFF','MANAGED','FROZEN') NOT NULL DEFAULT 'OFF' COMMENT 'OFF/MANAGED/FROZEN',
     target_count     INT UNSIGNED    NOT NULL DEFAULT 2,
     companion_floor  INT UNSIGNED    NOT NULL DEFAULT 1,
     song_pack_id     BIGINT UNSIGNED NULL,

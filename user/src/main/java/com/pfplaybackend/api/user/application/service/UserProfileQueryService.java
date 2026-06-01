@@ -74,15 +74,15 @@ public class UserProfileQueryService {
         return new ProfileSummary(
                 profileData.getNicknameValue(),
                 profileData.getIntroduction(),
-                avatar.getAvatarBodyUri().getValue(),
+                avatar.getAvatarBodyUriValue(),
                 avatar.getAvatarCompositionType(),
                 avatar.getCombinePositionX(),
                 avatar.getCombinePositionY(),
                 avatar.getOffsetX(),
                 avatar.getOffsetY(),
                 avatar.getScale(),
-                avatar.getAvatarFaceUri().getValue(),
-                avatar.getAvatarIconUri().getValue(),
+                avatar.getAvatarFaceUriValue(),
+                avatar.getAvatarIconUriValue(),
                 profileData.getWalletAddress() != null ? profileData.getWalletAddress().getValue() : null,
                 activities
         );
@@ -129,9 +129,9 @@ public class UserProfileQueryService {
         return new ProfileSettingDto(
                 profileData.getNicknameValue(),
                 avatar.getAvatarCompositionType(),
-                avatar.getAvatarBodyUri().getValue(),
-                avatar.getAvatarFaceUri().getValue(),
-                avatar.getAvatarIconUri().getValue(),
+                avatar.getAvatarBodyUriValue(),
+                avatar.getAvatarFaceUriValue(),
+                avatar.getAvatarIconUriValue(),
                 avatar.getCombinePositionX(),
                 avatar.getCombinePositionY(),
                 avatar.getOffsetX(),
