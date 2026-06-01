@@ -53,6 +53,10 @@ public class AdminAuthorizationSpEL {
         return isSuperAdmin();
     }
 
+    public boolean canManageVirtualDj() {
+        return isAdmin();
+    }
+
     private boolean hasAuthority(String authority) {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth == null || !auth.isAuthenticated()) return false;
