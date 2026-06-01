@@ -1,5 +1,6 @@
 package com.pfplaybackend.api.administration.application.dto;
 
+import com.pfplaybackend.api.administration.adapter.in.web.payload.response.AdminPartyroomListItemResponse.VirtualDjSummary;
 import com.pfplaybackend.api.party.domain.enums.DisplayFlag;
 import com.pfplaybackend.api.party.domain.enums.PartyroomStatus;
 import com.pfplaybackend.api.party.domain.enums.StageType;
@@ -14,6 +15,8 @@ import java.time.LocalDateTime;
  *
  * {@code playbackActivated} may be null if no PARTYROOM_PLAYBACK row exists yet.
  * {@code hostNickname} may be null if the host's profile is not yet initialized.
+ * {@code virtualDj} (P2 Task 2.2) is null when the room has no
+ * {@code partyroom_virtual_dj_config} row.
  */
 public record AdminPartyroomListRow(
         Long partyroomId,
@@ -27,5 +30,6 @@ public record AdminPartyroomListRow(
         PartyroomStatus status,
         DisplayFlag displayFlag,
         LocalDateTime createdAt,
-        LocalDateTime lastActivityAt
+        LocalDateTime lastActivityAt,
+        VirtualDjSummary virtualDj
 ) {}

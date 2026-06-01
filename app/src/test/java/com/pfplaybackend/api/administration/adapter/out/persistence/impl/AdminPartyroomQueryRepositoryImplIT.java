@@ -3,13 +3,21 @@ package com.pfplaybackend.api.administration.adapter.out.persistence.impl;
 import com.pfplaybackend.api.administration.adapter.out.persistence.AdminPartyroomQueryRepository;
 import com.pfplaybackend.api.administration.application.dto.AdminPartyroomListFilter;
 import com.pfplaybackend.api.administration.application.dto.AdminPartyroomListRow;
+import com.pfplaybackend.api.administration.adapter.in.web.payload.response.AdminPartyroomListItemResponse.VirtualDjSummary;
 import com.pfplaybackend.api.common.AbstractIntegrationTest;
 import com.pfplaybackend.api.common.domain.value.UserId;
+import com.pfplaybackend.api.party.adapter.out.persistence.CrewRepository;
+import com.pfplaybackend.api.party.adapter.out.persistence.DjRepository;
 import com.pfplaybackend.api.party.adapter.out.persistence.PartyroomRepository;
+import com.pfplaybackend.api.party.domain.entity.data.CrewData;
+import com.pfplaybackend.api.party.domain.entity.data.DjData;
 import com.pfplaybackend.api.party.domain.entity.data.PartyroomData;
+import com.pfplaybackend.api.party.domain.enums.GradeType;
 import com.pfplaybackend.api.party.domain.enums.PartyroomStatus;
 import com.pfplaybackend.api.party.domain.enums.StageType;
+import com.pfplaybackend.api.party.domain.value.CrewId;
 import com.pfplaybackend.api.party.domain.value.LinkDomain;
+import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import com.pfplaybackend.api.party.domain.value.PlaybackTimeLimit;
 import com.pfplaybackend.api.user.adapter.out.persistence.MemberRepository;
 import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
@@ -17,6 +25,9 @@ import com.pfplaybackend.api.user.domain.entity.data.MemberData;
 import com.pfplaybackend.api.user.domain.entity.data.ProfileData;
 import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
 import com.pfplaybackend.api.user.domain.value.Nickname;
+import com.pfplaybackend.api.virtualdj.adapter.out.persistence.PartyroomVirtualDjConfigRepository;
+import com.pfplaybackend.api.virtualdj.domain.entity.data.PartyroomVirtualDjConfigData;
+import com.pfplaybackend.api.virtualdj.domain.enums.VirtualDjStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -35,6 +46,9 @@ class AdminPartyroomQueryRepositoryImplIT extends AbstractIntegrationTest {
     @Autowired private PartyroomRepository partyroomRepository;
     @Autowired private UserAccountRepository userAccountRepository;
     @Autowired private MemberRepository memberRepository;
+    @Autowired private CrewRepository crewRepository;
+    @Autowired private DjRepository djRepository;
+    @Autowired private PartyroomVirtualDjConfigRepository virtualDjConfigRepository;
 
     private Long aliceUid;
     private Long bobUid;
@@ -178,6 +192,93 @@ class AdminPartyroomQueryRepositoryImplIT extends AbstractIntegrationTest {
                 .orElseThrow();
         assertThat(noProfileRow.title()).isEqualTo("no-profile-room");
         assertThat(noProfileRow.hostNickname()).isNull();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // P2 Task 2.2 — 가상 DJ 요약 조인 (어드민 전용, additive)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /** is_dummy 봇 계정 시드. */
+    private void seedBotAccount(long uid, String email) {
+        UserAccountData account = UserAccountData.createForLocal(new UserId(uid), email, "hash");
+        account.markAsDummy();
+        userAccountRepository.saveAndFlush(account);
+    }
+
+    /** 주어진 봇 uid 를 해당 룸의 활성 crew + DJ 로 배치. */
+    private void placeBotDj(long roomId, long botUid, int orderNumber) {
+        CrewData crew = crewRepository.saveAndFlush(CrewData.create(
+                new PartyroomId(roomId), new UserId(botUid), GradeType.LISTENER, null));
+        djRepository.saveAndFlush(DjData.create(
+                new PartyroomId(roomId), null, new CrewId(crew.getId()), orderNumber));
+    }
+
+    private void seedManagedConfig(long roomId, int targetCount) {
+        PartyroomVirtualDjConfigData cfg = PartyroomVirtualDjConfigData.create(roomId);
+        cfg.applyManaged(targetCount, 1, null);
+        virtualDjConfigRepository.saveAndFlush(cfg);
+    }
+
+    @Test
+    @DisplayName("가상DJ config(MANAGED) + 봇 DJ 2명 → virtualDj.status=MANAGED, botDjCount=2")
+    void virtual_dj_summary_with_managed_config_and_two_bots() {
+        seedBotAccount(7201L, "bot-7201@vdj-test.local");
+        seedBotAccount(7202L, "bot-7202@vdj-test.local");
+
+        PartyroomData room = seedRoom(aliceUid, "managed-room", PartyroomStatus.ACTIVE);
+        long roomId = room.getId();
+        placeBotDj(roomId, 7201L, 1);
+        placeBotDj(roomId, 7202L, 2);
+        seedManagedConfig(roomId, 3);
+
+        Page<AdminPartyroomListRow> result = queryRepository.findAdminList(
+                new AdminPartyroomListFilter(null, null, null, null, null),
+                PageRequest.of(0, 20));
+
+        AdminPartyroomListRow row = result.getContent().stream()
+                .filter(r -> r.partyroomId().equals(roomId))
+                .findFirst().orElseThrow();
+        VirtualDjSummary vdj = row.virtualDj();
+        assertThat(vdj).isNotNull();
+        assertThat(vdj.status()).isEqualTo(VirtualDjStatus.MANAGED);
+        assertThat(vdj.targetCount()).isEqualTo(3);
+        assertThat(vdj.botDjCount()).isEqualTo(2L);
+    }
+
+    @Test
+    @DisplayName("가상DJ config 없는 룸 → virtualDj=null")
+    void virtual_dj_summary_null_without_config() {
+        PartyroomData room = seedRoom(aliceUid, "no-config-room", PartyroomStatus.ACTIVE);
+
+        Page<AdminPartyroomListRow> result = queryRepository.findAdminList(
+                new AdminPartyroomListFilter(null, null, null, null, null),
+                PageRequest.of(0, 20));
+
+        AdminPartyroomListRow row = result.getContent().stream()
+                .filter(r -> r.partyroomId().equals(room.getId()))
+                .findFirst().orElseThrow();
+        assertThat(row.virtualDj()).isNull();
+    }
+
+    @Test
+    @DisplayName("봇 DJ 가 없는 MANAGED config → botDjCount=0 (사람 DJ 는 봇으로 집계 안 됨)")
+    void virtual_dj_summary_human_dj_not_counted_as_bot() {
+        // alice(사람 host) 를 같은 룸의 DJ 로 배치 — is_dummy=false 이므로 botDjCount 에서 제외돼야 함.
+        PartyroomData room = seedRoom(aliceUid, "human-dj-room", PartyroomStatus.ACTIVE);
+        long roomId = room.getId();
+        placeBotDj(roomId, aliceUid, 1); // aliceUid 는 봇이 아님(일반 host 계정)
+        seedManagedConfig(roomId, 2);
+
+        Page<AdminPartyroomListRow> result = queryRepository.findAdminList(
+                new AdminPartyroomListFilter(null, null, null, null, null),
+                PageRequest.of(0, 20));
+
+        AdminPartyroomListRow row = result.getContent().stream()
+                .filter(r -> r.partyroomId().equals(roomId))
+                .findFirst().orElseThrow();
+        assertThat(row.virtualDj()).isNotNull();
+        assertThat(row.virtualDj().status()).isEqualTo(VirtualDjStatus.MANAGED);
+        assertThat(row.virtualDj().botDjCount()).isEqualTo(0L);
     }
 
     @Test
