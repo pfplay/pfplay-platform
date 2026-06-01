@@ -2,6 +2,8 @@ package com.pfplaybackend.api.virtualdj.adapter.in.web;
 
 import com.pfplaybackend.api.common.ApiCommonResponse;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
+import com.pfplaybackend.api.playlist.adapter.in.web.payload.response.QueryMusicSearchResponse;
+import com.pfplaybackend.api.playlist.application.service.search.MusicSearchService;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.AddPackTrackRequest;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.ApplyVirtualDjConfigRequest;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.BulkApplyVirtualDjConfigRequest;
@@ -31,6 +33,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -49,6 +52,19 @@ public class AdminVirtualDjController {
 
     private final VirtualDjAdminService adminService;
     private final VirtualSongPackService songPackService;
+    private final MusicSearchService musicSearchService;
+
+    // ── 음악 검색 (어드민 프록시) ──
+
+    @Operation(summary = "어드민 음악 검색 (송팩 빌더용)",
+            description = "회원전용 /music-search 와 동일 서비스, 어드민 인증 경로")
+    @SecurityRequirement(name = "cookieAuth")
+    @PreAuthorize("@adminAuth.canManageVirtualDj()")
+    @GetMapping("/virtual-dj/music-search")
+    public ResponseEntity<ApiCommonResponse<QueryMusicSearchResponse>> searchMusic(@RequestParam("q") String q) {
+        return ResponseEntity.ok(ApiCommonResponse.success(
+                QueryMusicSearchResponse.from(musicSearchService.getSearchList(q))));
+    }
 
     // ── 봇 풀 ──
 

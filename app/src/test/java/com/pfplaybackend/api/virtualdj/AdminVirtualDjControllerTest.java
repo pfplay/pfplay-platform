@@ -7,6 +7,9 @@ import com.pfplaybackend.api.common.config.security.jwt.SharedSessionCookieWrite
 import com.pfplaybackend.api.common.config.security.jwt.properties.JwtProperties;
 import com.pfplaybackend.api.common.exception.ExceptionCreator;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
+import com.pfplaybackend.api.playlist.application.dto.search.SearchResultDto;
+import com.pfplaybackend.api.playlist.application.dto.search.SearchResultRawDto;
+import com.pfplaybackend.api.playlist.application.service.search.MusicSearchService;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.AdminVirtualDjController;
 import com.pfplaybackend.api.virtualdj.application.service.VirtualDjAdminService;
 import com.pfplaybackend.api.virtualdj.application.service.VirtualSongPackService;
@@ -73,6 +76,7 @@ class AdminVirtualDjControllerTest {
     @Autowired private MockMvc mockMvc;
     @MockBean private VirtualDjAdminService adminService;
     @MockBean private VirtualSongPackService songPackService;
+    @MockBean private MusicSearchService musicSearchService;
 
     // SecurityConfig autoconfig deps — @MockBean shims so the slice context loads.
     @MockBean private JwtDecoder jwtDecoder;
@@ -421,6 +425,40 @@ class AdminVirtualDjControllerTest {
     @WithAnonymousUser
     void getSongPack_anonymous_returns401() throws Exception {
         mockMvc.perform(get("/api/v1/admin/virtual-dj/song-packs/5"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    // ── music-search 프록시 ──
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void searchMusic_admin_returns200WithBody() throws Exception {
+        SearchResultDto stub = new SearchResultDto("ok", List.of(
+                new SearchResultRawDto("dQw4w9WgXcQ", "Rick Astley - Never Gonna Give You Up",
+                        "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "3:33",
+                        "https://i.ytimg.com/vi/dQw4w9WgXcQ/default.jpg")));
+        given(musicSearchService.getSearchList("foo")).willReturn(stub);
+
+        mockMvc.perform(get("/api/v1/admin/virtual-dj/music-search").param("q", "foo"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.musicList[0].videoId").value("dQw4w9WgXcQ"))
+                .andExpect(jsonPath("$.data.musicList[0].videoTitle").value("Rick Astley - Never Gonna Give You Up"))
+                .andExpect(jsonPath("$.data.musicList[0].runningTime").value("3:33"))
+                .andExpect(jsonPath("$.data.musicList[0].thumbnailUrl").value("https://i.ytimg.com/vi/dQw4w9WgXcQ/default.jpg"));
+        verify(musicSearchService).getSearchList("foo");
+    }
+
+    @Test
+    @WithMockUser(roles = "MEMBER")
+    void searchMusic_member_returns403() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/virtual-dj/music-search").param("q", "foo"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithAnonymousUser
+    void searchMusic_anonymous_returns401() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/virtual-dj/music-search").param("q", "foo"))
                 .andExpect(status().isUnauthorized());
     }
 
