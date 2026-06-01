@@ -2,7 +2,6 @@ package com.pfplaybackend.api.virtualdj.application.service;
 
 import com.pfplaybackend.api.common.exception.ExceptionCreator;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
-import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.PoolSummaryResponse;
 import com.pfplaybackend.api.virtualdj.adapter.out.persistence.BotPoolQueryRepository;
 import com.pfplaybackend.api.virtualdj.adapter.out.persistence.PartyroomVirtualDjConfigRepository;
 import com.pfplaybackend.api.virtualdj.application.dto.PoolPlacementRow;
@@ -60,13 +59,13 @@ public class VirtualDjAdminService {
 
     /** 봇 풀 전체 요약 — 전체/idle 수 + 파티룸별 배치 현황. */
     @Transactional(readOnly = true)
-    public PoolSummaryResponse poolSummary() {
+    public PoolSummary poolSummary() {
         long total = botPoolQueryRepository.countBots();
         long idle = botPoolQueryRepository.countIdleBots();
-        List<PoolSummaryResponse.Placement> placed = botPoolQueryRepository.findPlacements().stream()
-                .map(row -> new PoolSummaryResponse.Placement(row.partyroomId(), row.partyroomTitle(), row.botCount()))
+        List<PoolSummary.Placement> placed = botPoolQueryRepository.findPlacements().stream()
+                .map(row -> new PoolSummary.Placement(row.partyroomId(), row.partyroomTitle(), row.botCount()))
                 .toList();
-        return new PoolSummaryResponse(total, idle, placed);
+        return new PoolSummary(total, idle, placed);
     }
 
     // ── per-room config ──
@@ -181,4 +180,16 @@ public class VirtualDjAdminService {
      */
     public record LiveStatus(VirtualDjStatus status, Integer targetCount, Integer companionFloor,
                              Long songPackId, int currentBotDjCount) {}
+
+    /**
+     * 봇 풀 전체 요약.
+     *
+     * @param total  전체 봇 수
+     * @param idle   idle 봇 수
+     * @param placed 파티룸별 배치 현황
+     */
+    public record PoolSummary(long total, long idle, List<Placement> placed) {
+        /** 파티룸 1곳의 봇 배치 현황. */
+        public record Placement(Long partyroomId, String partyroomTitle, long botCount) {}
+    }
 }

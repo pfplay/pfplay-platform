@@ -7,7 +7,6 @@ import com.pfplaybackend.api.common.config.security.jwt.SharedSessionCookieWrite
 import com.pfplaybackend.api.common.config.security.jwt.properties.JwtProperties;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.AdminVirtualDjController;
-import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.PoolSummaryResponse;
 import com.pfplaybackend.api.virtualdj.application.service.VirtualDjAdminService;
 import com.pfplaybackend.api.virtualdj.application.service.VirtualSongPackService;
 import com.pfplaybackend.api.virtualdj.domain.enums.VirtualDjStatus;
@@ -25,6 +24,11 @@ import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.List;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
@@ -32,6 +36,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -126,7 +131,7 @@ class AdminVirtualDjControllerTest {
     @Test
     @WithMockUser(roles = "ADMIN")
     void createSongPack_admin_returns201() throws Exception {
-        org.mockito.BDDMockito.given(songPackService.createPack("Pack", "desc")).willReturn(10L);
+        given(songPackService.createPack("Pack", "desc")).willReturn(10L);
         mockMvc.perform(post("/api/v1/admin/virtual-dj/song-packs")
                         .with(csrf()).contentType(APPLICATION_JSON)
                         .content("""
@@ -170,15 +175,14 @@ class AdminVirtualDjControllerTest {
     @Test
     @WithMockUser(roles = "ADMIN")
     void addSongPackTrack_admin_returns201() throws Exception {
-        org.mockito.BDDMockito.given(songPackService.addTrack(org.mockito.ArgumentMatchers.eq(3L),
-                org.mockito.ArgumentMatchers.any())).willReturn(99L);
+        given(songPackService.addTrack(eq(3L), any())).willReturn(99L);
         mockMvc.perform(post("/api/v1/admin/virtual-dj/song-packs/3/tracks")
                         .with(csrf()).contentType(APPLICATION_JSON)
                         .content("""
                                 {"name":"Song","linkId":"vid1","duration":"3:00","thumbnailImage":null}
                                 """))
                 .andExpect(status().isCreated());
-        verify(songPackService).addTrack(org.mockito.ArgumentMatchers.eq(3L), org.mockito.ArgumentMatchers.any());
+        verify(songPackService).addTrack(eq(3L), any());
     }
 
     @Test
@@ -262,7 +266,7 @@ class AdminVirtualDjControllerTest {
     @Test
     @WithMockUser(roles = "ADMIN")
     void liveStatus_admin_returns200() throws Exception {
-        org.mockito.BDDMockito.given(adminService.liveStatus(new PartyroomId(7L)))
+        given(adminService.liveStatus(new PartyroomId(7L)))
                 .willReturn(new VirtualDjAdminService.LiveStatus(VirtualDjStatus.MANAGED, 2, 1, 5L, 2));
         mockMvc.perform(get("/api/v1/admin/partyrooms/7/virtual-dj"))
                 .andExpect(status().isOk());
@@ -280,7 +284,7 @@ class AdminVirtualDjControllerTest {
                                 {"partyroomIds":[1,2,3],"status":"MANAGED","targetCount":2,"companionFloor":1,"songPackId":5}
                                 """))
                 .andExpect(status().isNoContent());
-        verify(adminService).applyBulk(java.util.List.of(1L, 2L, 3L), VirtualDjStatus.MANAGED, 2, 1, 5L);
+        verify(adminService).applyBulk(List.of(1L, 2L, 3L), VirtualDjStatus.MANAGED, 2, 1, 5L);
     }
 
     @Test
@@ -310,17 +314,17 @@ class AdminVirtualDjControllerTest {
     @Test
     @WithMockUser(roles = "ADMIN")
     void poolSummary_admin_returns200WithBody() throws Exception {
-        org.mockito.BDDMockito.given(adminService.poolSummary())
-                .willReturn(new PoolSummaryResponse(
+        given(adminService.poolSummary())
+                .willReturn(new VirtualDjAdminService.PoolSummary(
                         10L, 7L,
-                        java.util.List.of(new PoolSummaryResponse.Placement(3L, "Chill Room", 3L))));
+                        List.of(new VirtualDjAdminService.PoolSummary.Placement(3L, "Chill Room", 3L))));
         mockMvc.perform(get("/api/v1/admin/virtual-dj/pool"))
                 .andExpect(status().isOk())
-                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.data.total").value(10))
-                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.data.idle").value(7))
-                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.data.placed[0].partyroomId").value(3))
-                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.data.placed[0].partyroomTitle").value("Chill Room"))
-                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.data.placed[0].botCount").value(3));
+                .andExpect(jsonPath("$.data.total").value(10))
+                .andExpect(jsonPath("$.data.idle").value(7))
+                .andExpect(jsonPath("$.data.placed[0].partyroomId").value(3))
+                .andExpect(jsonPath("$.data.placed[0].partyroomTitle").value("Chill Room"))
+                .andExpect(jsonPath("$.data.placed[0].botCount").value(3));
         verify(adminService).poolSummary();
     }
 

@@ -54,7 +54,7 @@ public class AdminVirtualDjController {
     @PreAuthorize("@adminAuth.canManageVirtualDj()")
     @GetMapping("/virtual-dj/pool")
     public ResponseEntity<ApiCommonResponse<PoolSummaryResponse>> poolSummary() {
-        return ResponseEntity.ok(ApiCommonResponse.success(adminService.poolSummary()));
+        return ResponseEntity.ok(ApiCommonResponse.success(PoolSummaryResponse.from(adminService.poolSummary())));
     }
 
     @Operation(summary = "봇 풀 프로비저닝")

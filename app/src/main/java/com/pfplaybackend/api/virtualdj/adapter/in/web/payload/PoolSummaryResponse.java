@@ -1,5 +1,7 @@
 package com.pfplaybackend.api.virtualdj.adapter.in.web.payload;
 
+import com.pfplaybackend.api.virtualdj.application.service.VirtualDjAdminService;
+
 import java.util.List;
 
 /**
@@ -11,4 +13,11 @@ public record PoolSummaryResponse(long total, long idle, List<Placement> placed)
      * 파티룸 1곳의 봇 배치 현황.
      */
     public record Placement(Long partyroomId, String partyroomTitle, long botCount) {}
+
+    public static PoolSummaryResponse from(VirtualDjAdminService.PoolSummary s) {
+        List<Placement> placed = s.placed().stream()
+                .map(p -> new Placement(p.partyroomId(), p.partyroomTitle(), p.botCount()))
+                .toList();
+        return new PoolSummaryResponse(s.total(), s.idle(), placed);
+    }
 }
