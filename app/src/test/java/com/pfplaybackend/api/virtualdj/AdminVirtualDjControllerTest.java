@@ -371,6 +371,13 @@ class AdminVirtualDjControllerTest {
                 .andExpect(status().isForbidden());
     }
 
+    @Test
+    @WithAnonymousUser
+    void listSongPacks_anonymous_returns401() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/virtual-dj/song-packs"))
+                .andExpect(status().isUnauthorized());
+    }
+
     // ── song pack detail ──
 
     @Test
@@ -408,6 +415,13 @@ class AdminVirtualDjControllerTest {
     void getSongPack_member_returns403() throws Exception {
         mockMvc.perform(get("/api/v1/admin/virtual-dj/song-packs/5"))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithAnonymousUser
+    void getSongPack_anonymous_returns401() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/virtual-dj/song-packs/5"))
+                .andExpect(status().isUnauthorized());
     }
 
     // ── CSRF ──
