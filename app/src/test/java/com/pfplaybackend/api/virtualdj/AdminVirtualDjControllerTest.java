@@ -5,11 +5,13 @@ import com.pfplaybackend.api.common.config.security.jwt.AdminCookieWriter;
 import com.pfplaybackend.api.common.config.security.jwt.JwtService;
 import com.pfplaybackend.api.common.config.security.jwt.SharedSessionCookieWriter;
 import com.pfplaybackend.api.common.config.security.jwt.properties.JwtProperties;
+import com.pfplaybackend.api.common.exception.ExceptionCreator;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.AdminVirtualDjController;
 import com.pfplaybackend.api.virtualdj.application.service.VirtualDjAdminService;
 import com.pfplaybackend.api.virtualdj.application.service.VirtualSongPackService;
 import com.pfplaybackend.api.virtualdj.domain.enums.VirtualDjStatus;
+import com.pfplaybackend.api.virtualdj.domain.exception.VirtualDjException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -340,6 +342,72 @@ class AdminVirtualDjControllerTest {
     void poolSummary_anonymous_returns401() throws Exception {
         mockMvc.perform(get("/api/v1/admin/virtual-dj/pool"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    // ── song pack list ──
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void listSongPacks_admin_returns200WithBody() throws Exception {
+        given(songPackService.listPacks())
+                .willReturn(List.of(
+                        new VirtualSongPackService.PackListItem(1L, "Pack A", "desc A", 3L),
+                        new VirtualSongPackService.PackListItem(2L, "Pack B", "desc B", 0L)));
+        mockMvc.perform(get("/api/v1/admin/virtual-dj/song-packs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].id").value(1))
+                .andExpect(jsonPath("$.data[0].name").value("Pack A"))
+                .andExpect(jsonPath("$.data[0].description").value("desc A"))
+                .andExpect(jsonPath("$.data[0].trackCount").value(3))
+                .andExpect(jsonPath("$.data[1].id").value(2))
+                .andExpect(jsonPath("$.data[1].trackCount").value(0));
+        verify(songPackService).listPacks();
+    }
+
+    @Test
+    @WithMockUser(roles = "MEMBER")
+    void listSongPacks_member_returns403() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/virtual-dj/song-packs"))
+                .andExpect(status().isForbidden());
+    }
+
+    // ── song pack detail ──
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void getSongPack_admin_existingPack_returns200WithBody() throws Exception {
+        given(songPackService.getPack(5L))
+                .willReturn(new VirtualSongPackService.PackDetail(
+                        5L, "My Pack", "my desc",
+                        List.of(new VirtualSongPackService.PackDetail.PackTrack(
+                                11L, "Song One", "vid001", "3:45", "https://img/thumb.jpg"))));
+        mockMvc.perform(get("/api/v1/admin/virtual-dj/song-packs/5"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(5))
+                .andExpect(jsonPath("$.data.name").value("My Pack"))
+                .andExpect(jsonPath("$.data.description").value("my desc"))
+                .andExpect(jsonPath("$.data.tracks[0].trackId").value(11))
+                .andExpect(jsonPath("$.data.tracks[0].name").value("Song One"))
+                .andExpect(jsonPath("$.data.tracks[0].linkId").value("vid001"))
+                .andExpect(jsonPath("$.data.tracks[0].duration").value("3:45"))
+                .andExpect(jsonPath("$.data.tracks[0].thumbnailImage").value("https://img/thumb.jpg"));
+        verify(songPackService).getPack(5L);
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void getSongPack_admin_notFound_returns404() throws Exception {
+        given(songPackService.getPack(999L))
+                .willThrow(ExceptionCreator.create(VirtualDjException.SONG_PACK_NOT_FOUND));
+        mockMvc.perform(get("/api/v1/admin/virtual-dj/song-packs/999"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @WithMockUser(roles = "MEMBER")
+    void getSongPack_member_returns403() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/virtual-dj/song-packs/5"))
+                .andExpect(status().isForbidden());
     }
 
     // ── CSRF ──

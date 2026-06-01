@@ -10,6 +10,8 @@ import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.CreatedIdResponse;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.PoolSummaryResponse;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.ProvisionPoolRequest;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.RenameSongPackRequest;
+import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.SongPackDetailResponse;
+import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.SongPackListItemResponse;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.VirtualDjLiveStatusResponse;
 import com.pfplaybackend.api.virtualdj.application.service.VirtualDjAdminService;
 import com.pfplaybackend.api.virtualdj.application.service.VirtualSongPackService;
@@ -18,6 +20,7 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -68,6 +71,27 @@ public class AdminVirtualDjController {
     }
 
     // ── 송 팩 CRUD ──
+
+    @Operation(summary = "송 팩 목록 조회", description = "전체 송 팩 목록 (트랙 수 포함)")
+    @SecurityRequirement(name = "cookieAuth")
+    @PreAuthorize("@adminAuth.canManageVirtualDj()")
+    @GetMapping("/virtual-dj/song-packs")
+    public ResponseEntity<ApiCommonResponse<List<SongPackListItemResponse>>> listSongPacks() {
+        List<SongPackListItemResponse> items = songPackService.listPacks().stream()
+                .map(SongPackListItemResponse::from)
+                .toList();
+        return ResponseEntity.ok(ApiCommonResponse.success(items));
+    }
+
+    @Operation(summary = "송 팩 상세 조회", description = "트랙 목록(orderNumber 오름차순) 포함")
+    @SecurityRequirement(name = "cookieAuth")
+    @PreAuthorize("@adminAuth.canManageVirtualDj()")
+    @GetMapping("/virtual-dj/song-packs/{id}")
+    public ResponseEntity<ApiCommonResponse<SongPackDetailResponse>> getSongPack(
+            @PathVariable("id") Long id) {
+        return ResponseEntity.ok(ApiCommonResponse.success(
+                SongPackDetailResponse.from(songPackService.getPack(id))));
+    }
 
     @Operation(summary = "송 팩 생성")
     @SecurityRequirement(name = "cookieAuth")
