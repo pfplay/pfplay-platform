@@ -38,4 +38,9 @@ public record ConfigKey(String value) {
     // Well-known keys
     public static final ConfigKey PRESENCE_DJ_GRACE_SECONDS = new ConfigKey("presence.dj_grace_seconds");
     public static final ConfigKey PRESENCE_LISTENER_GRACE_SECONDS = new ConfigKey("presence.listener_grace_seconds");
+
+    // Virtual-DJ anti-flap / 식별 토글 (Chunk 5)
+    public static final ConfigKey VIRTUALDJ_BOT_YIELD_DEBOUNCE_MS = new ConfigKey("virtualdj.bot_yield_debounce_ms");
+    public static final ConfigKey VIRTUALDJ_BOT_MIN_DWELL_MS = new ConfigKey("virtualdj.bot_min_dwell_ms");
+    public static final ConfigKey VIRTUALDJ_DISTINGUISHABLE = new ConfigKey("virtualdj.distinguishable");
 }

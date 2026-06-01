@@ -49,6 +49,10 @@ public class PlaylistData extends BaseEntity {
     @Column(name = "last_played_track_id", columnDefinition = "bigint unsigned")
     private Long lastPlayedTrackId;
 
+    @Comment("이 playlist 가 복사된 송 팩 (봇 전용)")
+    @Column(name = "source_song_pack_id", columnDefinition = "bigint unsigned")
+    private Long sourceSongPackId;
+
     protected PlaylistData() {
     }
 
@@ -72,5 +76,9 @@ public class PlaylistData extends BaseEntity {
 
     public void rename(String name) {
         this.name = name;
+    }
+
+    public void bindSongPackSource(Long songPackId) {
+        this.sourceSongPackId = songPackId;
     }
 }
