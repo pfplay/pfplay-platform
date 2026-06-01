@@ -2,7 +2,10 @@ package com.pfplaybackend.api.virtualdj.application.service;
 
 import com.pfplaybackend.api.common.exception.ExceptionCreator;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
+import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.PoolSummaryResponse;
+import com.pfplaybackend.api.virtualdj.adapter.out.persistence.BotPoolQueryRepository;
 import com.pfplaybackend.api.virtualdj.adapter.out.persistence.PartyroomVirtualDjConfigRepository;
+import com.pfplaybackend.api.virtualdj.application.dto.PoolPlacementRow;
 import com.pfplaybackend.api.virtualdj.application.port.VirtualDjOrchestrator;
 import com.pfplaybackend.api.virtualdj.domain.entity.data.PartyroomVirtualDjConfigData;
 import com.pfplaybackend.api.virtualdj.domain.enums.VirtualDjStatus;
@@ -39,6 +42,7 @@ public class VirtualDjAdminService {
     private final VirtualDjOrchestrator orchestrator;
     private final ActiveDjSnapshotService activeDjSnapshotService;
     private final VirtualUserPoolService poolService;
+    private final BotPoolQueryRepository botPoolQueryRepository;
 
     /**
      * applyBulk 의 per-room 격리를 위한 self-proxy 참조.
@@ -52,6 +56,17 @@ public class VirtualDjAdminService {
 
     public void provisionPool(int count) {
         poolService.provision(count);
+    }
+
+    /** 봇 풀 전체 요약 — 전체/idle 수 + 파티룸별 배치 현황. */
+    @Transactional(readOnly = true)
+    public PoolSummaryResponse poolSummary() {
+        long total = botPoolQueryRepository.countBots();
+        long idle = botPoolQueryRepository.countIdleBots();
+        List<PoolSummaryResponse.Placement> placed = botPoolQueryRepository.findPlacements().stream()
+                .map(row -> new PoolSummaryResponse.Placement(row.partyroomId(), row.partyroomTitle(), row.botCount()))
+                .toList();
+        return new PoolSummaryResponse(total, idle, placed);
     }
 
     // ── per-room config ──

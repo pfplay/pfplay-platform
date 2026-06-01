@@ -7,6 +7,7 @@ import com.pfplaybackend.api.common.config.security.jwt.SharedSessionCookieWrite
 import com.pfplaybackend.api.common.config.security.jwt.properties.JwtProperties;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.AdminVirtualDjController;
+import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.PoolSummaryResponse;
 import com.pfplaybackend.api.virtualdj.application.service.VirtualDjAdminService;
 import com.pfplaybackend.api.virtualdj.application.service.VirtualSongPackService;
 import com.pfplaybackend.api.virtualdj.domain.enums.VirtualDjStatus;
@@ -302,6 +303,39 @@ class AdminVirtualDjControllerTest {
                                 {"partyroomIds":[1],"status":"OFF"}
                                 """))
                 .andExpect(status().isForbidden());
+    }
+
+    // ── pool summary ──
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void poolSummary_admin_returns200WithBody() throws Exception {
+        org.mockito.BDDMockito.given(adminService.poolSummary())
+                .willReturn(new PoolSummaryResponse(
+                        10L, 7L,
+                        java.util.List.of(new PoolSummaryResponse.Placement(3L, "Chill Room", 3L))));
+        mockMvc.perform(get("/api/v1/admin/virtual-dj/pool"))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.data.total").value(10))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.data.idle").value(7))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.data.placed[0].partyroomId").value(3))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.data.placed[0].partyroomTitle").value("Chill Room"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.data.placed[0].botCount").value(3));
+        verify(adminService).poolSummary();
+    }
+
+    @Test
+    @WithMockUser(roles = "MEMBER")
+    void poolSummary_member_returns403() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/virtual-dj/pool"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithAnonymousUser
+    void poolSummary_anonymous_returns401() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/virtual-dj/pool"))
+                .andExpect(status().isUnauthorized());
     }
 
     // ── CSRF ──

@@ -7,6 +7,7 @@ import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.ApplyVirtualDjConf
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.BulkApplyVirtualDjConfigRequest;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.CreateSongPackRequest;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.CreatedIdResponse;
+import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.PoolSummaryResponse;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.ProvisionPoolRequest;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.RenameSongPackRequest;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.VirtualDjLiveStatusResponse;
@@ -47,6 +48,14 @@ public class AdminVirtualDjController {
     private final VirtualSongPackService songPackService;
 
     // ── 봇 풀 ──
+
+    @Operation(summary = "봇 풀 요약 조회")
+    @SecurityRequirement(name = "cookieAuth")
+    @PreAuthorize("@adminAuth.canManageVirtualDj()")
+    @GetMapping("/virtual-dj/pool")
+    public ResponseEntity<ApiCommonResponse<PoolSummaryResponse>> poolSummary() {
+        return ResponseEntity.ok(ApiCommonResponse.success(adminService.poolSummary()));
+    }
 
     @Operation(summary = "봇 풀 프로비저닝")
     @SecurityRequirement(name = "cookieAuth")
