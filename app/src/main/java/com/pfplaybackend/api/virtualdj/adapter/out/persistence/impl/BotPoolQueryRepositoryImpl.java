@@ -1,6 +1,7 @@
 package com.pfplaybackend.api.virtualdj.adapter.out.persistence.impl;
 
 import com.pfplaybackend.api.common.domain.value.UserId;
+import com.pfplaybackend.api.party.domain.enums.PartyroomStatus;
 import com.pfplaybackend.api.virtualdj.adapter.out.persistence.BotPoolQueryRepository;
 import com.pfplaybackend.api.virtualdj.application.dto.PoolPlacementRow;
 import com.querydsl.core.Tuple;
@@ -95,7 +96,8 @@ public class BotPoolQueryRepositoryImpl implements BotPoolQueryRepository {
                 .where(
                         crewData.isActive.isTrue(),
                         userAccountData.isDummy.isTrue(),
-                        userAccountData.withdrawnAt.isNull())
+                        userAccountData.withdrawnAt.isNull(),
+                        partyroomData.status.eq(PartyroomStatus.ACTIVE))
                 .groupBy(partyroomData.id, partyroomData.title)
                 .orderBy(crewData.count().desc())
                 .fetch();

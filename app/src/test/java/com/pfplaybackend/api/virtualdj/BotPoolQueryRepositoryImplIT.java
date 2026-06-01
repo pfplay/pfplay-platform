@@ -145,6 +145,36 @@ class BotPoolQueryRepositoryImplIT extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("findPlacements() — TERMINATED 파티룸의 봇은 결과에 포함되지 않는다")
+    void findPlacements_excludes_bots_in_terminated_room() {
+        // TERMINATED 파티룸을 builder 로 직접 생성 (도메인 이벤트 발행 없이 상태 주입)
+        PartyroomData terminatedRoom = PartyroomData.builder()
+                .title("종료된 파티룸")
+                .introduction("intro")
+                .linkDomain(LinkDomain.of("terminated-room-bot-test"))
+                .playbackTimeLimit(PlaybackTimeLimit.ofMinutes(5))
+                .stageType(StageType.GENERAL)
+                .hostId(new UserId(HOST_UID))
+                .status(PartyroomStatus.TERMINATED)
+                .activeCrewCount(0)
+                .build();
+        Long terminatedRoomId = partyroomRepository.saveAndFlush(terminatedRoom).getId();
+
+        // BOT2 를 TERMINATED 파티룸의 활성 crew 로 배치
+        CrewData bot2Crew = CrewData.create(
+                new PartyroomId(terminatedRoomId), new UserId(BOT2_UID),
+                GradeType.LISTENER, null);
+        crewRepository.saveAndFlush(bot2Crew);
+
+        List<PoolPlacementRow> placements = botPoolQueryRepository.findPlacements();
+
+        // ACTIVE 파티룸(partyroomId, BOT1)만 결과에 포함되어야 함
+        assertThat(placements).hasSize(1);
+        assertThat(placements.get(0).partyroomId()).isEqualTo(partyroomId);
+        assertThat(placements.get(0).botCount()).isEqualTo(1L);
+    }
+
+    @Test
     @DisplayName("countBots() — 탈퇴한 봇은 제외한다")
     void countBots_excludes_withdrawn_bots() {
         // BOT3 탈퇴
