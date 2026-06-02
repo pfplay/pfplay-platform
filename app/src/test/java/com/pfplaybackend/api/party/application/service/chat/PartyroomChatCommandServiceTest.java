@@ -6,6 +6,8 @@ import com.pfplaybackend.api.common.domain.enums.MessageTopic;
 import com.pfplaybackend.api.common.exception.http.NotFoundException;
 import com.pfplaybackend.api.party.application.dto.chat.ChatMessageDto;
 import com.pfplaybackend.api.party.application.port.out.ChatPenaltyCachePort;
+import com.pfplaybackend.api.party.domain.value.PartyroomId;
+import org.mockito.ArgumentCaptor;
 import com.pfplaybackend.realtime.port.SessionCachePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -97,6 +99,42 @@ class PartyroomChatCommandServiceTest {
 
         // when
         partyroomChatCommandService.sendMessage(sessionId, HELLO_MESSAGE);
+
+        // then
+        verify(messagePublisher, never()).publish(any(), any());
+    }
+
+    @Test
+    @DisplayName("sendMessageAsCrew — 채팅 밴이 아니면 crewId 페이로드로 Redis에 1회 publish된다")
+    void sendMessageAsCrewNotBannedPublishesOnce() {
+        // given
+        PartyroomId partyroomId = PartyroomId.of(10L);
+        long crewId = 5L;
+        when(chatPenaltyCachePort.isChatBanned(crewId)).thenReturn(false);
+
+        // when
+        partyroomChatCommandService.sendMessageAsCrew(partyroomId, crewId, HELLO_MESSAGE);
+
+        // then
+        ArgumentCaptor<ChatMessageDto> captor = ArgumentCaptor.forClass(ChatMessageDto.class);
+        verify(messagePublisher, times(1))
+                .publish(eq(MessageTopic.CHAT_MESSAGE_SENT.topic()), captor.capture());
+        ChatMessageDto payload = captor.getValue();
+        assertThat(payload.crew().crewId()).isEqualTo(crewId);
+        assertThat(payload.partyroomId()).isEqualTo(partyroomId);
+        assertThat(payload.message().content()).isEqualTo(HELLO_MESSAGE);
+    }
+
+    @Test
+    @DisplayName("sendMessageAsCrew — 채팅 밴 상태이면 publish되지 않는다")
+    void sendMessageAsCrewBannedDoesNotPublish() {
+        // given
+        PartyroomId partyroomId = PartyroomId.of(10L);
+        long crewId = 5L;
+        when(chatPenaltyCachePort.isChatBanned(crewId)).thenReturn(true);
+
+        // when
+        partyroomChatCommandService.sendMessageAsCrew(partyroomId, crewId, HELLO_MESSAGE);
 
         // then
         verify(messagePublisher, never()).publish(any(), any());

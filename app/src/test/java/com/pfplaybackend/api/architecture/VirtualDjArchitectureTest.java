@@ -86,6 +86,10 @@ class VirtualDjArchitectureTest {
     }
 
     // ── 규칙 B: 패키지 전체 가드 ────────────────────────────────────────────────────────────────
+    //
+    // P3 채팅 송신은 반드시 party 의 PartyroomChatCommandService.sendMessageAsCrew 를 경유해야 하며,
+    // virtualdj 에서 publisher(RedisMessagePublisher) 를 직접 호출해서는 안 된다. 아래 규칙 B 가
+    // 그 우회를 패키지 전체 범위에서 차단한다.
 
     /**
      * {@code ..virtualdj..} 의 어떤 클래스도 {@code *MessagePublisher} 를 직접 의존하지 않는다.
