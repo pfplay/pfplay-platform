@@ -169,7 +169,28 @@ public void sendMessageAsCrew(PartyroomId partyroomId, long crewId, String conte
   한다(전용 워커 풀 / 기존 `VirtualDjOrchestrator` 비동기 시임 활용 — P2 D6 "포트 뒤 배치 = P3 LLM 워커 분리
   대비"를 여기서 사용).
 - best-effort: LLM 실패·타임아웃은 로그만 남기고 무시한다(재시도 없음). 주변 참여는 누락돼도 무해하다.
-- **봇 선택**: 방 안의 persona 보유 봇 중 1명(랜덤 또는 라운드로빈). 방당 동시 응답 1건으로 제한(§5).
+- **봇 선택**: 방 안의 persona 보유 봇 중 1명(랜덤 또는 라운드로빈).
+
+#### 3.4.1 방당 동시 응답 1건 — 강제 메커니즘
+
+트리거는 다중 채팅 구독 스레드에서 동시 발화 가능하므로, "방당 동시 1건"은 **명시적 동시성 프리미티브**로
+강제한다(P2의 `"virtualdj:{partyroomId}"` 분산락 선례 계승):
+
+- **방별 in-flight 락**: `vdj:chat:inflight:{partyroomId}` Redis SETNX 락(짧은 TTL = LLM 타임아웃보다 약간 김).
+  dispatch 직전 **게이트(§3.1 step 3)와 같은 동기 구간에서 락 획득 시도** → 실패하면 그 메시지는 드롭(이미 진행
+  중). 비동기 태스크 종료(성공·실패·타임아웃 무관) 시 finally로 해제.
+- 락을 게이트와 동기 구간에서 잡으므로, 두 메시지가 게이트를 동시 통과해도 한쪽만 락을 얻는다(가드 갭 제거).
+- 이 키가 곧 §5 `vdj.chat.room.max.inflight=1`의 구현이다. (전역 cap은 워커 풀 사이즈로 별도 제한 — §5에서
+  분리 명시.)
+
+#### 3.4.2 가드 갭 — 송신 시점 봇 이탈 / 빈 출력
+
+게이트(트리거 시점)와 실제 송신(비동기 종료 시점) 사이 시차가 있으므로 송신 직전 재확인한다:
+
+- **봇 이탈**: 선택된 봇이 송신 시점에 해당 방의 **활성 crew가 아니면 드롭**(best-effort). `isPossibleChat`은
+  penalty 가드일 뿐 membership 가드가 아니므로, 봇이 그 방 활성 crew인지 별도 확인 후 `sendMessageAsCrew` 호출.
+- **빈/공백 출력**: LLM 응답이 trim 후 비어있거나 공백뿐이면 **발행하지 않고 드롭**(빈 `CHAT_MESSAGE_SENT`
+  방지). §4.3 길이 cap과 별개로 하한 가드.
 
 ---
 
@@ -216,9 +237,14 @@ user:    [최근 사람 채팅 N개 — untrusted]
 | `vdj.chat.room.max.inflight` | 1 | 방당 동시 진행 LLM 응답 수 |
 | `vdj.chat.context.size` | ~20 | LLM에 주입할 최근 사람 메시지 수 |
 | `vdj.chat.output.max.tokens` | (소) | 응답 길이 상한 |
+| `vdj.chat.enabled` | true | **전역 kill switch** — false면 방별 확률 무관하게 봇 채팅 전면 중단 |
 
-- **비용 가드**: 방별 쿨다운 + 전역 in-flight 동시성 cap + max output tokens. (일/월 토큰 상한·예산 알림은
-  P3-A 범위 밖, 후속.)
+- **`vdj.chat.room.max.inflight`** 는 §3.4.1 방별 Redis SETNX 락으로 강제(방 스코프). **전역** 동시성은
+  LLM 워커 풀 크기로 별도 제한한다(둘은 다른 층 — 방 스코프 ≠ 전역).
+- **kill switch**(`vdj.chat.enabled`): 유료 외부 API 호출 + 사람처럼 보이는 신원으로 발화하는 기능이므로,
+  확률·쿨다운과 독립적으로 전면 차단할 수 있는 전역 부울을 둔다(P2 `system_config` 패턴, 값싼 보험).
+- **비용 가드**: kill switch + 방별 쿨다운 + 방별 in-flight 락 + 전역 워커 풀 cap + max output tokens.
+  (일/월 토큰 상한·예산 알림은 P3-A 범위 밖, 후속.)
 - **AI 라벨링**: **기본 OFF**(구별 불가) — "살아있는 방" 의도 및 P2 D1 distinguishable(기본 OFF)과 일관.
   P2 구별모드가 ON인 방에서는 봇 아바타 마커와 동일 정책으로 채팅도 마킹(채팅 측 마킹은 P2 distinguishable
   플래그 재사용, 신규 토글 없음).
@@ -266,6 +292,9 @@ P1 봇 아바타 콘솔의 연장선. 백엔드 read/mutation 엔드포인트 + 
   `sendMessageAsCrew` 가드(penalty 시 무발행), persona CRUD/매핑.
 - **통합**: 채팅 발행 → 구독 → (확률 강제 100%) → mock LLM → `sendMessageAsCrew` → `CHAT_MESSAGE_SENT`
   재발행까지 end-to-end. LLM 프로바이더는 mock(결정적).
+- **루프가드 통합 검증(필수)**: 봇이 발화해 재발행된 `CHAT_MESSAGE_SENT`가 **버퍼·트리거에 재진입하지 않음**을
+  end-to-end로 단언(봇 1회 발화 → 추가 트리거 0건). §10 "봇 간 상호작용 없음" 안전속성의 직접 검증.
+- **동시성**: 한 방에 사람 메시지 2건 동시 도착 시 in-flight 락으로 응답 1건만 발행(§3.4.1).
 - **ArchUnit**: §8 규칙.
 - **dev 머지 전 로컬 docker-compose 풀스택 e2e 필수**(`feedback_local_e2e_before_dev_merge`):
   - 마이그레이션 validate 부팅(실프로파일).
@@ -290,6 +319,11 @@ P1 봇 아바타 콘솔의 연장선. 백엔드 read/mutation 엔드포인트 + 
 3. 비동기 워커 실행 방식(전용 풀 vs `VirtualDjOrchestrator` 시임) — 실제 시임 시그니처 확인 후.
 4. Anthropic SDK 의존성 추가·모델/키 환경변수 명명(`claude-api` 스킬 가이드 적용).
 5. 현재 재생곡 조회 경로(방 맥락 주입용) — playback 조회 read 포트 확인.
+6. crewId→is_dummy 판별 캐시(§3.2)의 무효화 정책 — 봇 crew 라이프사이클(이탈·재입장)에서 crewId 재사용/
+   stale 가능성 확인 후 TTL 또는 무캐시 결정.
+
+> **제품 자세(release 시 의식적 결정):** "AI/봇임을 밝히지 않음"(§4.3) + AI 라벨링 기본 OFF(§5)는 의도된
+> 제품 결정이다. 구현 디폴트로 슬쩍 통과시키지 말고, prod 승격 시 명시적으로 재확인한다.
 
 ---
 
