@@ -16,6 +16,7 @@ import com.pfplaybackend.api.virtualdj.application.dto.BotRosterRow;
 import com.pfplaybackend.api.virtualdj.application.service.BotAvatarAdminService;
 import com.pfplaybackend.api.virtualdj.application.service.BotAvatarAssigner;
 import com.pfplaybackend.api.virtualdj.application.service.VirtualDjAdminService;
+import com.pfplaybackend.api.virtualdj.application.service.VirtualPersonaService;
 import com.pfplaybackend.api.virtualdj.application.service.VirtualSongPackService;
 import com.pfplaybackend.api.virtualdj.domain.enums.VirtualDjStatus;
 import com.pfplaybackend.api.virtualdj.domain.exception.VirtualDjException;
@@ -80,6 +81,7 @@ class AdminVirtualDjControllerTest {
     @Autowired private MockMvc mockMvc;
     @MockBean private VirtualDjAdminService adminService;
     @MockBean private VirtualSongPackService songPackService;
+    @MockBean private VirtualPersonaService personaService;
     @MockBean private MusicSearchService musicSearchService;
     @MockBean private BotAvatarAdminService botAvatarAdminService;
 
@@ -598,5 +600,169 @@ class AdminVirtualDjControllerTest {
                                 {"botIds":[1],"bodyUris":["https://cdn/a.png"]}
                                 """))
                 .andExpect(status().isForbidden());
+    }
+
+    // ── 페르소나 CRUD (P3) ──
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void listPersonas_admin_returns200WithBody() throws Exception {
+        given(personaService.list())
+                .willReturn(List.of(
+                        new VirtualPersonaService.PersonaListItem(1L, "DJ 챌린저", true),
+                        new VirtualPersonaService.PersonaListItem(2L, "DJ 힐러", false)));
+        mockMvc.perform(get("/api/v1/admin/virtual-dj/personas"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].id").value(1))
+                .andExpect(jsonPath("$.data[0].name").value("DJ 챌린저"))
+                .andExpect(jsonPath("$.data[0].active").value(true))
+                .andExpect(jsonPath("$.data[1].id").value(2))
+                .andExpect(jsonPath("$.data[1].active").value(false));
+        verify(personaService).list();
+    }
+
+    @Test
+    @WithMockUser(roles = "MEMBER")
+    void listPersonas_member_returns403() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/virtual-dj/personas"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithAnonymousUser
+    void listPersonas_anonymous_returns401() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/virtual-dj/personas"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void getPersona_admin_returns200WithBody() throws Exception {
+        given(personaService.get(3L))
+                .willReturn(new VirtualPersonaService.PersonaDetail(
+                        3L, "DJ 챌린저", "당신은 에너지 넘치는 DJ입니다.", true));
+        mockMvc.perform(get("/api/v1/admin/virtual-dj/personas/3"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(3))
+                .andExpect(jsonPath("$.data.name").value("DJ 챌린저"))
+                .andExpect(jsonPath("$.data.instruction").value("당신은 에너지 넘치는 DJ입니다."))
+                .andExpect(jsonPath("$.data.active").value(true));
+        verify(personaService).get(3L);
+    }
+
+    @Test
+    @WithMockUser(roles = "MEMBER")
+    void getPersona_member_returns403() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/virtual-dj/personas/3"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithAnonymousUser
+    void getPersona_anonymous_returns401() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/virtual-dj/personas/3"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void createPersona_admin_returns201() throws Exception {
+        given(personaService.create("DJ 챌린저", "당신은 에너지 넘치는 DJ입니다.")).willReturn(5L);
+        mockMvc.perform(post("/api/v1/admin/virtual-dj/personas")
+                        .with(csrf()).contentType(APPLICATION_JSON)
+                        .content("""
+                                {"name":"DJ 챌린저","instruction":"당신은 에너지 넘치는 DJ입니다."}
+                                """))
+                .andExpect(status().isCreated());
+        verify(personaService).create("DJ 챌린저", "당신은 에너지 넘치는 DJ입니다.");
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void createPersona_blankName_returns400() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/virtual-dj/personas")
+                        .with(csrf()).contentType(APPLICATION_JSON)
+                        .content("""
+                                {"name":"","instruction":"당신은 에너지 넘치는 DJ입니다."}
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void createPersona_blankInstruction_returns400() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/virtual-dj/personas")
+                        .with(csrf()).contentType(APPLICATION_JSON)
+                        .content("""
+                                {"name":"DJ 챌린저","instruction":""}
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @WithMockUser(roles = "MEMBER")
+    void createPersona_member_returns403() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/virtual-dj/personas")
+                        .with(csrf()).contentType(APPLICATION_JSON)
+                        .content("""
+                                {"name":"DJ 챌린저","instruction":"지시문"}
+                                """))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void updatePersona_admin_returns204() throws Exception {
+        mockMvc.perform(put("/api/v1/admin/virtual-dj/personas/3")
+                        .with(csrf()).contentType(APPLICATION_JSON)
+                        .content("""
+                                {"name":"DJ 힐러","instruction":"당신은 차분한 DJ입니다.","active":true}
+                                """))
+                .andExpect(status().isNoContent());
+        verify(personaService).update(3L, "DJ 힐러", "당신은 차분한 DJ입니다.", true);
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void updatePersona_blankName_returns400() throws Exception {
+        mockMvc.perform(put("/api/v1/admin/virtual-dj/personas/3")
+                        .with(csrf()).contentType(APPLICATION_JSON)
+                        .content("""
+                                {"name":"","instruction":"당신은 차분한 DJ입니다.","active":true}
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @WithMockUser(roles = "MEMBER")
+    void updatePersona_member_returns403() throws Exception {
+        mockMvc.perform(put("/api/v1/admin/virtual-dj/personas/3")
+                        .with(csrf()).contentType(APPLICATION_JSON)
+                        .content("""
+                                {"name":"DJ 힐러","instruction":"지시문","active":false}
+                                """))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void deletePersona_admin_returns204() throws Exception {
+        mockMvc.perform(delete("/api/v1/admin/virtual-dj/personas/3").with(csrf()))
+                .andExpect(status().isNoContent());
+        verify(personaService).delete(3L);
+    }
+
+    @Test
+    @WithMockUser(roles = "MEMBER")
+    void deletePersona_member_returns403() throws Exception {
+        mockMvc.perform(delete("/api/v1/admin/virtual-dj/personas/3").with(csrf()))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithAnonymousUser
+    void deletePersona_anonymous_returns401() throws Exception {
+        mockMvc.perform(delete("/api/v1/admin/virtual-dj/personas/3").with(csrf()))
+                .andExpect(status().isUnauthorized());
     }
 }
