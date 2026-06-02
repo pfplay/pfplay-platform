@@ -10,8 +10,10 @@ import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.ApplyVirtualDjConf
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.AvatarCatalogItemResponse;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.BotRosterItemResponse;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.BulkApplyVirtualDjConfigRequest;
+import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.CreatePersonaRequest;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.CreateSongPackRequest;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.CreatedIdResponse;
+import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.UpdatePersonaRequest;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.DistributeBotAvatarRequest;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.DistributeBotAvatarResponse;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.PoolSummaryResponse;
@@ -24,6 +26,7 @@ import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.VirtualDjLiveStatu
 import com.pfplaybackend.api.virtualdj.application.service.BotAvatarAdminService;
 import com.pfplaybackend.api.virtualdj.application.service.BotAvatarAssigner;
 import com.pfplaybackend.api.virtualdj.application.service.VirtualDjAdminService;
+import com.pfplaybackend.api.virtualdj.application.service.VirtualPersonaService;
 import com.pfplaybackend.api.virtualdj.application.service.VirtualSongPackService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -60,6 +63,7 @@ public class AdminVirtualDjController {
 
     private final VirtualDjAdminService adminService;
     private final VirtualSongPackService songPackService;
+    private final VirtualPersonaService personaService;
     private final MusicSearchService musicSearchService;
     private final BotAvatarAdminService botAvatarAdminService;
 
@@ -166,6 +170,56 @@ public class AdminVirtualDjController {
     public ResponseEntity<Void> removeSongPackTrack(@PathVariable("id") Long id,
                                                     @PathVariable("trackId") Long trackId) {
         songPackService.removeTrack(id, trackId);
+        return ResponseEntity.noContent().build();
+    }
+
+    // ── 페르소나 CRUD ──
+
+    @Operation(summary = "페르소나 목록 조회", description = "전체 페르소나 목록 (활성 여부 포함)")
+    @SecurityRequirement(name = "cookieAuth")
+    @PreAuthorize("@adminAuth.canManageVirtualDj()")
+    @GetMapping("/virtual-dj/personas")
+    public ResponseEntity<ApiCommonResponse<List<VirtualPersonaService.PersonaListItem>>> listPersonas() {
+        return ResponseEntity.ok(ApiCommonResponse.success(personaService.list()));
+    }
+
+    @Operation(summary = "페르소나 상세 조회", description = "instruction 포함")
+    @SecurityRequirement(name = "cookieAuth")
+    @PreAuthorize("@adminAuth.canManageVirtualDj()")
+    @GetMapping("/virtual-dj/personas/{id}")
+    public ResponseEntity<ApiCommonResponse<VirtualPersonaService.PersonaDetail>> getPersona(
+            @PathVariable("id") Long id) {
+        return ResponseEntity.ok(ApiCommonResponse.success(personaService.get(id)));
+    }
+
+    @Operation(summary = "페르소나 생성")
+    @SecurityRequirement(name = "cookieAuth")
+    @PreAuthorize("@adminAuth.canManageVirtualDj()")
+    @PostMapping("/virtual-dj/personas")
+    public ResponseEntity<ApiCommonResponse<CreatedIdResponse>> createPersona(
+            @Valid @RequestBody CreatePersonaRequest req) {
+        Long id = personaService.create(req.name(), req.instruction());
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiCommonResponse.success(new CreatedIdResponse(id)));
+    }
+
+    @Operation(summary = "페르소나 수정", description = "이름·instruction·활성 상태 일괄 변경")
+    @SecurityRequirement(name = "cookieAuth")
+    @PreAuthorize("@adminAuth.canManageVirtualDj()")
+    @PutMapping("/virtual-dj/personas/{id}")
+    public ResponseEntity<Void> updatePersona(@PathVariable("id") Long id,
+                                              @Valid @RequestBody UpdatePersonaRequest req) {
+        personaService.update(id, req.name(), req.instruction());
+        personaService.setActive(id, req.active());
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "페르소나 삭제")
+    @SecurityRequirement(name = "cookieAuth")
+    @PreAuthorize("@adminAuth.canManageVirtualDj()")
+    @DeleteMapping("/virtual-dj/personas/{id}")
+    public ResponseEntity<Void> deletePersona(@PathVariable("id") Long id) {
+        personaService.delete(id);
         return ResponseEntity.noContent().build();
     }
 
