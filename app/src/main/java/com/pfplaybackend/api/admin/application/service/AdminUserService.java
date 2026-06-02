@@ -201,7 +201,9 @@ public class AdminUserService {
      * @return MemberData entity
      */
     private MemberData findMemberByUserId(UserId userId) {
-        return adminMemberPort.findMemberById(userId.getUid())
+        // 가상 멤버는 user_account_id 로 주소지정된다(어드민 가상멤버 도구·봇 로스터 모두 user_account_id 노출).
+        // member_id(IDENTITY) ≠ user_account_id 이므로 user_account_id 로 조회해야 한다(코드베이스 관례 동일).
+        return adminMemberPort.findMemberByUserAccountId(userId.getUid())
                 .orElseThrow(() -> ExceptionCreator.create(AdminException.MEMBER_NOT_FOUND));
     }
 

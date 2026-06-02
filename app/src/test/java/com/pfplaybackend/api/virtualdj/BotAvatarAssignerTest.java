@@ -83,19 +83,30 @@ class BotAvatarAssignerTest {
     }
 
     @Test
-    void distribute_는_적용_실패한_봇은_건너뛰고_성공분만_반환한다() {
-        // 봇 2명, 셋 [standalone]. 1번 봇은 apply 시 예외(비-봇/미존재 모사) → 건너뛰고 2번만 성공.
+    void distribute_는_넘어온_모든_봇에_전수_적용한다() {
+        // 비-봇 격리는 호출자(서비스)가 사전 필터로 처리하므로, assigner 는 받은 봇 전부에 적용한다.
         given(randomizer.nextIndex(1)).willReturn(0);
-        org.mockito.BDDMockito.willThrow(new RuntimeException("non-bot"))
-                .given(applyPort).apply(eq(new UserId(1L)), any(), any());
 
         var assigned = assigner.distribute(
                 List.of(new UserId(1L), new UserId(2L)),
                 List.of(STANDALONE_BODY));
 
-        assertThat(assigned).hasSize(1);
-        assertThat(assigned.get(0).userId()).isEqualTo(2L);
+        assertThat(assigned).hasSize(2);
+        verify(applyPort).apply(eq(new UserId(1L)), bodyUri(STANDALONE_BODY), any());
         verify(applyPort).apply(eq(new UserId(2L)), bodyUri(STANDALONE_BODY), any());
+    }
+
+    @Test
+    void distribute_는_apply_예외를_삼키지_않고_전파한다() {
+        // 사전 필터를 통과했는데도 apply 가 예외를 던지면(진짜 버그/인프라 장애) 배치를 실패시킨다.
+        given(randomizer.nextIndex(1)).willReturn(0);
+        org.mockito.BDDMockito.willThrow(new RuntimeException("genuine failure"))
+                .given(applyPort).apply(eq(new UserId(1L)), any(), any());
+
+        assertThatThrownBy(() -> assigner.distribute(
+                List.of(new UserId(1L), new UserId(2L)),
+                List.of(STANDALONE_BODY)))
+                .isInstanceOf(RuntimeException.class);
     }
 
     @Test

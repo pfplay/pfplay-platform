@@ -58,6 +58,21 @@ public class BotPoolQueryRepositoryImpl implements BotPoolQueryRepository {
     }
 
     @Override
+    public List<Long> filterBotUserIds(List<Long> candidateUserIds) {
+        if (candidateUserIds == null || candidateUserIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return queryFactory
+                .select(userAccountData.userId.uid)
+                .from(userAccountData)
+                .where(
+                        userAccountData.userId.uid.in(candidateUserIds),
+                        userAccountData.isDummy.isTrue(),
+                        userAccountData.withdrawnAt.isNull())
+                .fetch();
+    }
+
+    @Override
     public long countBots() {
         Long count = queryFactory
                 .select(userAccountData.count())

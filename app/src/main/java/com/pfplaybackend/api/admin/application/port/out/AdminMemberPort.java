@@ -9,6 +9,17 @@ import java.util.Optional;
 public interface AdminMemberPort {
     MemberData saveMember(MemberData member);
     Optional<MemberData> findMemberById(Long id);
+
+    /**
+     * 사용자 계정 id(user_account_id)로 멤버를 조회한다.
+     *
+     * <p>{@link #findMemberById}는 member 테이블 PK(member_id, IDENTITY)로 조회하지만,
+     * 어드민 가상 멤버 운영은 user_account_id 로 멤버를 주소지정한다(봇 로스터·기존 어드민 가상멤버
+     * 도구 모두 user_account_id 노출). member_id ≠ user_account_id 이므로 user_account_id 주소지정에는
+     * 반드시 이 메서드를 써야 한다(코드베이스 다른 곳의 {@code findByUserAccountId} 관례와 동일).
+     */
+    Optional<MemberData> findMemberByUserAccountId(Long userAccountId);
+
     void deleteMemberById(Long id);
     Optional<MemberData> findMemberByEmail(String email);
     long countMembersByProviderType(ProviderType providerType);

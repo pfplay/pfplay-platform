@@ -42,4 +42,13 @@ public interface BotPoolQueryRepository {
      * ACTIVE 파티룸(활성 crew 기준, 없으면 null). uid 오름차순(oldest-first).
      */
     List<BotRosterRow> findRoster();
+
+    /**
+     * 후보 userId 중 실제 봇(is_dummy=true, withdrawn_at IS NULL)인 부분집합만 반환한다.
+     *
+     * <p>일괄 배분(distribute)에서 비-봇/미존재 id 를 apply 예외로 잡아 격리하면 공유 트랜잭션이
+     * rollback-only 로 마킹돼 성공분까지 롤백되는 문제를 피하기 위해, 사전 필터로 유효 봇만 추린다.
+     * 입력이 null/빈 리스트면 빈 리스트를 반환한다.
+     */
+    List<Long> filterBotUserIds(List<Long> candidateUserIds);
 }

@@ -22,6 +22,7 @@ import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.SongPackDetailResp
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.SongPackListItemResponse;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.VirtualDjLiveStatusResponse;
 import com.pfplaybackend.api.virtualdj.application.service.BotAvatarAdminService;
+import com.pfplaybackend.api.virtualdj.application.service.BotAvatarAssigner;
 import com.pfplaybackend.api.virtualdj.application.service.VirtualDjAdminService;
 import com.pfplaybackend.api.virtualdj.application.service.VirtualSongPackService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -259,7 +260,7 @@ public class AdminVirtualDjController {
     @PostMapping("/virtual-dj/bots/avatar/distribute")
     public ResponseEntity<ApiCommonResponse<DistributeBotAvatarResponse>> distributeBotAvatars(
             @Valid @RequestBody DistributeBotAvatarRequest req) {
-        var assigned = botAvatarAdminService.distribute(req.botIds(), req.bodyUris());
+        List<BotAvatarAssigner.Assigned> assigned = botAvatarAdminService.distribute(req.botIds(), req.bodyUris());
         return ResponseEntity.ok(ApiCommonResponse.success(DistributeBotAvatarResponse.from(assigned)));
     }
 }

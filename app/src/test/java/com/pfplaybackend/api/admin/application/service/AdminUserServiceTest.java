@@ -132,7 +132,7 @@ class AdminUserServiceTest {
         AvatarFaceUri newFaceUri = new AvatarFaceUri("new_face.png");
         ProfileData updatedProfile = createDummyProfile(userId);
 
-        when(adminMemberPort.findMemberById(userId.getUid())).thenReturn(Optional.of(virtualMember));
+        when(adminMemberPort.findMemberByUserAccountId(userId.getUid())).thenReturn(Optional.of(virtualMember));
         when(userAccountRepository.findById(userId)).thenReturn(Optional.of(localAccount));
         when(adminProfileService.createProfileForVirtualMember(
                 userId, "Virtual_AABBCC", newBodyUri, newFaceUri))
@@ -157,7 +157,7 @@ class AdminUserServiceTest {
         AvatarBodyUri bodyUri = new AvatarBodyUri("body.png");
         AvatarFaceUri faceUri = new AvatarFaceUri("face.png");
 
-        when(adminMemberPort.findMemberById(userId.getUid())).thenReturn(Optional.of(googleMember));
+        when(adminMemberPort.findMemberByUserAccountId(userId.getUid())).thenReturn(Optional.of(googleMember));
         when(userAccountRepository.findById(userId)).thenReturn(Optional.of(googleAccount));
 
         // when & then
@@ -173,7 +173,7 @@ class AdminUserServiceTest {
         MemberData virtualMember = createMemberFor(userId.getUid());
         UserAccountData localAccount = createLocalAccount(userId);
 
-        when(adminMemberPort.findMemberById(userId.getUid())).thenReturn(Optional.of(virtualMember));
+        when(adminMemberPort.findMemberByUserAccountId(userId.getUid())).thenReturn(Optional.of(virtualMember));
         when(userAccountRepository.findById(userId)).thenReturn(Optional.of(localAccount));
 
         // when
@@ -191,7 +191,7 @@ class AdminUserServiceTest {
         MemberData googleMember = createMemberFor(userId.getUid());
         UserAccountData googleAccount = createGoogleAccount(userId);
 
-        when(adminMemberPort.findMemberById(userId.getUid())).thenReturn(Optional.of(googleMember));
+        when(adminMemberPort.findMemberByUserAccountId(userId.getUid())).thenReturn(Optional.of(googleMember));
         when(userAccountRepository.findById(userId)).thenReturn(Optional.of(googleAccount));
 
         // when & then
@@ -205,7 +205,7 @@ class AdminUserServiceTest {
         // given
         UserId userId = new UserId(999L);
 
-        when(adminMemberPort.findMemberById(userId.getUid())).thenReturn(Optional.empty());
+        when(adminMemberPort.findMemberByUserAccountId(userId.getUid())).thenReturn(Optional.empty());
 
         // when & then
         assertThatThrownBy(() -> adminUserService.getVirtualMember(userId))

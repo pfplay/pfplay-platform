@@ -86,7 +86,10 @@ class BotAvatarAdminServiceTest {
     }
 
     @Test
-    void distribute_는_Long_id_를_UserId_로_변환해_assigner_에_위임하고_결과를_반환한다() {
+    void distribute_는_실제_봇만_사전필터한_뒤_UserId_로_변환해_assigner_에_위임하고_결과를_반환한다() {
+        // 후보 [1,2,3] 중 사전필터가 [1,2] 만 봇으로 추린다(3 은 비-봇/미존재 → 격리).
+        given(botPoolQueryRepository.filterBotUserIds(List.of(1L, 2L, 3L)))
+                .willReturn(List.of(1L, 2L));
         List<BotAvatarAssigner.Assigned> result = List.of(
                 new BotAvatarAssigner.Assigned(1L, "https://cdn/body1.png"),
                 new BotAvatarAssigner.Assigned(2L, "https://cdn/body2.png"));
@@ -96,10 +99,11 @@ class BotAvatarAdminServiceTest {
                 .willReturn(result);
 
         List<BotAvatarAssigner.Assigned> out = service.distribute(
-                List.of(1L, 2L),
+                List.of(1L, 2L, 3L),
                 List.of("https://cdn/body1.png", "https://cdn/body2.png"));
 
         assertThat(out).isEqualTo(result);
+        verify(botPoolQueryRepository).filterBotUserIds(List.of(1L, 2L, 3L));
         verify(assigner).distribute(
                 List.of(new UserId(1L), new UserId(2L)),
                 List.of("https://cdn/body1.png", "https://cdn/body2.png"));
