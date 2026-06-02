@@ -1,6 +1,7 @@
 package com.pfplaybackend.api.virtualdj.adapter.out.persistence;
 
 import com.pfplaybackend.api.common.domain.value.UserId;
+import com.pfplaybackend.api.virtualdj.application.dto.BotRosterRow;
 import com.pfplaybackend.api.virtualdj.application.dto.PoolPlacementRow;
 
 import java.util.List;
@@ -35,4 +36,10 @@ public interface BotPoolQueryRepository {
      * 봇이 배치된 파티룸만 포함된다(botCount > 0 보장).
      */
     List<PoolPlacementRow> findPlacements();
+
+    /**
+     * 봇 전체 로스터(is_dummy=true, withdrawn_at IS NULL) — 닉네임/현재 아바타 + 현재 배치된
+     * ACTIVE 파티룸(활성 crew 기준, 없으면 null). uid 오름차순(oldest-first).
+     */
+    List<BotRosterRow> findRoster();
 }
