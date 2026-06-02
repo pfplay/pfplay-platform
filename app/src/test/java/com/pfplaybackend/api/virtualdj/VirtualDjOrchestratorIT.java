@@ -98,11 +98,15 @@ class VirtualDjOrchestratorIT extends AbstractIntegrationTest {
                     return result;
                 });
         // 봇 프로비저닝이 쓰는 기본 아바타 바디 시드 (test 프로파일은 Flyway 비활성).
+        // Chunk 3: provision 이 생성 즉시 assignRandomFromCatalog 로 변별 아바타를 부여하므로
+        // 이 바디가 published 후보로 노출돼야 한다(standalone, 자체 아이콘 → face 의존 없음).
         if (avatarBodyResourceRepository.findOneAvatarResourceByResourceUri(DEFAULT_BODY_URI) == null) {
-            avatarBodyResourceRepository.save(AvatarBodyResourceData.draft(
+            AvatarBodyResourceData body = AvatarBodyResourceData.draft(
                     "ava_body_basic_001", DEFAULT_BODY_URI,
                     "https://example.test/icon_basic_001.png",
-                    ObtainmentType.BASIC, 0, false, true, 60, 41, null));
+                    ObtainmentType.BASIC, 0, false, true, 60, 41, null);
+            body.publish(null);
+            avatarBodyResourceRepository.save(body);
         }
     }
 
