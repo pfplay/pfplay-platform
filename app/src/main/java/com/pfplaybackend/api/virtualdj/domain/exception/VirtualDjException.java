@@ -13,7 +13,8 @@ public enum VirtualDjException implements DomainException {
     TRACK_EXCEEDS_PLAYBACK_LIMIT("VDJ-004", "트랙의 재생 시간이 playbackTimeLimit을 초과합니다", ErrorType.BAD_REQUEST),
     PACK_TRACK_NOT_FOUND("VDJ-005", "송 팩 트랙을 찾을 수 없습니다", ErrorType.NOT_FOUND),
     CONFIG_NOT_FOUND("VDJ-006", "해당 룸의 가상 DJ 설정을 찾을 수 없습니다", ErrorType.NOT_FOUND),
-    INVALID_CONFIG("VDJ-007", "MANAGED 전환에는 targetCount/companionFloor 가 필요합니다", ErrorType.BAD_REQUEST);
+    INVALID_CONFIG("VDJ-007", "MANAGED 전환에는 targetCount/companionFloor 가 필요합니다", ErrorType.BAD_REQUEST),
+    INVALID_AVATAR_SET("VDJ-008", "유효하지 않은 아바타 셋입니다 (빈 셋·빈 봇목록·미존재 바디 URI)", ErrorType.BAD_REQUEST);
 
     private final String errorCode;
     private final String message;
