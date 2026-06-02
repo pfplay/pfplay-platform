@@ -83,6 +83,22 @@ class BotAvatarAssignerTest {
     }
 
     @Test
+    void distribute_는_적용_실패한_봇은_건너뛰고_성공분만_반환한다() {
+        // 봇 2명, 셋 [standalone]. 1번 봇은 apply 시 예외(비-봇/미존재 모사) → 건너뛰고 2번만 성공.
+        given(randomizer.nextIndex(1)).willReturn(0);
+        org.mockito.BDDMockito.willThrow(new RuntimeException("non-bot"))
+                .given(applyPort).apply(eq(new UserId(1L)), any(), any());
+
+        var assigned = assigner.distribute(
+                List.of(new UserId(1L), new UserId(2L)),
+                List.of(STANDALONE_BODY));
+
+        assertThat(assigned).hasSize(1);
+        assertThat(assigned.get(0).userId()).isEqualTo(2L);
+        verify(applyPort).apply(eq(new UserId(2L)), bodyUri(STANDALONE_BODY), any());
+    }
+
+    @Test
     void distribute_빈_셋이면_INVALID() {
         assertThatThrownBy(() -> assigner.distribute(List.of(new UserId(1L)), List.of()))
                 .isInstanceOf(RuntimeException.class);

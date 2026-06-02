@@ -67,13 +67,21 @@ public class BotAvatarAssigner {
                 throw ExceptionCreator.create(VirtualDjException.INVALID_AVATAR_SET);
             }
         }
+        // 부분 성공(spec §2.3): 비-봇/미존재 userId 는 apply 단계에서 예외가 나도 배치 전체를 중단하지 않고
+        // 해당 봇만 건너뛴다. 셋 무결성(위 검증)은 강제하되, 대상 목록의 오염은 격리한다.
         List<Assigned> assigned = new ArrayList<>();
         for (UserId botId : botIds) {
             String chosen = bodyUris.get(randomizer.nextIndex(bodyUris.size()));
-            assignOne(botId, chosen);
-            assigned.add(new Assigned(botId.getUid(), chosen));
+            try {
+                assignOne(botId, chosen);
+                assigned.add(new Assigned(botId.getUid(), chosen));
+            } catch (RuntimeException e) {
+                log.warn("[BotAvatarAssigner.distribute] 봇 적용 실패로 건너뜀 userId={} bodyUri={} cause={}",
+                        botId.getUid(), chosen, e.toString());
+            }
         }
-        log.info("[BotAvatarAssigner.distribute] bots={} setSize={}", botIds.size(), bodyUris.size());
+        log.info("[BotAvatarAssigner.distribute] bots={} setSize={} applied={}",
+                botIds.size(), bodyUris.size(), assigned.size());
         return assigned;
     }
 
