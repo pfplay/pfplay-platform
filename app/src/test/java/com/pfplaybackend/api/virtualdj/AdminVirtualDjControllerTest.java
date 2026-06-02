@@ -5,12 +5,16 @@ import com.pfplaybackend.api.common.config.security.jwt.AdminCookieWriter;
 import com.pfplaybackend.api.common.config.security.jwt.JwtService;
 import com.pfplaybackend.api.common.config.security.jwt.SharedSessionCookieWriter;
 import com.pfplaybackend.api.common.config.security.jwt.properties.JwtProperties;
+import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.exception.ExceptionCreator;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import com.pfplaybackend.api.playlist.application.dto.search.SearchResultDto;
 import com.pfplaybackend.api.playlist.application.dto.search.SearchResultRawDto;
 import com.pfplaybackend.api.playlist.application.service.search.MusicSearchService;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.AdminVirtualDjController;
+import com.pfplaybackend.api.virtualdj.application.dto.BotRosterRow;
+import com.pfplaybackend.api.virtualdj.application.service.BotAvatarAdminService;
+import com.pfplaybackend.api.virtualdj.application.service.BotAvatarAssigner;
 import com.pfplaybackend.api.virtualdj.application.service.VirtualDjAdminService;
 import com.pfplaybackend.api.virtualdj.application.service.VirtualSongPackService;
 import com.pfplaybackend.api.virtualdj.domain.enums.VirtualDjStatus;
@@ -77,6 +81,7 @@ class AdminVirtualDjControllerTest {
     @MockBean private VirtualDjAdminService adminService;
     @MockBean private VirtualSongPackService songPackService;
     @MockBean private MusicSearchService musicSearchService;
+    @MockBean private BotAvatarAdminService botAvatarAdminService;
 
     // SecurityConfig autoconfig deps — @MockBean shims so the slice context loads.
     @MockBean private JwtDecoder jwtDecoder;
@@ -468,6 +473,130 @@ class AdminVirtualDjControllerTest {
     @WithMockUser(roles = "ADMIN")
     void drain_missingCsrf_returns403() throws Exception {
         mockMvc.perform(post("/api/v1/admin/partyrooms/7/virtual-dj/drain"))
+                .andExpect(status().isForbidden());
+    }
+
+    // ── 봇 아바타 (P1) ──
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void avatarCatalog_admin_returns200WithBody() throws Exception {
+        given(botAvatarAdminService.catalog())
+                .willReturn(List.of(new BotAvatarAdminService.CatalogItem(
+                        "https://cdn/body.png", "바디", "https://cdn/body.png", true, "BASIC")));
+        mockMvc.perform(get("/api/v1/admin/virtual-dj/avatar-catalog"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].bodyUri").value("https://cdn/body.png"))
+                .andExpect(jsonPath("$.data[0].name").value("바디"))
+                .andExpect(jsonPath("$.data[0].thumbnailUri").value("https://cdn/body.png"))
+                .andExpect(jsonPath("$.data[0].combinable").value(true))
+                .andExpect(jsonPath("$.data[0].obtainableType").value("BASIC"));
+        verify(botAvatarAdminService).catalog();
+    }
+
+    @Test
+    @WithMockUser(roles = "MEMBER")
+    void avatarCatalog_member_returns403() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/virtual-dj/avatar-catalog"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void bots_admin_returns200WithBody() throws Exception {
+        given(botAvatarAdminService.roster())
+                .willReturn(List.of(new BotRosterRow(
+                        1L, "봇", "https://cdn/body.png", "https://cdn/icon.png", 7L, "룸")));
+        mockMvc.perform(get("/api/v1/admin/virtual-dj/bots"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].userId").value(1))
+                .andExpect(jsonPath("$.data[0].nickname").value("봇"))
+                .andExpect(jsonPath("$.data[0].avatarBodyUri").value("https://cdn/body.png"))
+                .andExpect(jsonPath("$.data[0].avatarIconUri").value("https://cdn/icon.png"))
+                .andExpect(jsonPath("$.data[0].placementRoomId").value(7))
+                .andExpect(jsonPath("$.data[0].placementRoomTitle").value("룸"));
+        verify(botAvatarAdminService).roster();
+    }
+
+    @Test
+    @WithAnonymousUser
+    void bots_anonymous_returns401() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/virtual-dj/bots"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void setBotAvatar_admin_returns204() throws Exception {
+        mockMvc.perform(put("/api/v1/admin/virtual-dj/bots/42/avatar")
+                        .with(csrf()).contentType(APPLICATION_JSON)
+                        .content("""
+                                {"avatarBodyUri":"https://cdn/body.png"}
+                                """))
+                .andExpect(status().isNoContent());
+        verify(botAvatarAdminService).setIndividual(new UserId(42L), "https://cdn/body.png");
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void setBotAvatar_blankBodyUri_returns400() throws Exception {
+        mockMvc.perform(put("/api/v1/admin/virtual-dj/bots/42/avatar")
+                        .with(csrf()).contentType(APPLICATION_JSON)
+                        .content("""
+                                {"avatarBodyUri":""}
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void distribute_admin_returns200WithBody() throws Exception {
+        given(botAvatarAdminService.distribute(List.of(1L, 2L), List.of("https://cdn/a.png", "https://cdn/b.png")))
+                .willReturn(List.of(
+                        new BotAvatarAssigner.Assigned(1L, "https://cdn/a.png"),
+                        new BotAvatarAssigner.Assigned(2L, "https://cdn/b.png")));
+        mockMvc.perform(post("/api/v1/admin/virtual-dj/bots/avatar/distribute")
+                        .with(csrf()).contentType(APPLICATION_JSON)
+                        .content("""
+                                {"botIds":[1,2],"bodyUris":["https://cdn/a.png","https://cdn/b.png"]}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.assigned[0].userId").value(1))
+                .andExpect(jsonPath("$.data.assigned[0].avatarBodyUri").value("https://cdn/a.png"))
+                .andExpect(jsonPath("$.data.assigned[1].userId").value(2));
+        verify(botAvatarAdminService).distribute(List.of(1L, 2L), List.of("https://cdn/a.png", "https://cdn/b.png"));
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void distribute_emptyBotIds_returns400() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/virtual-dj/bots/avatar/distribute")
+                        .with(csrf()).contentType(APPLICATION_JSON)
+                        .content("""
+                                {"botIds":[],"bodyUris":["https://cdn/a.png"]}
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @WithMockUser(roles = "MEMBER")
+    void distribute_member_returns403() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/virtual-dj/bots/avatar/distribute")
+                        .with(csrf()).contentType(APPLICATION_JSON)
+                        .content("""
+                                {"botIds":[1],"bodyUris":["https://cdn/a.png"]}
+                                """))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void distribute_missingCsrf_returns403() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/virtual-dj/bots/avatar/distribute")
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                                {"botIds":[1],"bodyUris":["https://cdn/a.png"]}
+                                """))
                 .andExpect(status().isForbidden());
     }
 }
