@@ -456,7 +456,7 @@ public static final ConfigKey VDJ_CHAT_OUTPUT_MAX_TOKENS = new ConfigKey("vdj.ch
 - [ ] **Step 2: 실패 테스트** `VirtualDjChatConfigTest.java`:
 ```java
 // - enabled 기본값(키 없음) → fail-open true
-// - probabilityPercent 기본 12, cooldownSeconds 기본 30, maxInflight 기본 1, contextSize 기본 20, outputMaxTokens 기본 (예 256)
+// - probabilityPercent 기본 12, cooldownSeconds 기본 30, contextSize 기본 20, outputMaxTokens 기본 256
 // - SystemConfigCache mock으로 readInt/readBoolean 반환 시 그 값 노출
 ```
 - [ ] **Step 3: 구현** `VirtualDjChatConfig.java` (SystemConfigCache 래핑, P2 `getDjGraceSeconds` 패턴):

@@ -238,18 +238,17 @@ user:    [최근 사람 채팅 N개 — untrusted]
 
 | 키(예시) | 기본값 | 의미 |
 |---|---|---|
-| `vdj.chat.trigger.probability` | ~0.12 | 사람 메시지당 응답 시도 확률 |
-| `vdj.chat.room.cooldown.seconds` | ~30 | 방별 봇 응답 최소 간격 |
-| `vdj.chat.room.max.inflight` | 1 | 방당 동시 진행 LLM 응답 수 |
+| `vdj.chat.trigger.probability` | 12(%) | 사람 메시지당 응답 시도 확률(정수 퍼센트 — `readInt`만 존재) |
+| `vdj.chat.room.cooldown.seconds` | ~30 | 방별 봇 응답 최소 간격 = **단일 게이트 SETNX 키 TTL**(동시성≤1 겸용, §3.4.1) |
 | `vdj.chat.context.size` | ~20 | LLM에 주입할 최근 사람 메시지 수 |
 | `vdj.chat.output.max.tokens` | (소) | 응답 길이 상한 |
 | `vdj.chat.enabled` | true | **전역 kill switch** — false면 방별 확률 무관하게 봇 채팅 전면 중단 |
 
-- **`vdj.chat.room.max.inflight`** 는 §3.4.1 방별 Redis SETNX 락으로 강제(방 스코프). **전역** 동시성은
-  LLM 워커 풀 크기로 별도 제한한다(둘은 다른 층 — 방 스코프 ≠ 전역).
+> **`vdj.chat.room.max.inflight` 키는 폐기됨** — §3.4.1 단일 게이트 키 재설계로 "방당 1건"이 cooldown 키 TTL로
+> 구조 보장됨(별도 키 불필요). **전역** 동시성은 LLM 워커 풀 크기로 제한.
 - **kill switch**(`vdj.chat.enabled`): 유료 외부 API 호출 + 사람처럼 보이는 신원으로 발화하는 기능이므로,
   확률·쿨다운과 독립적으로 전면 차단할 수 있는 전역 부울을 둔다(P2 `system_config` 패턴, 값싼 보험).
-- **비용 가드**: kill switch + 방별 쿨다운 + 방별 in-flight 락 + 전역 워커 풀 cap + max output tokens.
+- **비용 가드**: kill switch + 방별 게이트 키(쿨다운=동시성≤1) + 전역 워커 풀 cap + max output tokens.
   (일/월 토큰 상한·예산 알림은 P3-A 범위 밖, 후속.)
 - **AI 라벨링**: **기본 OFF**(구별 불가) — "살아있는 방" 의도 및 P2 D1 distinguishable(기본 OFF)과 일관.
   P2 구별모드가 ON인 방에서는 봇 아바타 마커와 동일 정책으로 채팅도 마킹(채팅 측 마킹은 P2 distinguishable
