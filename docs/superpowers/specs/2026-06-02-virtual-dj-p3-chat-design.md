@@ -173,6 +173,12 @@ public void sendMessageAsCrew(PartyroomId partyroomId, long crewId, String conte
 
 #### 3.4.1 방당 동시 응답 1건 — 강제 메커니즘
 
+> **구현 노트(plan에서 단순화됨):** 아래 "inflight 락 + 별도 쿨다운 + 워커 finally 해제" 2-키 설계는 게이트(동기)와
+> 워커(비동기) 사이 락 해제 책임이 갈려 executor 거부 시 누수 위험이 있다. **구현 plan은 이를 단일 SETNX 게이트
+> 키(`vdj:chat:gate:{partyroomId}`, TTL = cooldownSeconds)로 단순화**한다: 게이트에서 SETNX 성공 시에만
+> dispatch, 키는 TTL로 자연 만료(워커는 락 무관 → 누수 불가). cooldownSeconds ≥ LLM 타임아웃이면 동시성 ≤1과
+> 스페이싱을 한 키가 동시에 보장. 상세는 `docs/superpowers/plans/2026-06-02-virtual-dj-p3-chat.md` Chunk 4 §락 설계.
+
 트리거는 다중 채팅 구독 스레드에서 동시 발화 가능하므로, "방당 동시 1건"은 **명시적 동시성 프리미티브**로
 강제한다(P2의 `"virtualdj:{partyroomId}"` 분산락 선례 계승):
 

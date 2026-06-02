@@ -51,12 +51,13 @@ CREATE TABLE virtual_persona (
     name          VARCHAR(64)     NOT NULL COMMENT '어드민 식별용 페르소나 이름',
     instruction   TEXT            NOT NULL COMMENT 'LLM system 지시문(성격/톤/장르 성향)',
     is_active     TINYINT(1)      NOT NULL DEFAULT 1 COMMENT '비활성 시 신규 매핑 불가(기존 보존)',
-    created_at    DATETIME(0)     NOT NULL,
-    updated_at    DATETIME(0)     NOT NULL,
+    created_at    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     UNIQUE KEY uk_virtual_persona_name (name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
+> ⚠️ **감사컬럼은 `BaseEntity`의 `columnDefinition`과 정확히 일치해야 validate 통과** (`reference_ddl_auto_create_drop_hides_migration_drift`). 위 형태는 `BaseEntity`(createdAt = `datetime default current_timestamp`, updatedAt = `... on update current_timestamp`)와 V24 테이블을 따른 것. **작성 전 `V24__create_virtual_dj.sql`의 감사컬럼 DDL을 열어 토씨까지 동일하게 맞출 것.** `DATETIME(0)` 금지(BaseEntity는 precision 0 미지정).
 
 - [ ] **Step 2: 로컬 validate 부팅으로 마이그레이션 적용 확인** (chunk 마지막에 일괄 확인 가능하나, 단독 확인 시)
 
@@ -96,6 +97,7 @@ public class VirtualPersonaData extends BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(columnDefinition = "bigint unsigned")
     private Long id;
 
     @Column(nullable = false, length = 64)
@@ -125,7 +127,7 @@ public class VirtualPersonaData extends BaseEntity {
     public void setActive(boolean active) { this.active = active; }
 }
 ```
-> ⚠️ `@NoArgsConstructor` import (`lombok.NoArgsConstructor`) 추가. `VirtualSongPackData`의 정확한 import/애너테이션 세트를 먼저 열어 그대로 맞출 것.
+> ⚠️ **`VirtualSongPackData`를 먼저 열어 import/애너테이션/생성자 스타일을 그대로 답습할 것.** 송팩은 protected 기본생성자를 **수기 작성**(lombok `@NoArgsConstructor` 미사용)하고 IDENTITY id에 `@Column(columnDefinition = "bigint unsigned")`를 붙인다. 위 코드는 가독성용 스케치이며, 실제로는 송팩 템플릿의 정확한 형태(수기 ctor 또는 lombok)에 일치시켜 validate drift를 막는다.
 
 - [ ] **Step 2: 리포지토리 작성** `VirtualPersonaRepository.java`:
 ```java
@@ -149,12 +151,15 @@ git commit -m "feat(p3a): VirtualPersonaData 엔티티 + 리포지토리"
 
 ### Task 1.3: 예외 코드 추가
 
-- [ ] **Step 1**: `VirtualDjException.java` enum에 페르소나 코드 추가 (기존 `SONG_PACK_DUPLICATE_NAME` 패턴 답습 — 코드번호는 기존 마지막+1 확인 후):
+- [ ] **Step 1**: `VirtualDjException.java` enum에 페르소나 코드 **4개 모두** 추가 (기존 `SONG_PACK_DUPLICATE_NAME` 패턴 답습 — 코드번호는 enum의 **현재 마지막 번호 확인 후 +1**씩. Chunk 2의 Task 2.4/2.5가 `PERSONA_INACTIVE`/`PERSONA_IN_USE`를 쓰므로 여기서 미리 선언해야 green이 컴파일됨):
 ```java
 PERSONA_NOT_FOUND("VDJ-0XX", "페르소나를 찾을 수 없습니다.", ErrorType.NOT_FOUND),
 PERSONA_DUPLICATE_NAME("VDJ-0XX", "이미 존재하는 페르소나 이름입니다.", ErrorType.CONFLICT),
+PERSONA_INACTIVE("VDJ-0XX", "비활성 페르소나는 새로 매핑할 수 없습니다.", ErrorType.BAD_REQUEST),
+PERSONA_IN_USE("VDJ-0XX", "봇에 매핑된 페르소나는 삭제할 수 없습니다. 먼저 매핑을 해제하세요.", ErrorType.CONFLICT),
 ```
-- [ ] **Step 2: 커밋** `git commit -am "feat(p3a): 페르소나 예외 코드"`
+> `ErrorType`의 BAD_REQUEST/CONFLICT 실제 enum 값명을 확인해 일치시킬 것(GlobalExceptionHandler가 HTTP 매핑).
+- [ ] **Step 2: 커밋** `git commit -am "feat(p3a): 페르소나 예외 코드 4종"`
 
 ### Task 1.4: VirtualPersonaService (CRUD) — TDD
 
@@ -280,26 +285,27 @@ public ResponseEntity<Void> deletePersona(@PathVariable Long id) { personaServic
 - Modify: `.../virtualdj/adapter/in/web/payload/...` (BotRosterItemResponse에 persona 노출)
 - Create: `.../virtualdj/application/service/BotPersonaAssignmentService.java`
 - Create: `.../virtualdj/adapter/in/web/payload/AssignPersonaRequest.java`
+- Create: `.../virtualdj/adapter/in/web/payload/UnassignPersonaRequest.java`
+- Create: `.../virtualdj/adapter/in/web/payload/AssignPersonaResponse.java`
 - Modify: `AdminVirtualDjController.java` (매핑 엔드포인트)
 - Modify: `VirtualPersonaService.delete` (in-use 가드)
 - Test: `.../application/service/BotPersonaAssignmentServiceTest.java`
 
 ### Task 2.1: 마이그레이션 V26 — bot_persona_assignment
 
-- [ ] **Step 1**: ⚠️ **먼저 `user_account` PK 컬럼명 확인**(FK 대상). `V24__create_virtual_dj.sql` 및 user_account 엔티티(`UserAccountData`)에서 PK 컬럼명(`id` vs `user_id`)을 확인하고 FK를 정확히 작성.
+- [ ] **Step 1**: 마이그레이션 작성. **컨벤션 확정: 이 코드베이스는 `user_account`로 FK를 걸지 않고 앱레벨 가드만 쓴다**(V24 검증 — user_account 참조 FK 없음). 따라서 `bot_user_id`는 **무FK 앱가드 참조**(`filterBotUserIds`로 봇 검증). persona_id만 FK.
 ```sql
 -- P3-A: 봇(가상멤버) ↔ 페르소나 매핑. 행 존재 = 그 봇은 채팅 참여, 행 없음 = 침묵.
 CREATE TABLE bot_persona_assignment (
-    bot_user_id   BIGINT UNSIGNED NOT NULL COMMENT '봇 user_account PK',
+    bot_user_id   BIGINT UNSIGNED NOT NULL COMMENT '봇 user_account id(앱가드 참조, 무FK)',
     persona_id    BIGINT UNSIGNED NOT NULL,
-    created_at    DATETIME(0)     NOT NULL,
-    updated_at    DATETIME(0)     NOT NULL,
+    created_at    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (bot_user_id),
     CONSTRAINT fk_bpa_persona FOREIGN KEY (persona_id) REFERENCES virtual_persona(id)
-    -- bot_user_id FK는 user_account PK 컬럼명 확인 후 추가(또는 무FK + 앱가드, 기존 컨벤션 확인)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
-> 기존 테이블들이 user_account로 FK를 거는지(아니면 앱레벨 가드만 쓰는지) `V24`/다른 마이그레이션 컨벤션을 확인해 일치시킬 것.
+> 감사컬럼은 V25와 동일하게 `BaseEntity`/V24 형태에 일치(위 ⚠️ 참조). `bot_user_id` PK는 IDENTITY 아님(명시 할당) — 엔티티에 `@GeneratedValue` 금지.
 
 - [ ] **Step 2: 커밋** `git add ... && git commit -m "feat(p3a): bot_persona_assignment 매핑 테이블(V26)"`
 
@@ -359,7 +365,12 @@ public int unassign(List<Long> botIds) {
 
 ### Task 2.5: 매핑 엔드포인트 + 삭제 in-use 가드
 
-- [ ] **Step 1**: payload `AssignPersonaRequest(@NotEmpty List<Long> botIds, Long personaId)` (personaId null이면 unassign 의미, 또는 별도 endpoint).
+- [ ] **Step 1**: payload — assign/unassign **별도 엔드포인트**(null 오버로딩 금지):
+```java
+public record AssignPersonaRequest(@NotEmpty List<Long> botIds, @NotNull Long personaId) {}
+public record UnassignPersonaRequest(@NotEmpty List<Long> botIds) {}
+public record AssignPersonaResponse(int applied) {}
+```
 - [ ] **Step 2**: 컨트롤러 (avatar distribute 답습):
 ```java
 @PostMapping("/virtual-dj/bots/persona/assign")
@@ -436,11 +447,11 @@ public void sendMessageAsCrew(PartyroomId partyroomId, long crewId, String conte
 public static final ConfigKey VDJ_CHAT_ENABLED = new ConfigKey("vdj.chat.enabled");
 public static final ConfigKey VDJ_CHAT_TRIGGER_PROBABILITY = new ConfigKey("vdj.chat.trigger.probability");
 public static final ConfigKey VDJ_CHAT_ROOM_COOLDOWN_SECONDS = new ConfigKey("vdj.chat.room.cooldown.seconds");
-public static final ConfigKey VDJ_CHAT_ROOM_MAX_INFLIGHT = new ConfigKey("vdj.chat.room.max.inflight");
 public static final ConfigKey VDJ_CHAT_CONTEXT_SIZE = new ConfigKey("vdj.chat.context.size");
 public static final ConfigKey VDJ_CHAT_OUTPUT_MAX_TOKENS = new ConfigKey("vdj.chat.output.max.tokens");
 ```
-> probability는 정수 퍼센트로 저장 권장(`SystemConfigCache.readInt`만 있음 — double 없음). 키를 `vdj.chat.trigger.probability.percent` 정수(0~100)로 두거나, readDouble 추가. **정수 퍼센트(0~100) 채택**(캐시 변경 최소).
+> probability는 정수 퍼센트(0~100)로 저장(`SystemConfigCache.readInt`만 존재 — double 없음). **정수 퍼센트 채택**(캐시 변경 최소).
+> ⚠️ **`max.inflight` 키는 제거됨** — §3.4 락 재설계로 "방당 1건"은 별도 키가 아니라 **단일 게이트 SETNX 키(TTL=쿨다운)** 구조로 보장됨(Chunk 4 §락 설계 참조). spec §3.4.1의 2-키(inflight+cooldown) 설계를 1-키로 단순화(누수 불가능). spec §5의 `vdj.chat.room.max.inflight` 행은 무시.
 
 - [ ] **Step 2: 실패 테스트** `VirtualDjChatConfigTest.java`:
 ```java
@@ -456,7 +467,6 @@ public class VirtualDjChatConfig {
     private static final boolean DEFAULT_ENABLED = true;
     private static final int DEFAULT_PROBABILITY_PERCENT = 12;
     private static final int DEFAULT_COOLDOWN_SECONDS = 30;
-    private static final int DEFAULT_MAX_INFLIGHT = 1;
     private static final int DEFAULT_CONTEXT_SIZE = 20;
     private static final int DEFAULT_OUTPUT_MAX_TOKENS = 256;
     private final SystemConfigCache cache;
@@ -464,7 +474,6 @@ public class VirtualDjChatConfig {
     public boolean isEnabled() { return cache.readBoolean(ConfigKey.VDJ_CHAT_ENABLED, DEFAULT_ENABLED); }
     public int probabilityPercent() { return cache.readInt(ConfigKey.VDJ_CHAT_TRIGGER_PROBABILITY, DEFAULT_PROBABILITY_PERCENT); }
     public int cooldownSeconds() { return cache.readInt(ConfigKey.VDJ_CHAT_ROOM_COOLDOWN_SECONDS, DEFAULT_COOLDOWN_SECONDS); }
-    public int maxInflight() { return cache.readInt(ConfigKey.VDJ_CHAT_ROOM_MAX_INFLIGHT, DEFAULT_MAX_INFLIGHT); }
     public int contextSize() { return cache.readInt(ConfigKey.VDJ_CHAT_CONTEXT_SIZE, DEFAULT_CONTEXT_SIZE); }
     public int outputMaxTokens() { return cache.readInt(ConfigKey.VDJ_CHAT_OUTPUT_MAX_TOKENS, DEFAULT_OUTPUT_MAX_TOKENS); }
 }
@@ -476,8 +485,7 @@ public class VirtualDjChatConfig {
 INSERT INTO system_config (config_key, config_value, description) VALUES
  ('vdj.chat.enabled', 'true', 'P3 봇 채팅 전역 kill switch'),
  ('vdj.chat.trigger.probability', '12', '사람 메시지당 봇 응답 시도 확률(%)'),
- ('vdj.chat.room.cooldown.seconds', '30', '방별 봇 응답 최소 간격(초)'),
- ('vdj.chat.room.max.inflight', '1', '방당 동시 진행 LLM 응답 수'),
+ ('vdj.chat.room.cooldown.seconds', '30', '방별 봇 응답 최소 간격(초). 게이트 SETNX 키 TTL 겸용 → 동시성≤1 보장. LLM 타임아웃보다 커야 함'),
  ('vdj.chat.context.size', '20', 'LLM 주입 최근 사람 메시지 수'),
  ('vdj.chat.output.max.tokens', '256', '봇 응답 최대 토큰');
 ```
@@ -493,14 +501,20 @@ INSERT INTO system_config (config_key, config_value, description) VALUES
 
 ## Chunk 4: 채팅 관찰 파이프라인 (구독 → 버퍼 → 게이트)
 
-사람 메시지 구독 → 방별 맥락 버퍼 → 루프가드/확률/쿨다운/in-flight 락 게이트. **LLM 호출은 포트(`BotChatDispatcher`)로 분리하고 Chunk 4에선 mock/no-op으로 테스트**(Chunk 5가 실제 구현).
+사람 메시지 구독 → 방별 맥락 버퍼 → 루프가드/확률/게이트. **LLM 호출은 포트(`BotChatDispatcher`)로 분리하고 Chunk 4에선 mock으로 테스트**(Chunk 5가 실제 구현).
+
+> **락 설계 (불변식 — 누수 불가능):** spec §3.4.1의 "inflight 락 + 쿨다운 2키 + 워커 finally 해제" 설계를 **단일 SETNX 게이트 키**로 단순화한다. 게이트에서 `vdj:chat:gate:{partyroomId}`를 `SETNX TTL=cooldownSeconds`로 잡고, **잡히면 dispatch, 안 잡히면 skip**. 키는 **TTL로 자연 만료** — 워커는 락을 만지지 않는다(해제 책임 없음 = executor 거부/예외에도 누수 없음). cooldownSeconds ≥ LLM 타임아웃이면 키 생존 동안 2번째 dispatch가 안 떠 "방당 동시 1건"이 구조적으로 보장됨. 쿨다운(스페이싱)과 동시성(≤1)을 한 키가 동시에 충족. **이 키를 잡는 곳은 게이트 단 한 곳, 푸는 곳은 없음(TTL).** `dispatch()` 시그니처에 lockKey/token 없음.
 
 **File Structure:**
 - Create: `.../virtualdj/application/service/BotIdentityResolver.java` (crewId→is_dummy 판별, 캐시)
 - Create: `.../virtualdj/application/port/RoomContextReader.java` + impl (title/intro/now-playing)
 - Create: `.../virtualdj/application/service/ChatContextBuffer.java` (Redis capped list)
 - Create: `.../virtualdj/application/port/BotChatDispatcher.java` (포트 — Chunk 5 구현)
+- Reuse: 기존 `.../virtualdj/application/port/Randomizer.java`(+`ThreadLocalRandomizer`) — `nextInt(bound)` 있으면 재사용, 없으면 메서드 추가. 테스트는 mock으로 결정성 확보.
+- Modify: `.../virtualdj/adapter/out/persistence/BotPoolQueryRepository.java` (+impl) — `findActivePersonaBotsInRoom`
+- Modify: `.../virtualdj/application/dto/...` — `BotCandidate` record
 - Create: `.../virtualdj/adapter/in/listener/BotChatTrigger.java` (구독자 + 게이트)
+- Create: `.../virtualdj/adapter/in/listener/ChatMessageTopicListener.java` (얇은 역직렬화 어댑터)
 - Modify: `.../party/adapter/in/listener/config/RedisListenerConfig.java` (BotChatTrigger 등록)
 - Test: 각 단위 테스트 + 트리거 게이트 테스트
 
@@ -513,8 +527,8 @@ INSERT INTO system_config (config_key, config_value, description) VALUES
 ### Task 4.2: RoomContextReader — TDD
 
 - [ ] **Step 1: 실패 테스트** — `read(partyroomId)`: title/introduction + now-playing 곡명(activated면). 반환 record `RoomContext(title, introduction, nowPlayingTitle/*nullable*/)`.
-- [ ] **Step 2~4**: 구현 — `PartyroomQueryService.getPartyroomById` → title/intro; `aggregatePort.findPlaybackState`(또는 query service 경유) → activated면 `playbackQueryService.getPlaybackById(currentPlaybackId).getName()`.
-  > ⚠️ ArchUnit: RoomContextReader가 virtualdj 패키지면 `*AggregatePort` 직접 의존 금지(규칙 5). → **party의 query service(`PartyroomQueryService`/`PlaybackQueryService`)를 경유**하거나, party BC에 read 메서드를 추가해 호출. aggregatePort 직접 주입 금지. 통과 경로를 plan 실행 시 확정.
+- [ ] **Step 2~4**: 구현 — `PartyroomQueryService.getPartyroomById` → title/intro; now-playing은 query service 경유로 `findPlaybackState` → activated면 `playbackQueryService.getPlaybackById(currentPlaybackId).getName()`.
+  > ⚠️ ArchUnit 규칙 5: virtualdj 패키지는 simple-name이 `AggregatePort`로 끝나는 타입에 **의존 금지**(호출뿐 아니라 **import/타입참조**까지). → ① `aggregatePort` 직접 주입 금지, ② **`PartyroomQueryService`/`PlaybackQueryService` 경유**하되, **그 query 메서드의 반환 타입이 `*AggregatePort` 타입을 노출하지 않는지 확인**(노출하면 RoomContextReader의 import 그래프에 걸려 ArchUnit fail). 노출 시 party BC에 `RoomContextReader`용 평범한 read DTO 반환 메서드를 추가해 우회. plan 실행 시 query 메서드 시그니처 확인 필수(spec §11.5).
 - [ ] **Step 5: 커밋.**
 
 ### Task 4.3: ChatContextBuffer (Redis capped list) — TDD
@@ -522,49 +536,59 @@ INSERT INTO system_config (config_key, config_value, description) VALUES
 - [ ] **Step 1: 실패 테스트**(embedded redis 또는 RedisTemplate mock) — `append(partyroomId, message)` 후 `recent(partyroomId, n)`가 최근 n개(오래된 것 trim) 반환. TTL 세팅. 키 `vdj:chat:ctx:{partyroomId}`.
 - [ ] **Step 2~4**: 구현 — `redisTemplate.opsForList().rightPush` + `trim(key, -n, -1)` + `expire`. 통과 + 커밋.
 
-### Task 4.4: BotChatDispatcher 포트 + BotChatTrigger 게이트 — TDD
+### Task 4.4: persona 봇 in-room 조회 (게이트 의존성 먼저) — TDD
 
-- [ ] **Step 1**: 포트 인터페이스 `BotChatDispatcher { void dispatch(PartyroomId partyroomId, long botCrewId, long botUserId); }` (Chunk 5 구현). Chunk 4 테스트는 mock.
+게이트가 호출할 협력자를 **먼저** 만든다(컴파일 의존성 순서).
 
-- [ ] **Step 2: 실패 테스트** `BotChatTriggerTest.java` — 핵심 게이트 로직(메시지 수신 핸들러를 직접 호출하는 단위 테스트, Redis 리스너 역직렬화는 분리):
+- [ ] **Step 1**: `BotCandidate` record(`long botUserId, long crewId, Long personaId`) + 조회 메서드 `findActivePersonaBotsInRoom(PartyroomId)` — `bot_persona_assignment` ∩ 그 방 **활성 crew**(is_dummy 봇) join → 후보 리스트. QueryDSL로 `BotPoolQueryRepository`에 추가(crew active + assignment inner join).
+- [ ] **Step 2: 실패 테스트** — persona 매핑+활성 crew인 봇만 반환, 비활성 crew/매핑 없는 봇 제외.
+- [ ] **Step 3~4**: 구현 + 통과. **Step 5: 커밋.**
+
+### Task 4.5: BotChatDispatcher 포트 + BotChatTrigger 게이트 — TDD
+
+- [ ] **Step 1**: 포트 인터페이스 (lockKey/token **없음** — 단일 게이트 키 설계):
 ```java
-// 입력: ChatMessageDto(또는 역직렬화된 형태) + 협력자 mock(BotIdentityResolver, ChatContextBuffer, VirtualDjChatConfig, RedisLockService, RandomProvider, persona봇 조회, BotChatDispatcher)
-// - kill switch OFF(config.isEnabled=false) → 아무것도 안 함(버퍼 append도 X 또는 append만? → 설계: 전면중단, dispatch 0)
-// - 봇 메시지(isBotCrew=true) → 버퍼 append X + 트리거 X (루프가드 핵심)
-// - 사람 메시지 → 버퍼 append O
-// - 사람 메시지 + 확률 실패(random ≥ p) → dispatch 0
-// - 사람 메시지 + 확률 성공 + 쿨다운/락 미획득 → dispatch 0
-// - 사람 메시지 + 확률 성공 + persona봇 0명 → dispatch 0
-// - 사람 메시지 + 확률 성공 + 락 획득 + persona봇 ≥1 → dispatch 1 (선택봇 crewId/userId 전달)
-```
-- [ ] **Step 3: 구현** `BotChatTrigger`:
-```java
-public void onChatMessage(ChatMessageDto msg) {
-    if (!config.isEnabled()) return;
-    long crewId = msg.crew().crewId();
-    if (identityResolver.isBotCrew(crewId)) return;            // 루프가드: 봇 발화 무시
-    buffer.append(msg.partyroomId(), extractContent(msg));     // 사람 메시지만 버퍼
-    if (!rollProbability(config.probabilityPercent())) return; // 확률
-    // persona 보유 + 그 방 활성 봇 후보 조회
-    List<BotCandidate> bots = personaBotQuery.findActivePersonaBotsInRoom(msg.partyroomId());
-    if (bots.isEmpty()) return;
-    // in-flight 락(= 쿨다운 겸용 또는 별도). 게이트 동기 구간에서 획득.
-    String lockKey = "vdj:chat:inflight:" + msg.partyroomId().getId();
-    String token = UUID.randomUUID().toString();
-    if (!redisLockService.acquireLock(lockKey, token, inflightTtlSeconds(), TimeUnit.SECONDS)) return;
-    // 쿨다운 별도 키(선택): vdj:chat:cooldown:{id} SETNX cooldownSeconds — 통과 못하면 락 해제 후 return
-    BotCandidate chosen = pick(bots);
-    dispatcher.dispatch(msg.partyroomId(), chosen.crewId(), chosen.userId(), lockKey, token); // 락 토큰 전달 → Chunk5가 finally 해제
+public interface BotChatDispatcher {
+    void dispatch(PartyroomId partyroomId, long botCrewId, long botUserId);
 }
 ```
-> **락 해제 책임**: dispatch가 비동기이므로 락 토큰을 dispatcher에 넘겨 **Chunk 5 워커가 작업 종료(성공/실패/타임아웃) finally에서 해제**. 동기 게이트에서 못 dispatch한 경우(확률 실패 등)는 락을 애초에 안 잡았거나, 잡았다면 즉시 해제. → 포트 시그니처에 lockKey/token 포함하도록 §Step1 수정.
-> **쿨다운 vs in-flight**: in-flight 락(작업 중 1건)과 쿨다운(작업 후 N초 간격)은 다른 목적. MVP는 **in-flight 락 + 별도 쿨다운 SETNX 키** 둘 다. 쿨다운 키는 dispatch 성공 시 워커가 설정(또는 게이트에서 설정).
-- [ ] **Step 4: 통과.**
+Chunk 4 테스트는 mock. Chunk 5가 `LlmChatTaskRunner`로 구현.
 
-- [ ] **Step 5: persona 봇 in-room 조회** — `findActivePersonaBotsInRoom(partyroomId)`: bot_persona_assignment ∩ 그 방 활성 crew(is_dummy) → (botUserId, crewId, personaId). QueryDSL로 `BotPoolQueryRepository` 또는 신규 쿼리. 단위/통합 테스트.
-- [ ] **Step 6: 커밋.**
+- [ ] **Step 2: 실패 테스트** `BotChatTriggerTest.java`(핸들러 직접 호출, 협력자 mock: `BotIdentityResolver`, `ChatContextBuffer`, `VirtualDjChatConfig`, `RedisLockService`, `RandomProvider`, `BotPoolQueryRepository`(또는 조회 포트), `BotChatDispatcher`):
+```java
+// - kill switch OFF(isEnabled=false) → buffer.append 0회 AND dispatch 0회 (전면중단, 명시 단언)
+// - 봇 메시지(isBotCrew=true) → buffer.append 0 + dispatch 0 (루프가드)
+// - 사람 메시지(isBotCrew=false) → buffer.append 1 (항상 — 게이트 통과 여부 무관)
+// - 사람 메시지 + 확률 실패(rng가 p 이상) → 게이트키 SETNX 호출 0 + dispatch 0 (확률 미스 시 락 안 잡음)
+// - 사람 메시지 + 확률 성공 + persona봇 0명 → SETNX 0 + dispatch 0
+// - 사람 메시지 + 확률 성공 + persona봇 ≥1 + SETNX 실패(키 이미 존재=쿨다운중) → dispatch 0
+// - 사람 메시지 + 확률 성공 + persona봇 ≥1 + SETNX 성공 → dispatch 1 (선택 봇 crewId/userId 전달)
+```
+> 확률·선택의 결정성: 기존 `Randomizer` 포트(`rng.nextInt(bound)`)로 추상화해 테스트에서 mock 고정(`Math.random()` 직접 호출 금지 — 테스트·재현 위해).
 
-### Task 4.5: Redis 리스너 등록
+- [ ] **Step 3: 구현** `BotChatTrigger` (게이트 전체를 명시 코드로):
+```java
+public void onChatMessage(ChatMessageDto msg) {
+    if (!config.isEnabled()) return;                                  // kill switch (append 이전)
+    long crewId = msg.crew().crewId();
+    if (identityResolver.isBotCrew(crewId)) return;                   // 루프가드: 봇 발화 무시(버퍼/트리거 X)
+    buffer.append(msg.partyroomId(), msg.message().content());        // 사람 메시지만 버퍼
+    if (rng.nextInt(100) >= config.probabilityPercent()) return;      // 확률 미스 → 락 안 잡고 종료
+    List<BotCandidate> bots = botQuery.findActivePersonaBotsInRoom(msg.partyroomId());
+    if (bots.isEmpty()) return;
+    // 단일 게이트 키: SETNX TTL=cooldownSeconds. 성공=이번 턴 점유(동시성≤1 + 스페이싱). 실패=쿨다운중 → skip.
+    String gateKey = "vdj:chat:gate:" + msg.partyroomId().getId();
+    boolean acquired = redisLockService.acquireLock(
+        gateKey, "1", config.cooldownSeconds(), TimeUnit.SECONDS);
+    if (!acquired) return;
+    BotCandidate chosen = bots.get(rng.nextInt(bots.size()));         // 랜덤 선택
+    dispatcher.dispatch(msg.partyroomId(), chosen.crewId(), chosen.botUserId()); // 비동기. 락 토큰 없음.
+}
+```
+> **불변식**: 게이트 키는 여기서만 SET, 해제 코드 없음(TTL 만료). 워커 실패/executor 거부/예외 어디서도 누수 불가. `msg.message().content()`는 `ChatMessageDto.ChatContent.content()` — 실제 record 접근자 확인.
+- [ ] **Step 4: 통과. Step 5: 커밋.**
+
+### Task 4.6: Redis 리스너 등록
 
 - [ ] **Step 1**: `RedisListenerConfig.redisContainer`에 BotChatTrigger를 `chat_message_sent` 토픽 리스너로 등록(역직렬화 어댑터는 기존 `GroupBroadcastTopicListener` 스타일 참조 — `ChatMessageDto`로 역직렬화 후 `onChatMessage` 호출하는 얇은 MessageListener 작성).
 ```java
@@ -585,7 +609,7 @@ container.addMessageListener(
 
 ## Chunk 5: LLM 프로바이더 + 비동기 워커
 
-`BotChatDispatcher` 실제 구현 = 전용 스레드풀에서 프롬프트 조립 → Claude 호출 → 송신 가드 → `sendMessageAsCrew`, finally 락 해제.
+`BotChatDispatcher` 실제 구현 = 전용 스레드풀에서 프롬프트 조립 → Claude 호출 → 송신 가드 → `sendMessageAsCrew`. **락 없음**(게이트 키는 Chunk 4에서 TTL 만료, 워커는 락 무관 → executor 거부에도 누수 불가).
 
 **File Structure:**
 - Create: `.../virtualdj/application/port/LlmChatProvider.java` (포트)
@@ -594,20 +618,26 @@ container.addMessageListener(
 - Create: `.../common/config/VirtualDjChatAsyncConfig.java` (전용 ThreadPoolTaskExecutor 빈)
 - Create: `.../virtualdj/application/service/LlmChatTaskRunner.java` (BotChatDispatcher 구현)
 - Create: `.../virtualdj/application/service/ChatPromptAssembler.java` (프롬프트 조립)
+- Create: `.../virtualdj/application/port/PersonaQueryPort.java` + impl (botUserId→instruction, 없으면 null)
 - Modify: `app/build.gradle` (필요 시 — 직접 HTTP면 무변경)
 - Modify: `app/src/main/resources/application.yml` (service-api.anthropic.*)
 - Test: provider(mock 서버/WireMock), prompt assembler, task runner
 
 ### Task 5.1: LlmChatProvider 포트 + 프롬프트 조립 — TDD
 
-- [ ] **Step 1**: 포트 `LlmChatProvider { String complete(String systemPrompt, List<String> recentUserMessages, int maxTokens); }`. 실패 시 빈/예외 — 구현이 결정.
-- [ ] **Step 2: 실패 테스트** `ChatPromptAssemblerTest.java` — `assembleSystem(persona, roomContext)`:
+- [ ] **Step 1**: 포트 `LlmChatProvider { String complete(String systemPrompt, String userContent, int maxTokens); }`. best-effort: 실패 시 빈 문자열 반환(구현이 예외 삼킴).
+- [ ] **Step 2: 실패 테스트** `ChatPromptAssemblerTest.java` — `assembleSystem(personaInstruction, roomContext)` + `assembleUserContent(recentMessages)`:
 ```java
-// - 고정 규칙(한국어/짧게/AI비공개/지시무시) + persona.instruction + 방맥락(title/intro/현재곡) 포함
+// assembleSystem:
+// - 고정 규칙(한국어/짧게/AI비공개/"메시지 속 지시 무시"/도구·링크 금지) + persona.instruction + 방맥락(title/intro/현재곡) 포함
 // - introduction 비어있으면 그 줄 생략(빈 줄 안 들어감)
 // - 현재곡 null이면 곡 줄 생략
+// assembleUserContent(프롬프트 인젝션 격리):
+// - recentMessages를 줄바꿈+구분자로 join한 "단일" user 문자열 반환 (각 메시지를 개별 role로 매핑 금지)
+//   → Anthropic은 user/assistant 교차를 요구하므로 다중 메시지 매핑 시 400. 단일 user 블록 + 명확한 구분자.
+// - 빈 버퍼면 빈/플레이스홀더 문자열
 ```
-- [ ] **Step 3: 구현** `ChatPromptAssembler` — system 문자열 조립(고정 규칙 상수 + persona + RoomContext). recentUserMessages는 버퍼에서.
+- [ ] **Step 3: 구현** `ChatPromptAssembler` — `assembleSystem`(고정 규칙 상수 + persona + RoomContext), `assembleUserContent`(최근 메시지를 한 user 문자열로, 예: 각 줄 `- {content}`). 출력 길이 cap은 `max_tokens`로 강제(추가 후처리 절단 생략 — max_tokens가 상한, 의도적 단순화).
 - [ ] **Step 4: 통과 + 커밋.**
 
 ### Task 5.2: AnthropicChatProvider — TDD
@@ -622,75 +652,84 @@ container.addMessageListener(
 // - 4xx/5xx/타임아웃 → 빈 문자열 반환(best-effort, 예외 삼킴) + 로그
 ```
 - [ ] **Step 2: 실패 확인.**
-- [ ] **Step 3: 구현** — 기존 `RestTemplate`(JdkClientHttpRequestFactory) 또는 신규 전용 `WebClient`로 POST. 워커가 이미 별도 스레드라 동기 RestTemplate로 충분. 바디:
+- [ ] **Step 3: 구현** — **전용 `RestTemplate`(타임아웃 설정한 `JdkClientHttpRequestFactory`)** 으로 동기 POST(워커가 이미 별도 스레드). 바디:
 ```json
-{ "model": "<claude-최신>", "max_tokens": <n>, "system": [{"type":"text","text":"<sys>","cache_control":{"type":"ephemeral"}}],
-  "messages": [{"role":"user","content":"<recent chat joined>"}] }
+{ "model": "<MODEL>", "max_tokens": <n>, "system": [{"type":"text","text":"<sys>","cache_control":{"type":"ephemeral"}}],
+  "messages": [{"role":"user","content":"<assembleUserContent 결과>"}] }
 ```
-설정 주입: `service-api.anthropic.api-key: ${ANTHROPIC_API_KEY}`, `model`, `base-uri`(기본 https://api.anthropic.com), `timeout`. application.yml(Pytube 패턴 답습).
+- ⚠️ **`<MODEL>`은 플레이스홀더 — Task 완료 전 반드시 @claude-api 스킬로 구체 모델 id 확정**(예: 최신 Sonnet/Haiku 계열. 비용·지연 고려해 채팅 응답엔 Haiku 계열도 후보). 미해결 시 Task 미완.
+- **타임아웃 필수**: `JdkClientHttpRequestFactory`에 connect/read 타임아웃 적용(기본 `service-api.anthropic.timeout: 12s`). 이 타임아웃 < `vdj.chat.room.cooldown.seconds`(30s) 여야 게이트 키 TTL이 백스톱으로 동작(동시성≤1 불변식).
+- 설정 주입(application.yml, Pytube `@Value` 패턴):
+```yaml
+service-api:
+  anthropic:
+    api-key: ${ANTHROPIC_API_KEY:}      # 미설정 허용 — 키 없으면 provider가 빈 문자열 반환
+    base-uri: ${ANTHROPIC_BASE_URI:https://api.anthropic.com}
+    model: ${ANTHROPIC_MODEL:<MODEL>}
+    timeout-ms: ${ANTHROPIC_TIMEOUT_MS:12000}
+```
+- **best-effort**: 키 미설정/4xx/5xx/타임아웃/파싱실패 모두 catch → 빈 문자열 반환 + `log.warn`. 예외를 워커로 전파하지 않음.
 - [ ] **Step 4: 통과 + 커밋.**
 
 ### Task 5.3: 전용 스레드풀 빈
 
-- [ ] **Step 1**: `VirtualDjChatAsyncConfig` — `ThreadPoolTaskExecutor`(core 2, max 4, queue 50, CallerRunsPolicy 또는 AbortPolicy로 과부하 시 드롭, prefix `vdj-chat-`, graceful shutdown). `@Async` 안 씀(ArchUnit `@Async`↔`@TransactionalEventListener` 쌍 강제 회피) — 직접 `executor.submit`.
+- [ ] **Step 1**: `VirtualDjChatAsyncConfig` — `ThreadPoolTaskExecutor`(core 2, max 4, queue 50, **`AbortPolicy`**(과부하 시 거부=그 턴 드롭), prefix `vdj-chat-`, graceful shutdown). `@Async` 안 씀(ArchUnit `@Async`↔`@TransactionalEventListener` 쌍 강제 회피) — 직접 `executor.submit`.
+  > **AbortPolicy 안전**: 단일 게이트 키 설계라 거부돼도 누수 없음(게이트 키는 TTL 만료, 워커는 락 무관). CallerRunsPolicy는 채팅 구독 스레드를 블로킹하므로 **금지**(§3.4 비블로킹 원칙). 거부는 best-effort 드롭으로 수용.
 - [ ] **Step 2: 커밋.**
 
 ### Task 5.4: LlmChatTaskRunner (BotChatDispatcher 구현) — TDD
 
-- [ ] **Step 1: 실패 테스트** `LlmChatTaskRunnerTest.java`(executor는 동기 실행 stub로 주입해 결정적):
+- [ ] **Step 1: 실패 테스트** `LlmChatTaskRunnerTest.java`(executor는 **동기 실행 stub**로 주입해 결정적 — 람다를 즉시 실행하는 가짜 executor):
 ```java
-// - dispatch: 프롬프트 조립 → provider.complete → 송신직전 봇 활성 crew 재확인 → sendMessageAsCrew 호출
-// - provider 빈/공백 반환 → sendMessageAsCrew 호출 0 (빈출력 드롭, 설계 §3.4.2)
-// - 송신시점 봇이 비활성 crew → sendMessageAsCrew 호출 0 (이탈 드롭)
-// - 정상/실패/예외 무관 finally에서 redisLockService.releaseLock(lockKey, token) 1회 (락 해제 보장)
-// - 쿨다운 키 설정(성공 시) 확인
+// - dispatch: persona 조회 → 프롬프트 조립 → provider.complete → 송신직전 봇 활성 crew 재확인 → sendMessageAsCrew 1회
+// - provider 빈/공백 반환 → sendMessageAsCrew 0 (빈출력 드롭, 설계 §3.4.2)
+// - 송신시점 봇이 비활성 crew → sendMessageAsCrew 0 (이탈 드롭, §3.4.2)
+// - persona 조회 null(매핑 해제됨) → sendMessageAsCrew 0
+// - provider/조립이 예외 던져도 dispatch가 예외를 밖으로 전파하지 않음(워커 내부 catch)
+// (락/쿨다운 관련 단언 없음 — 워커는 락 무관)
 ```
 - [ ] **Step 2: 실패 확인.**
-- [ ] **Step 3: 구현**:
+- [ ] **Step 3: 구현** (락·쿨다운 없음 — 게이트가 Chunk 4에서 단일 키로 처리):
 ```java
 @Service
 @RequiredArgsConstructor
 public class LlmChatTaskRunner implements BotChatDispatcher {
-    private final ThreadPoolTaskExecutor vdjChatExecutor; // VDJ_CHAT_EXECUTOR
+    private final Executor vdjChatExecutor;            // VirtualDjChatAsyncConfig 빈
     private final ChatPromptAssembler assembler;
     private final RoomContextReader roomContextReader;
     private final ChatContextBuffer buffer;
-    private final PersonaQueryPort personaQuery;       // botUserId→persona.instruction
+    private final PersonaQueryPort personaQuery;       // botUserId → persona.instruction (없으면 null)
     private final LlmChatProvider provider;
     private final PartyroomChatCommandService chatCommandService; // sendMessageAsCrew
-    private final CrewRepository crewRepository;       // 송신직전 활성 재확인
-    private final RedisLockService redisLockService;
+    private final PartyroomQueryService partyroomQueryService;    // 송신직전 활성 crew 재확인(query service 경유)
     private final VirtualDjChatConfig config;
-    private final RedisTemplate<String,Object> redisTemplate; // 쿨다운 키
 
     @Override
-    public void dispatch(PartyroomId partyroomId, long botCrewId, long botUserId, String lockKey, String lockToken) {
-        vdjChatExecutor.submit(() -> {
+    public void dispatch(PartyroomId partyroomId, long botCrewId, long botUserId) {
+        vdjChatExecutor.execute(() -> {
             try {
-                String instruction = personaQuery.instructionOf(botUserId);     // 없으면 return
+                String instruction = personaQuery.instructionOf(botUserId);
+                if (instruction == null) return;                                // 매핑 해제 드롭
                 RoomContext ctx = roomContextReader.read(partyroomId);
                 String system = assembler.assembleSystem(instruction, ctx);
-                List<String> recent = buffer.recent(partyroomId, config.contextSize());
-                String reply = provider.complete(system, recent, config.outputMaxTokens());
+                String userContent = assembler.assembleUserContent(
+                        buffer.recent(partyroomId, config.contextSize()));
+                String reply = provider.complete(system, userContent, config.outputMaxTokens());
                 if (reply == null || reply.isBlank()) return;                    // 빈출력 드롭
                 if (!isStillActiveCrew(partyroomId, botUserId)) return;          // 이탈 드롭
                 chatCommandService.sendMessageAsCrew(partyroomId, botCrewId, reply.trim());
-                setCooldown(partyroomId);                                        // 쿨다운 키
             } catch (Exception e) {
-                log.warn("vdj chat dispatch failed: {}", e.getMessage());
-            } finally {
-                redisLockService.releaseLock(lockKey, lockToken);               // 락 해제 보장
+                log.warn("vdj chat dispatch failed (room={}): {}", partyroomId, e.getMessage());
             }
         });
     }
 }
 ```
-> `isStillActiveCrew` = `crewRepository.findByPartyroomIdAndUserId(pid, UserId.of(botUserId)).filter(CrewData::isActive).isPresent()`.
-> ⚠️ ArchUnit: `LlmChatTaskRunner`가 `CrewRepository`(EndingWith "Repository") 의존 → **규칙 B는 `*AggregatePort`/`*MessagePublisher`만 금지**(규칙 A는 Orchestrator 한정). LlmChatTaskRunner는 Orchestrator 아님 → Repository 의존 허용됨. 단 깔끔하게 query service 경유 가능하면 그게 나음. 실행 시 확인.
-> ⚠️ `RedisTemplate` 의존은 MessagePublisher/AggregatePort 아님 → 허용. 단 쿨다운을 ChatContextBuffer류 포트로 감싸면 더 깔끔.
+> `isStillActiveCrew`: party query service 경유로 그 봇이 partyroom 활성 crew인지 확인(`PartyroomQueryService.getCrewByUserId`/`getCrewOrThrow` 활용, `CrewData::isActive`). ArchUnit: query service 경유라 Repository/AggregatePort 직접 의존 회피.
+> `PersonaQueryPort.instructionOf(botUserId)`: bot_persona_assignment → virtual_persona.instruction 조회(신규 작은 포트/쿼리). 매핑 없으면 null.
 - [ ] **Step 4: 통과.**
-- [ ] **Step 5: dispatcher 포트 시그니처(lockKey/token) Chunk 4와 정합** — BotChatTrigger가 동일 시그니처로 호출하는지 컴파일 확인.
-- [ ] **Step 6: 커밋** `feat(p3a): LLM 채팅 워커(프롬프트 조립+Claude 호출+가드 송신+락해제)`.
+- [ ] **Step 5: dispatcher 시그니처 정합** — Chunk 4 `BotChatTrigger`가 `dispatch(partyroomId, crewId, userId)` 3-arg로 호출 → 컴파일 확인.
+- [ ] **Step 6: 커밋** `feat(p3a): LLM 채팅 워커(프롬프트 조립+Claude 호출+가드 송신)`.
 
 ### Chunk 5 완료 게이트
 - [ ] `:app:test` GREEN + ArchUnit GREEN.
@@ -701,13 +740,16 @@ public class LlmChatTaskRunner implements BotChatDispatcher {
 
 ## Chunk 6: 어드민 프론트엔드 (페르소나 CRUD + 봇 매핑)
 
-pfplay-admin. 경로: `C:\Users\Eisen\Desktop\Labs\[projects] pfplay\pfplay-admin`. 별도 git 레포(브랜치 분기 필요 — origin/develop 기준). **pfplay-admin은 GHA 없음**(`reference_pfplay_admin_no_gha`) — Cloudflare/Vercel native.
+pfplay-admin. 경로: `C:\Users\Eisen\Desktop\Labs\[projects] pfplay\pfplay-admin`. **별도 git 레포**. **pfplay-admin은 GHA 없음**(`reference_pfplay_admin_no_gha`) — Cloudflare/Vercel native.
+
+- [ ] **Task 6.0: 브랜치 분기** (`feedback_branch_from_origin_develop`) — pfplay-admin에서:
+  `git fetch origin && git switch -c feature/virtual-dj-p3-personas origin/develop` (로컬 develop stale 위험 회피, origin/develop base).
 
 ### Task 6.1: 페르소나 CRUD slice
 
 > 템플릿 = `src/features/virtual-dj-song-packs/` 통째 복제.
 
-- [ ] **Step 1**: `entities/virtual-dj/model/types.ts`에 `Persona { id; name; instruction; active }` + `PersonaListItem` 추가.
+- [ ] **Step 1**: `entities/virtual-dj/model/types.ts`에 `Persona { id; name; instruction; active }` + `PersonaListItem` 추가. **`entities/virtual-dj/index.ts`(배럴)에서 신규 타입 re-export** 확인(누락 시 feature import 깨짐).
 - [ ] **Step 2**: `features/virtual-dj-personas/` 생성:
   - `api/personas-api.ts` — `listPersonas/getPersona/createPersona/updatePersona/deletePersona` (`http<ApiCommonResponse<T>>` + `unwrap`).
   - `api/use-personas.ts`, `api/use-create-persona.ts`(+rename→update, delete) — TanStack Query, queryKey `["virtual-dj","personas"]`, mutation onSuccess invalidate + `mutationErrorToast`.
