@@ -7,6 +7,8 @@ import com.pfplaybackend.api.playlist.adapter.in.web.payload.response.QueryMusic
 import com.pfplaybackend.api.playlist.application.service.search.MusicSearchService;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.AddPackTrackRequest;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.ApplyVirtualDjConfigRequest;
+import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.AssignPersonaRequest;
+import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.AssignPersonaResponse;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.AvatarCatalogItemResponse;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.BotRosterItemResponse;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.BulkApplyVirtualDjConfigRequest;
@@ -22,8 +24,10 @@ import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.RenameSongPackRequ
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.SetBotAvatarRequest;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.SongPackDetailResponse;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.SongPackListItemResponse;
+import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.UnassignPersonaRequest;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.VirtualDjLiveStatusResponse;
 import com.pfplaybackend.api.virtualdj.application.service.BotAvatarAdminService;
+import com.pfplaybackend.api.virtualdj.application.service.BotPersonaAssignmentService;
 import com.pfplaybackend.api.virtualdj.application.service.BotAvatarAssigner;
 import com.pfplaybackend.api.virtualdj.application.service.VirtualDjAdminService;
 import com.pfplaybackend.api.virtualdj.application.service.VirtualPersonaService;
@@ -66,6 +70,7 @@ public class AdminVirtualDjController {
     private final VirtualPersonaService personaService;
     private final MusicSearchService musicSearchService;
     private final BotAvatarAdminService botAvatarAdminService;
+    private final BotPersonaAssignmentService botPersonaAssignmentService;
 
     // ── 음악 검색 (어드민 프록시) ──
 
@@ -315,5 +320,27 @@ public class AdminVirtualDjController {
             @Valid @RequestBody DistributeBotAvatarRequest req) {
         List<BotAvatarAssigner.Assigned> assigned = botAvatarAdminService.distribute(req.botIds(), req.bodyUris());
         return ResponseEntity.ok(ApiCommonResponse.success(DistributeBotAvatarResponse.from(assigned)));
+    }
+
+    // ── 봇↔페르소나 매핑 (P3) ──
+
+    @Operation(summary = "봇 페르소나 일괄 매핑", description = "선택 봇들에 페르소나 1개 일괄 매핑(이미 매핑된 봇은 교체)")
+    @SecurityRequirement(name = "cookieAuth")
+    @PreAuthorize("@adminAuth.canManageVirtualDj()")
+    @PostMapping("/virtual-dj/bots/persona/assign")
+    public ResponseEntity<ApiCommonResponse<AssignPersonaResponse>> assignPersona(
+            @Valid @RequestBody AssignPersonaRequest req) {
+        int applied = botPersonaAssignmentService.assign(req.botIds(), req.personaId());
+        return ResponseEntity.ok(ApiCommonResponse.success(new AssignPersonaResponse(applied)));
+    }
+
+    @Operation(summary = "봇 페르소나 일괄 해제", description = "선택 봇들의 페르소나 매핑 해제")
+    @SecurityRequirement(name = "cookieAuth")
+    @PreAuthorize("@adminAuth.canManageVirtualDj()")
+    @PostMapping("/virtual-dj/bots/persona/unassign")
+    public ResponseEntity<ApiCommonResponse<AssignPersonaResponse>> unassignPersona(
+            @Valid @RequestBody UnassignPersonaRequest req) {
+        int applied = botPersonaAssignmentService.unassign(req.botIds());
+        return ResponseEntity.ok(ApiCommonResponse.success(new AssignPersonaResponse(applied)));
     }
 }

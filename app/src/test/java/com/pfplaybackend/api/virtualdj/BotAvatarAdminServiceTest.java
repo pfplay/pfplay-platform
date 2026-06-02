@@ -72,7 +72,7 @@ class BotAvatarAdminServiceTest {
     @Test
     void roster_는_repository_findRoster_에_위임한다() {
         List<BotRosterRow> rows = List.of(
-                new BotRosterRow(1L, "봇", "https://cdn/body.png", "https://cdn/icon.png", 7L, "룸"));
+                new BotRosterRow(1L, "봇", "https://cdn/body.png", "https://cdn/icon.png", 7L, "룸", 3L, "DJ 챌린저"));
         given(botPoolQueryRepository.findRoster()).willReturn(rows);
 
         assertThat(service.roster()).isEqualTo(rows);

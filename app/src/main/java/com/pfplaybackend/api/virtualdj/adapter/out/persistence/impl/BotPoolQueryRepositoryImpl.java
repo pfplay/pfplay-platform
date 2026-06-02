@@ -19,6 +19,8 @@ import static com.pfplaybackend.api.party.domain.entity.data.QCrewData.crewData;
 import static com.pfplaybackend.api.party.domain.entity.data.QPartyroomData.partyroomData;
 import static com.pfplaybackend.api.user.domain.entity.data.QProfileData.profileData;
 import static com.pfplaybackend.api.user.domain.entity.data.QUserAccountData.userAccountData;
+import static com.pfplaybackend.api.virtualdj.domain.entity.data.QBotPersonaAssignmentData.botPersonaAssignmentData;
+import static com.pfplaybackend.api.virtualdj.domain.entity.data.QVirtualPersonaData.virtualPersonaData;
 
 /**
  * QueryDSL impl — is_dummy 계정 중 활성 crew 가 없는 봇을 조회한다.
@@ -137,13 +139,20 @@ public class BotPoolQueryRepositoryImpl implements BotPoolQueryRepository {
                         profileData.avatarSetting.avatarBodyUri.value,
                         profileData.avatarSetting.avatarIconUri.value,
                         partyroomData.id,
-                        partyroomData.title)
+                        partyroomData.title,
+                        virtualPersonaData.id,
+                        virtualPersonaData.name)
                 .from(userAccountData)
                 .join(profileData).on(profileData.userId.uid.eq(userAccountData.userId.uid))
                 .leftJoin(crewData).on(crewData.userId.uid.eq(userAccountData.userId.uid)
                         .and(crewData.isActive.isTrue()))
                 .leftJoin(partyroomData).on(partyroomData.id.eq(crewData.partyroomId.id)
                         .and(partyroomData.status.eq(PartyroomStatus.ACTIVE)))
+                // 봇↔페르소나 매핑(없으면 null) — assignment 미존재 봇도 로스터에 남도록 LEFT JOIN.
+                .leftJoin(botPersonaAssignmentData)
+                        .on(botPersonaAssignmentData.botUserId.eq(userAccountData.userId.uid))
+                .leftJoin(virtualPersonaData)
+                        .on(virtualPersonaData.id.eq(botPersonaAssignmentData.personaId))
                 .where(
                         userAccountData.isDummy.isTrue(),
                         userAccountData.withdrawnAt.isNull())
@@ -159,7 +168,9 @@ public class BotPoolQueryRepositoryImpl implements BotPoolQueryRepository {
                             t.get(profileData.avatarSetting.avatarBodyUri.value),
                             t.get(profileData.avatarSetting.avatarIconUri.value),
                             t.get(partyroomData.id),
-                            t.get(partyroomData.title));
+                            t.get(partyroomData.title),
+                            t.get(virtualPersonaData.id),
+                            t.get(virtualPersonaData.name));
                 })
                 .toList();
     }

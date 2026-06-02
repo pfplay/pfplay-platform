@@ -2,6 +2,7 @@ package com.pfplaybackend.api.virtualdj.application.service;
 
 import com.pfplaybackend.api.common.exception.http.ConflictException;
 import com.pfplaybackend.api.common.exception.http.NotFoundException;
+import com.pfplaybackend.api.virtualdj.adapter.out.persistence.BotPersonaAssignmentRepository;
 import com.pfplaybackend.api.virtualdj.adapter.out.persistence.VirtualPersonaRepository;
 import com.pfplaybackend.api.virtualdj.domain.entity.data.VirtualPersonaData;
 import org.junit.jupiter.api.DisplayName;
@@ -25,6 +26,9 @@ class VirtualPersonaServiceTest {
 
     @Mock
     private VirtualPersonaRepository repository;
+
+    @Mock
+    private BotPersonaAssignmentRepository assignmentRepository;
 
     @InjectMocks
     private VirtualPersonaService service;
@@ -105,13 +109,26 @@ class VirtualPersonaServiceTest {
     }
 
     @Test
-    @DisplayName("존재하는 id로 delete 시 deleteById 호출됨")
+    @DisplayName("존재하는 id로 delete 시(매핑 없음) deleteById 호출됨")
     void delete_존재하는_id_정상삭제() {
         when(repository.existsById(1L)).thenReturn(true);
+        when(assignmentRepository.existsByPersonaId(1L)).thenReturn(false);
 
         service.delete(1L);
 
         verify(repository).deleteById(1L);
+    }
+
+    @Test
+    @DisplayName("봇에 매핑된 페르소나 delete 시 ConflictException(PERSONA_IN_USE), 삭제 없음")
+    void delete_매핑된_페르소나_거부() {
+        when(repository.existsById(1L)).thenReturn(true);
+        when(assignmentRepository.existsByPersonaId(1L)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.delete(1L))
+                .isInstanceOf(ConflictException.class);
+
+        verify(repository, never()).deleteById(any());
     }
 
     // ── list ──

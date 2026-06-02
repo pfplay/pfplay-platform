@@ -1,6 +1,7 @@
 package com.pfplaybackend.api.virtualdj.application.service;
 
 import com.pfplaybackend.api.common.exception.ExceptionCreator;
+import com.pfplaybackend.api.virtualdj.adapter.out.persistence.BotPersonaAssignmentRepository;
 import com.pfplaybackend.api.virtualdj.adapter.out.persistence.VirtualPersonaRepository;
 import com.pfplaybackend.api.virtualdj.domain.entity.data.VirtualPersonaData;
 import com.pfplaybackend.api.virtualdj.domain.exception.VirtualDjException;
@@ -21,6 +22,7 @@ import java.util.List;
 public class VirtualPersonaService {
 
     private final VirtualPersonaRepository repository;
+    private final BotPersonaAssignmentRepository assignmentRepository;
 
     // ── 서비스 내부 타입 ──
 
@@ -76,6 +78,10 @@ public class VirtualPersonaService {
     public void delete(Long id) {
         if (!repository.existsById(id)) {
             throw ExceptionCreator.create(VirtualDjException.PERSONA_NOT_FOUND);
+        }
+        // Delete guard: 봇에 매핑된 페르소나는 삭제 금지(먼저 매핑 해제 필요).
+        if (assignmentRepository.existsByPersonaId(id)) {
+            throw ExceptionCreator.create(VirtualDjException.PERSONA_IN_USE);
         }
         repository.deleteById(id);
     }
