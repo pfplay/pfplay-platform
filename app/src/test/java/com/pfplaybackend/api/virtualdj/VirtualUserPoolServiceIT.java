@@ -152,6 +152,18 @@ class VirtualUserPoolServiceIT extends AbstractIntegrationTest {
             String iconUri = adminUserService.getVirtualMember(id)
                     .getProfileData().getAvatarSetting().getAvatarIconUriValue();
             assertThat(iconUri).as("bot %s avatar icon", id.getUid()).isNotBlank();
+
+            // 회귀 가드(replace-vs-mutate): provision = createVirtualMember(1 row) + 자동 변별 update.
+            // update 가 profile 을 교체하면 cascade 더블 인서트로 2 row 가 된다. create-drop 엔
+            // uk_user_profile_nickname 제약이 없어 SQL 에러 없이 통과하므로 row 개수로 직접 막는다
+            // (reference_ddl_auto_create_drop_hides_migration_drift).
+            long profileRows = ((Number) entityManager.createNativeQuery(
+                            "SELECT COUNT(*) FROM user_profile WHERE user_id = :uid")
+                    .setParameter("uid", id.getUid())
+                    .getSingleResult()).longValue();
+            assertThat(profileRows)
+                    .as("bot %s user_profile row count (provision 후 정확히 1개)", id.getUid())
+                    .isEqualTo(1L);
         }
     }
 }

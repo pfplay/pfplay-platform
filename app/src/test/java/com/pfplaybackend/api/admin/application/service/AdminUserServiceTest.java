@@ -127,23 +127,23 @@ class AdminUserServiceTest {
         UserId userId = new UserId(200L);
         MemberData virtualMember = createMemberFor(userId.getUid());
         UserAccountData localAccount = createLocalAccount(userId);
+        ProfileData existingProfile = virtualMember.getProfileData();   // 교체되면 안 되는 기존 row
 
         AvatarBodyUri newBodyUri = new AvatarBodyUri("new_body.png");
         AvatarFaceUri newFaceUri = new AvatarFaceUri("new_face.png");
-        ProfileData updatedProfile = createDummyProfile(userId);
 
         when(adminMemberPort.findMemberByUserAccountId(userId.getUid())).thenReturn(Optional.of(virtualMember));
         when(userAccountRepository.findById(userId)).thenReturn(Optional.of(localAccount));
-        when(adminProfileService.createProfileForVirtualMember(
-                userId, "Virtual_AABBCC", newBodyUri, newFaceUri))
-                .thenReturn(updatedProfile);
         when(adminMemberPort.saveMember(any(MemberData.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         // when
         MemberData result = adminUserService.updateVirtualMemberAvatar(userId, newBodyUri, newFaceUri);
 
-        // then
-        assertThat(result.getProfileData()).isEqualTo(updatedProfile);
+        // then: 기존 profile row 를 MUTATE 해야 한다 — 교체(createProfileForVirtualMember) 금지.
+        verify(adminProfileService).applyAvatarToExistingMember(virtualMember, newBodyUri, newFaceUri);
+        verify(adminProfileService, never()).createProfileForVirtualMember(any(), any(), any(), any());
+        // 동일 ProfileData 참조가 유지돼야(swap 아님) → 같은 user_profile id 가 UPDATE 된다.
+        assertThat(result.getProfileData()).isSameAs(existingProfile);
         verify(adminMemberPort).saveMember(virtualMember);
     }
 

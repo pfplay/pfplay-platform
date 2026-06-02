@@ -129,6 +129,22 @@ class BotAvatarAdminServiceIT extends AbstractIntegrationTest {
                 .getProfileData().getAvatarSetting().getAvatarIconUriValue();
     }
 
+    /**
+     * 봇 user_id 에 매달린 user_profile row 개수(네이티브 카운트).
+     *
+     * <p>이 가드가 replace-vs-mutate 더블 인서트를 직접 잡는다: test 프로파일은 create-drop 이라
+     * uk_user_profile_nickname 제약이 없어(=Flyway V15 부재) 더블 인서트가 SQL 에러 없이 통과해버린다.
+     * 따라서 제약에 의존하지 않고 row 개수를 세어 회귀를 막는다
+     * (reference_ddl_auto_create_drop_hides_migration_drift).
+     */
+    private long profileRowCount(UserId botId) {
+        Number count = (Number) entityManager.createNativeQuery(
+                        "SELECT COUNT(*) FROM user_profile WHERE user_id = :uid")
+                .setParameter("uid", botId.getUid())
+                .getSingleResult();
+        return count.longValue();
+    }
+
     @Test
     @DisplayName("C1: distribute([validBot, nonBot]) — 유효 봇 아바타가 실제로 커밋, 비-봇 격리, 결과 1건, 롤백 없음")
     void distribute_validBotCommitted_nonBotSkipped_noRollback() {
@@ -159,6 +175,28 @@ class BotAvatarAdminServiceIT extends AbstractIntegrationTest {
 
         assertThat(currentBodyUri(bot)).isEqualTo(COMBINABLE_BODY_URI);
         // combinable → 기본 face 합성 → face-pair 아이콘이 채워져 non-blank.
+        assertThat(currentIconUri(bot)).isNotBlank();
+        // 회귀 가드: update 는 기존 row 를 mutate 해야 한다. profile 교체(=cascade 더블 인서트)면 2가 된다.
+        assertThat(profileRowCount(bot))
+                .as("setIndividual 후 봇 %s 의 user_profile row 는 정확히 1개여야(교체 아님 mutate)", bot.getUid())
+                .isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("회귀 가드: provision→update 반복해도 user_profile row 는 봇당 정확히 1개 (replace-vs-mutate 더블 인서트 차단)")
+    void repeatedUpdate_keepsExactlyOneProfileRow() {
+        UserId bot = seedBot(STANDALONE_BODY_URI);
+        assertThat(profileRowCount(bot)).isEqualTo(1L);   // 생성 직후 1개
+
+        // 여러 번 갱신해도(교체였다면 매번 +1) row 는 1개로 유지돼야 한다.
+        botAvatarAdminService.setIndividual(bot, COMBINABLE_BODY_URI);
+        botAvatarAdminService.setIndividual(bot, STANDALONE_BODY_URI);
+        botAvatarAdminService.setIndividual(bot, COMBINABLE_BODY_URI);
+
+        assertThat(profileRowCount(bot))
+                .as("update 3회 후 봇 %s 의 user_profile row 는 여전히 1개여야", bot.getUid())
+                .isEqualTo(1L);
+        assertThat(currentBodyUri(bot)).isEqualTo(COMBINABLE_BODY_URI);
         assertThat(currentIconUri(bot)).isNotBlank();
     }
 }

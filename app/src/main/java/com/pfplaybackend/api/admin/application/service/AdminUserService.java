@@ -135,18 +135,14 @@ public class AdminUserService {
         // 2. Verify it's a virtual member (LOCAL provider type on UserAccount)
         requireLocalProviderForVirtualMemberOp(member, AdminException.NON_VIRTUAL_MEMBER_AVATAR_UPDATE);
 
-        // 3. Create new profile with updated avatar
-        ProfileData updatedProfile = adminProfileService.createProfileForVirtualMember(
-                userId,
-                member.getProfileData().getNicknameValue(),  // Keep existing nickname
-                avatarBodyUri,
-                avatarFaceUri
-        );
+        // 3. MUTATE the existing profile row (same id) — never build+swap a new ProfileData.
+        //    Replacing the @OneToOne(cascade=ALL) reference would cascade a SECOND transient
+        //    user_profile INSERT (same user_id/nickname) → V15 uk_user_profile_nickname 위반(HTTP 500).
+        //    create-drop 테스트 스키마엔 그 제약이 없어 silent 였다(reference_ddl_auto_create_drop_hides_migration_drift).
+        //    nickname 은 mutate 하지 않으므로 그대로 보존된다.
+        adminProfileService.applyAvatarToExistingMember(member, avatarBodyUri, avatarFaceUri);
 
-        // 4. Update member with new profile
-        member.initializeProfile(updatedProfile);
-
-        // 5. Save and return
+        // 4. Save and return (UPDATE on the existing row).
         MemberData savedData = adminMemberPort.saveMember(member);
 
         log.info("Virtual member avatar updated: userId={}", userId.getUid());
