@@ -37,6 +37,7 @@ public class VirtualUserPoolService {
     private final UserAccountRepository userAccountRepository;
     private final PlaylistRepository playlistRepository;
     private final BotPoolQueryRepository botPoolQueryRepository;
+    private final BotAvatarAssigner botAvatarAssigner;
 
     /**
      * 봇 {@code n} 명을 생성한다. 각 봇은 실 {@code user_account}(is_dummy=true, LOCAL),
@@ -58,6 +59,11 @@ public class VirtualUserPoolService {
             // 3) DJ 가 enqueue 할 PLAYLIST 타입 playlist 1개 생성 (송팩 복사 대상).
             playlistRepository.save(
                     PlaylistData.create(1, BOT_PLAYLIST_NAME, PlaylistType.PLAYLIST, botUserId));
+
+            // 4) P1-D5: 생성 즉시 카탈로그에서 랜덤 변별 아바타를 부여한다. createVirtualMember 의
+            //    디폴트 바디(ava_basic_001, combinable·icon NULL)는 채팅 아이콘이 깨지므로 합성 규칙
+            //    (combinable→공통 face / standalone→자체 아이콘)으로 non-blank 아이콘을 보장한다.
+            botAvatarAssigner.assignRandomFromCatalog(botUserId);
 
             created.add(botUserId);
         }
