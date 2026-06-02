@@ -2,8 +2,10 @@ package com.pfplaybackend.api.virtualdj.adapter.out.persistence.impl;
 
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.party.domain.enums.PartyroomStatus;
+import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import com.pfplaybackend.api.user.domain.value.Nickname;
 import com.pfplaybackend.api.virtualdj.adapter.out.persistence.BotPoolQueryRepository;
+import com.pfplaybackend.api.virtualdj.application.dto.BotCandidate;
 import com.pfplaybackend.api.virtualdj.application.dto.BotRosterRow;
 import com.pfplaybackend.api.virtualdj.application.dto.PoolPlacementRow;
 import com.querydsl.core.Tuple;
@@ -172,6 +174,36 @@ public class BotPoolQueryRepositoryImpl implements BotPoolQueryRepository {
                             t.get(virtualPersonaData.id),
                             t.get(virtualPersonaData.name));
                 })
+                .toList();
+    }
+
+    @Override
+    public List<BotCandidate> findActivePersonaBotsInRoom(PartyroomId partyroomId) {
+        List<Tuple> tuples = queryFactory
+                .select(
+                        userAccountData.userId.uid,
+                        crewData.id,
+                        botPersonaAssignmentData.personaId)
+                .from(crewData)
+                // crew.userId == userAccount.userId, 봇 게이트는 아래 where 절에서.
+                .join(userAccountData).on(userAccountData.userId.uid.eq(crewData.userId.uid))
+                // INNER JOIN assignment → 페르소나 매핑이 있는 봇만 후보.
+                .join(botPersonaAssignmentData)
+                        .on(botPersonaAssignmentData.botUserId.eq(userAccountData.userId.uid))
+                .where(
+                        crewData.partyroomId.id.eq(partyroomId.getId()),
+                        crewData.isActive.isTrue(),
+                        userAccountData.isDummy.isTrue(),
+                        userAccountData.withdrawnAt.isNull())
+                // crewId 오름차순 — 동일 입력에 동일 순서(rng 선택의 재현성).
+                .orderBy(crewData.id.asc())
+                .fetch();
+
+        return tuples.stream()
+                .map(t -> new BotCandidate(
+                        t.get(userAccountData.userId.uid),
+                        t.get(crewData.id),
+                        t.get(botPersonaAssignmentData.personaId)))
                 .toList();
     }
 }

@@ -19,9 +19,14 @@ import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
 import com.pfplaybackend.api.user.adapter.out.persistence.UserProfileRepository;
 import com.pfplaybackend.api.user.domain.entity.data.ProfileData;
 import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
+import com.pfplaybackend.api.virtualdj.adapter.out.persistence.BotPersonaAssignmentRepository;
 import com.pfplaybackend.api.virtualdj.adapter.out.persistence.BotPoolQueryRepository;
+import com.pfplaybackend.api.virtualdj.adapter.out.persistence.VirtualPersonaRepository;
+import com.pfplaybackend.api.virtualdj.application.dto.BotCandidate;
 import com.pfplaybackend.api.virtualdj.application.dto.BotRosterRow;
 import com.pfplaybackend.api.virtualdj.application.dto.PoolPlacementRow;
+import com.pfplaybackend.api.virtualdj.domain.entity.data.BotPersonaAssignmentData;
+import com.pfplaybackend.api.virtualdj.domain.entity.data.VirtualPersonaData;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -50,6 +55,8 @@ class BotPoolQueryRepositoryImplIT extends AbstractIntegrationTest {
     @Autowired private UserProfileRepository userProfileRepository;
     @Autowired private CrewRepository crewRepository;
     @Autowired private PartyroomRepository partyroomRepository;
+    @Autowired private VirtualPersonaRepository virtualPersonaRepository;
+    @Autowired private BotPersonaAssignmentRepository botPersonaAssignmentRepository;
 
     private static final long BOT1_UID = 8001L;
     private static final long BOT2_UID = 8002L;
@@ -223,6 +230,65 @@ class BotPoolQueryRepositoryImplIT extends AbstractIntegrationTest {
         assertThat(idle.userId()).isEqualTo(BOT2_UID);
         assertThat(idle.placementPartyroomId()).isNull();
         assertThat(idle.placementPartyroomTitle()).isNull();
+    }
+
+    private Long seedPersona(String name) {
+        VirtualPersonaData persona = virtualPersonaRepository.saveAndFlush(
+                VirtualPersonaData.create(name, "instruction"));
+        return persona.getId();
+    }
+
+    private void seedAssignment(long botUid, long personaId) {
+        botPersonaAssignmentRepository.saveAndFlush(
+                BotPersonaAssignmentData.create(botUid, personaId));
+    }
+
+    @Test
+    @DisplayName("findActivePersonaBotsInRoom() — 페르소나 매핑된 활성 crew 봇만 반환")
+    void findActivePersonaBotsInRoom_returns_only_personaed_active_bots() {
+        Long personaId = seedPersona("DJ봇");
+        // BOT1: 방의 활성 crew + 페르소나 매핑 → 후보
+        seedAssignment(BOT1_UID, personaId);
+        // HUMAN: 같은 방 활성 crew + 페르소나 매핑이지만 비봇 → 제외
+        seedAssignment(HUMAN_UID, personaId);
+
+        List<BotCandidate> candidates =
+                botPoolQueryRepository.findActivePersonaBotsInRoom(new PartyroomId(partyroomId));
+
+        assertThat(candidates).hasSize(1);
+        BotCandidate c = candidates.get(0);
+        assertThat(c.botUserId()).isEqualTo(BOT1_UID);
+        assertThat(c.personaId()).isEqualTo(personaId);
+        assertThat(c.crewId()).isNotNull();
+        // crewId 는 BOT1 의 활성 crew row PK 와 일치한다.
+        CrewData bot1Crew = crewRepository.findAll().stream()
+                .filter(cr -> cr.getUserId().getUid().equals(BOT1_UID) && cr.isActive())
+                .findFirst().orElseThrow();
+        assertThat(c.crewId()).isEqualTo(bot1Crew.getId());
+    }
+
+    @Test
+    @DisplayName("findActivePersonaBotsInRoom() — 페르소나 없는 봇은 제외한다")
+    void findActivePersonaBotsInRoom_excludes_bot_without_persona() {
+        // BOT1 은 방의 활성 crew 이지만 어떤 assignment 도 시드하지 않는다.
+        List<BotCandidate> candidates =
+                botPoolQueryRepository.findActivePersonaBotsInRoom(new PartyroomId(partyroomId));
+
+        assertThat(candidates).isEmpty();
+    }
+
+    @Test
+    @DisplayName("findActivePersonaBotsInRoom() — 다른 방/비활성 crew 봇은 제외한다")
+    void findActivePersonaBotsInRoom_excludes_other_room_and_inactive_crew() {
+        Long personaId = seedPersona("DJ봇");
+        // BOT2 는 페르소나 매핑이 있지만 어느 방에도 활성 crew 가 없는 idle 봇 → 제외.
+        seedAssignment(BOT2_UID, personaId);
+
+        List<BotCandidate> candidates =
+                botPoolQueryRepository.findActivePersonaBotsInRoom(new PartyroomId(partyroomId));
+
+        // BOT1 은 페르소나 없음, BOT2 는 활성 crew 없음 → 둘 다 후보 아님.
+        assertThat(candidates).isEmpty();
     }
 
     @Test

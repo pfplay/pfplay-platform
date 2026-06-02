@@ -1,6 +1,8 @@
 package com.pfplaybackend.api.virtualdj.adapter.out.persistence;
 
 import com.pfplaybackend.api.common.domain.value.UserId;
+import com.pfplaybackend.api.party.domain.value.PartyroomId;
+import com.pfplaybackend.api.virtualdj.application.dto.BotCandidate;
 import com.pfplaybackend.api.virtualdj.application.dto.BotRosterRow;
 import com.pfplaybackend.api.virtualdj.application.dto.PoolPlacementRow;
 
@@ -51,4 +53,13 @@ public interface BotPoolQueryRepository {
      * 입력이 null/빈 리스트면 빈 리스트를 반환한다.
      */
     List<Long> filterBotUserIds(List<Long> candidateUserIds);
+
+    /**
+     * 주어진 파티룸 안에서 채팅 응답 후보가 될 수 있는 페르소나 봇 목록을 반환한다.
+     *
+     * <p>조건: (1) 봇 계정(is_dummy=true, withdrawn_at IS NULL), (2) 해당 파티룸의 활성 crew,
+     * (3) {@code bot_persona_assignment} 매핑 존재(페르소나 INNER JOIN). 매핑 없는 봇·비활성 crew·
+     * 비봇은 제외된다. 결과는 crewId 오름차순(deterministic).
+     */
+    List<BotCandidate> findActivePersonaBotsInRoom(PartyroomId partyroomId);
 }
