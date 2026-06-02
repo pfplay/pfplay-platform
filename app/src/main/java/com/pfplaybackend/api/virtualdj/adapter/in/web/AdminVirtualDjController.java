@@ -209,8 +209,7 @@ public class AdminVirtualDjController {
     @PutMapping("/virtual-dj/personas/{id}")
     public ResponseEntity<Void> updatePersona(@PathVariable("id") Long id,
                                               @Valid @RequestBody UpdatePersonaRequest req) {
-        personaService.update(id, req.name(), req.instruction());
-        personaService.setActive(id, req.active());
+        personaService.update(id, req.name(), req.instruction(), req.active());
         return ResponseEntity.noContent().build();
     }
 

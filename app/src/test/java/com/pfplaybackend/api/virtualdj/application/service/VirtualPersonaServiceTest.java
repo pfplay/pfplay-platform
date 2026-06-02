@@ -62,7 +62,7 @@ class VirtualPersonaServiceTest {
         when(repository.existsByNameAndIdNot("DJ Nova", 99L)).thenReturn(false);
         when(repository.findById(99L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.update(99L, "DJ Nova", "지시문"))
+        assertThatThrownBy(() -> service.update(99L, "DJ Nova", "지시문", true))
                 .isInstanceOf(NotFoundException.class);
     }
 
@@ -71,32 +71,24 @@ class VirtualPersonaServiceTest {
     void update_다른row_이름충돌_거부() {
         when(repository.existsByNameAndIdNot("Taken Name", 1L)).thenReturn(true);
 
-        assertThatThrownBy(() -> service.update(1L, "Taken Name", "지시문"))
+        assertThatThrownBy(() -> service.update(1L, "Taken Name", "지시문", true))
                 .isInstanceOf(ConflictException.class);
 
         verify(repository, never()).findById(any());
     }
 
-    // ── setActive ──
-
     @Test
-    @DisplayName("setActive 정상 호출 시 entity.setActive 호출됨")
-    void setActive_정상_토글() {
-        VirtualPersonaData persona = VirtualPersonaData.create("DJ Luna", "지시문");
+    @DisplayName("update 정상 호출 시 name·instruction·active 모두 단일 트랜잭션에서 적용됨")
+    void update_단일트랜잭션_name_instruction_active_모두_적용() {
+        VirtualPersonaData persona = VirtualPersonaData.create("DJ Luna", "기존 지시문");
+        when(repository.existsByNameAndIdNot("DJ Nova", 1L)).thenReturn(false);
         when(repository.findById(1L)).thenReturn(Optional.of(persona));
 
-        service.setActive(1L, false);
+        service.update(1L, "DJ Nova", "새 지시문", false);
 
+        assertThat(persona.getName()).isEqualTo("DJ Nova");
+        assertThat(persona.getInstruction()).isEqualTo("새 지시문");
         assertThat(persona.isActive()).isFalse();
-    }
-
-    @Test
-    @DisplayName("존재하지 않는 id로 setActive 시 NotFoundException")
-    void setActive_존재하지않는_id_거부() {
-        when(repository.findById(99L)).thenReturn(Optional.empty());
-
-        assertThatThrownBy(() -> service.setActive(99L, true))
-                .isInstanceOf(NotFoundException.class);
     }
 
     // ── delete ──

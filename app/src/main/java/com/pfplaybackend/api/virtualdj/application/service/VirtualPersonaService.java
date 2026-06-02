@@ -62,19 +62,13 @@ public class VirtualPersonaService {
     }
 
     @Transactional
-    public void update(Long id, String name, String instruction) {
+    public void update(Long id, String name, String instruction, boolean active) {
         if (repository.existsByNameAndIdNot(name, id)) {
             throw ExceptionCreator.create(VirtualDjException.PERSONA_DUPLICATE_NAME);
         }
         VirtualPersonaData persona = repository.findById(id)
                 .orElseThrow(() -> ExceptionCreator.create(VirtualDjException.PERSONA_NOT_FOUND));
         persona.update(name, instruction);
-    }
-
-    @Transactional
-    public void setActive(Long id, boolean active) {
-        VirtualPersonaData persona = repository.findById(id)
-                .orElseThrow(() -> ExceptionCreator.create(VirtualDjException.PERSONA_NOT_FOUND));
         persona.setActive(active);
     }
 
