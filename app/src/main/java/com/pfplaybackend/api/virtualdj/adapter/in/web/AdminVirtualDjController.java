@@ -1,20 +1,28 @@
 package com.pfplaybackend.api.virtualdj.adapter.in.web;
 
 import com.pfplaybackend.api.common.ApiCommonResponse;
+import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import com.pfplaybackend.api.playlist.adapter.in.web.payload.response.QueryMusicSearchResponse;
 import com.pfplaybackend.api.playlist.application.service.search.MusicSearchService;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.AddPackTrackRequest;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.ApplyVirtualDjConfigRequest;
+import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.AvatarCatalogItemResponse;
+import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.BotRosterItemResponse;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.BulkApplyVirtualDjConfigRequest;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.CreateSongPackRequest;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.CreatedIdResponse;
+import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.DistributeBotAvatarRequest;
+import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.DistributeBotAvatarResponse;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.PoolSummaryResponse;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.ProvisionPoolRequest;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.RenameSongPackRequest;
+import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.SetBotAvatarRequest;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.SongPackDetailResponse;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.SongPackListItemResponse;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.VirtualDjLiveStatusResponse;
+import com.pfplaybackend.api.virtualdj.application.service.BotAvatarAdminService;
+import com.pfplaybackend.api.virtualdj.application.service.BotAvatarAssigner;
 import com.pfplaybackend.api.virtualdj.application.service.VirtualDjAdminService;
 import com.pfplaybackend.api.virtualdj.application.service.VirtualSongPackService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -53,6 +61,7 @@ public class AdminVirtualDjController {
     private final VirtualDjAdminService adminService;
     private final VirtualSongPackService songPackService;
     private final MusicSearchService musicSearchService;
+    private final BotAvatarAdminService botAvatarAdminService;
 
     // ── 음악 검색 (어드민 프록시) ──
 
@@ -211,5 +220,47 @@ public class AdminVirtualDjController {
         adminService.applyBulk(req.partyroomIds(), req.status(),
                 req.targetCount(), req.companionFloor(), req.songPackId());
         return ResponseEntity.noContent().build();
+    }
+
+    // ── 봇 아바타 (P1) ──
+
+    @Operation(summary = "아바타 카탈로그 조회 (피커용)")
+    @SecurityRequirement(name = "cookieAuth")
+    @PreAuthorize("@adminAuth.canManageVirtualDj()")
+    @GetMapping("/virtual-dj/avatar-catalog")
+    public ResponseEntity<ApiCommonResponse<List<AvatarCatalogItemResponse>>> avatarCatalog() {
+        List<AvatarCatalogItemResponse> items = botAvatarAdminService.catalog().stream()
+                .map(AvatarCatalogItemResponse::from).toList();
+        return ResponseEntity.ok(ApiCommonResponse.success(items));
+    }
+
+    @Operation(summary = "봇 로스터 조회 (신원+현재 아바타+배치룸)")
+    @SecurityRequirement(name = "cookieAuth")
+    @PreAuthorize("@adminAuth.canManageVirtualDj()")
+    @GetMapping("/virtual-dj/bots")
+    public ResponseEntity<ApiCommonResponse<List<BotRosterItemResponse>>> bots() {
+        List<BotRosterItemResponse> items = botAvatarAdminService.roster().stream()
+                .map(BotRosterItemResponse::from).toList();
+        return ResponseEntity.ok(ApiCommonResponse.success(items));
+    }
+
+    @Operation(summary = "봇 개별 아바타 설정")
+    @SecurityRequirement(name = "cookieAuth")
+    @PreAuthorize("@adminAuth.canManageVirtualDj()")
+    @PutMapping("/virtual-dj/bots/{userId}/avatar")
+    public ResponseEntity<Void> setBotAvatar(@PathVariable("userId") Long userId,
+                                             @Valid @RequestBody SetBotAvatarRequest req) {
+        botAvatarAdminService.setIndividual(new UserId(userId), req.avatarBodyUri());
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "봇 아바타 일괄 변별 배분", description = "선택 봇들에 셋에서 랜덤 1개씩 배분")
+    @SecurityRequirement(name = "cookieAuth")
+    @PreAuthorize("@adminAuth.canManageVirtualDj()")
+    @PostMapping("/virtual-dj/bots/avatar/distribute")
+    public ResponseEntity<ApiCommonResponse<DistributeBotAvatarResponse>> distributeBotAvatars(
+            @Valid @RequestBody DistributeBotAvatarRequest req) {
+        List<BotAvatarAssigner.Assigned> assigned = botAvatarAdminService.distribute(req.botIds(), req.bodyUris());
+        return ResponseEntity.ok(ApiCommonResponse.success(DistributeBotAvatarResponse.from(assigned)));
     }
 }

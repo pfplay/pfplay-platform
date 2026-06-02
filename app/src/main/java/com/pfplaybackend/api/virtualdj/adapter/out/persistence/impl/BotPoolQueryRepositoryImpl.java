@@ -2,7 +2,9 @@ package com.pfplaybackend.api.virtualdj.adapter.out.persistence.impl;
 
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.party.domain.enums.PartyroomStatus;
+import com.pfplaybackend.api.user.domain.value.Nickname;
 import com.pfplaybackend.api.virtualdj.adapter.out.persistence.BotPoolQueryRepository;
+import com.pfplaybackend.api.virtualdj.application.dto.BotRosterRow;
 import com.pfplaybackend.api.virtualdj.application.dto.PoolPlacementRow;
 import com.querydsl.core.Tuple;
 import com.querydsl.jpa.JPAExpressions;
@@ -15,6 +17,7 @@ import java.util.List;
 
 import static com.pfplaybackend.api.party.domain.entity.data.QCrewData.crewData;
 import static com.pfplaybackend.api.party.domain.entity.data.QPartyroomData.partyroomData;
+import static com.pfplaybackend.api.user.domain.entity.data.QProfileData.profileData;
 import static com.pfplaybackend.api.user.domain.entity.data.QUserAccountData.userAccountData;
 
 /**
@@ -52,6 +55,21 @@ public class BotPoolQueryRepositoryImpl implements BotPoolQueryRepository {
                 .fetch();
 
         return uids.stream().map(UserId::new).toList();
+    }
+
+    @Override
+    public List<Long> filterBotUserIds(List<Long> candidateUserIds) {
+        if (candidateUserIds == null || candidateUserIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return queryFactory
+                .select(userAccountData.userId.uid)
+                .from(userAccountData)
+                .where(
+                        userAccountData.userId.uid.in(candidateUserIds),
+                        userAccountData.isDummy.isTrue(),
+                        userAccountData.withdrawnAt.isNull())
+                .fetch();
     }
 
     @Override
@@ -107,6 +125,42 @@ public class BotPoolQueryRepositoryImpl implements BotPoolQueryRepository {
                         t.get(partyroomData.id),
                         t.get(partyroomData.title),
                         t.get(crewData.count()) == null ? 0L : t.get(crewData.count())))
+                .toList();
+    }
+
+    @Override
+    public List<BotRosterRow> findRoster() {
+        List<Tuple> tuples = queryFactory
+                .select(
+                        userAccountData.userId.uid,
+                        profileData.bio.nickname,   // @Convert(Nickname) → tuple.get 시 Nickname 객체 반환
+                        profileData.avatarSetting.avatarBodyUri.value,
+                        profileData.avatarSetting.avatarIconUri.value,
+                        partyroomData.id,
+                        partyroomData.title)
+                .from(userAccountData)
+                .join(profileData).on(profileData.userId.uid.eq(userAccountData.userId.uid))
+                .leftJoin(crewData).on(crewData.userId.uid.eq(userAccountData.userId.uid)
+                        .and(crewData.isActive.isTrue()))
+                .leftJoin(partyroomData).on(partyroomData.id.eq(crewData.partyroomId.id)
+                        .and(partyroomData.status.eq(PartyroomStatus.ACTIVE)))
+                .where(
+                        userAccountData.isDummy.isTrue(),
+                        userAccountData.withdrawnAt.isNull())
+                .orderBy(userAccountData.userId.uid.asc())
+                .fetch();
+
+        return tuples.stream()
+                .map(t -> {
+                    Nickname nick = t.get(profileData.bio.nickname);
+                    return new BotRosterRow(
+                            t.get(userAccountData.userId.uid),
+                            nick == null ? null : nick.value(),
+                            t.get(profileData.avatarSetting.avatarBodyUri.value),
+                            t.get(profileData.avatarSetting.avatarIconUri.value),
+                            t.get(partyroomData.id),
+                            t.get(partyroomData.title));
+                })
                 .toList();
     }
 }

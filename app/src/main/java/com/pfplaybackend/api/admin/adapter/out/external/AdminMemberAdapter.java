@@ -34,6 +34,11 @@ public class AdminMemberAdapter implements AdminMemberPort {
     }
 
     @Override
+    public Optional<MemberData> findMemberByUserAccountId(Long userAccountId) {
+        return memberRepository.findByUserAccountId(userAccountId);
+    }
+
+    @Override
     public void deleteMemberById(Long id) {
         memberRepository.deleteById(id);
     }

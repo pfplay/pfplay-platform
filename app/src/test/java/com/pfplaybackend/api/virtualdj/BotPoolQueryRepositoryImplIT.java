@@ -12,9 +12,15 @@ import com.pfplaybackend.api.party.domain.enums.StageType;
 import com.pfplaybackend.api.party.domain.value.LinkDomain;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import com.pfplaybackend.api.party.domain.value.PlaybackTimeLimit;
+import com.pfplaybackend.api.avatar.domain.value.AvatarBodyUri;
+import com.pfplaybackend.api.avatar.domain.value.AvatarFaceUri;
+import com.pfplaybackend.api.avatar.domain.value.AvatarIconUri;
 import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
+import com.pfplaybackend.api.user.adapter.out.persistence.UserProfileRepository;
+import com.pfplaybackend.api.user.domain.entity.data.ProfileData;
 import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
 import com.pfplaybackend.api.virtualdj.adapter.out.persistence.BotPoolQueryRepository;
+import com.pfplaybackend.api.virtualdj.application.dto.BotRosterRow;
 import com.pfplaybackend.api.virtualdj.application.dto.PoolPlacementRow;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -41,6 +47,7 @@ class BotPoolQueryRepositoryImplIT extends AbstractIntegrationTest {
 
     @Autowired private BotPoolQueryRepository botPoolQueryRepository;
     @Autowired private UserAccountRepository userAccountRepository;
+    @Autowired private UserProfileRepository userProfileRepository;
     @Autowired private CrewRepository crewRepository;
     @Autowired private PartyroomRepository partyroomRepository;
 
@@ -97,6 +104,17 @@ class BotPoolQueryRepositoryImplIT extends AbstractIntegrationTest {
             account.markAsDummy();
         }
         userAccountRepository.saveAndFlush(account);
+    }
+
+    private void seedProfile(long uid, String nickname, String bodyUri, String iconUri) {
+        ProfileData profile = ProfileData.builder()
+                .userId(new UserId(uid))
+                .nickname(new com.pfplaybackend.api.user.domain.value.Nickname(nickname))
+                .avatarBodyUri(new AvatarBodyUri(bodyUri))
+                .avatarFaceUri(new AvatarFaceUri(""))
+                .avatarIconUri(new AvatarIconUri(iconUri))
+                .build();
+        userProfileRepository.saveAndFlush(profile);
     }
 
     @Test
@@ -172,6 +190,39 @@ class BotPoolQueryRepositoryImplIT extends AbstractIntegrationTest {
         assertThat(placements).hasSize(1);
         assertThat(placements.get(0).partyroomId()).isEqualTo(partyroomId);
         assertThat(placements.get(0).botCount()).isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("findRoster() — 봇의 닉네임/아바타/배치룸 반환, idle 봇은 placementPartyroomId null")
+    void findRoster_returns_bot_identity_avatar_and_placement() {
+        // 봇 프로필 시드: BOT1(배치됨), BOT2(idle). HUMAN(비봇)도 프로필 시드해 is_dummy 게이트로 제외됨을 검증.
+        seedProfile(BOT1_UID, "봇하나", "https://cdn/body1.png", "https://cdn/icon1.png");
+        seedProfile(BOT2_UID, "봇둘", "https://cdn/body2.png", "https://cdn/icon2.png");
+        seedProfile(HUMAN_UID, "사람", "https://cdn/bodyH.png", "https://cdn/iconH.png");
+
+        List<BotRosterRow> roster = botPoolQueryRepository.findRoster();
+
+        // BOT1·BOT2 만 (프로필 없는 BOT3 는 inner join 으로 빠짐, HUMAN 은 비봇).
+        assertThat(roster).hasSize(2);
+        assertThat(roster).allSatisfy(r -> {
+            assertThat(r.nickname()).isNotBlank();
+            assertThat(r.avatarBodyUri()).isNotNull();
+        });
+
+        // 비봇(사람)이 로스터에 섞이지 않는다.
+        assertThat(roster).noneSatisfy(r -> assertThat(r.userId()).isEqualTo(HUMAN_UID));
+
+        // uid 오름차순 → BOT1 먼저(배치됨), BOT2 다음(idle).
+        BotRosterRow placed = roster.get(0);
+        assertThat(placed.userId()).isEqualTo(BOT1_UID);
+        assertThat(placed.placementPartyroomId()).isEqualTo(partyroomId);
+        assertThat(placed.placementPartyroomTitle()).isEqualTo("테스트 파티룸");
+        assertThat(placed.avatarBodyUri()).isEqualTo("https://cdn/body1.png");
+
+        BotRosterRow idle = roster.get(1);
+        assertThat(idle.userId()).isEqualTo(BOT2_UID);
+        assertThat(idle.placementPartyroomId()).isNull();
+        assertThat(idle.placementPartyroomTitle()).isNull();
     }
 
     @Test

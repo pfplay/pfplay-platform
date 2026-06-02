@@ -1,7 +1,10 @@
 package com.pfplaybackend.api.virtualdj;
 
+import com.pfplaybackend.api.admin.application.service.AdminUserService;
 import com.pfplaybackend.api.avatar.adapter.out.persistence.AvatarBodyResourceRepository;
+import com.pfplaybackend.api.avatar.adapter.out.persistence.AvatarFaceResourceRepository;
 import com.pfplaybackend.api.avatar.domain.entity.data.AvatarBodyResourceData;
+import com.pfplaybackend.api.avatar.domain.entity.data.AvatarFaceResourceData;
 import com.pfplaybackend.api.avatar.domain.enums.ObtainmentType;
 import com.pfplaybackend.api.common.AbstractIntegrationTest;
 import com.pfplaybackend.api.common.domain.value.UserId;
@@ -30,22 +33,58 @@ class VirtualUserPoolServiceIT extends AbstractIntegrationTest {
     private static final String DEFAULT_BODY_URI =
             "https://firebasestorage.googleapis.com/v0/b/pfplay-firebase.appspot.com/o/ava_basic%2Fava_basic_001.png?alt=media";
 
+    // assignRandomFromCatalog 가 고를 published 카탈로그(combinable + standalone + 기본 face).
+    private static final String COMBINABLE_BODY_URI = "https://cdn.test/ava_body_basic_001.png";
+    private static final String STANDALONE_BODY_URI = "https://cdn.test/ava_body_basic_002.png";
+    private static final String STANDALONE_ICON_URI = "https://cdn.test/ava_icon_body_basic_002.png";
+    private static final String FACE_URI = "https://cdn.test/ava_face_basic_001.png";
+    private static final String FACE_ICON_URI = "https://cdn.test/ava_icon_face_basic_001.png";
+
     @Autowired private VirtualUserPoolService poolService;
     @Autowired private UserAccountRepository userAccountRepository;
     @Autowired private CrewRepository crewRepository;
+    @Autowired private AdminUserService adminUserService;
     @Autowired private AvatarBodyResourceRepository avatarBodyResourceRepository;
+    @Autowired private AvatarFaceResourceRepository avatarFaceResourceRepository;
 
     @BeforeEach
-    void seedDefaultAvatarBody() {
-        if (avatarBodyResourceRepository.findOneAvatarResourceByResourceUri(DEFAULT_BODY_URI) != null) {
+    void seedCatalog() {
+        // createVirtualMember 의 디폴트 바디 — prod 의 깨진 디폴트(ava_basic_001)를 그대로 재현한다:
+        // combinable=true + icon_uri NULL. provision 이 디폴트 그대로 두면 SINGLE_BODY 아이콘(=body iconUri)
+        // 이 NULL 이라 채팅 아이콘이 blank 가 된다(=P1 이 고치려는 그 갭). 이게 회귀 가드의 red 전제.
+        if (avatarBodyResourceRepository.findOneAvatarResourceByResourceUri(DEFAULT_BODY_URI) == null) {
+            AvatarBodyResourceData body = AvatarBodyResourceData.draft(
+                    "ava_body_basic_001", DEFAULT_BODY_URI,
+                    null,
+                    ObtainmentType.BASIC, 0, true, true, 60, 41, null);
+            avatarBodyResourceRepository.save(body);
+        }
+        // assignRandomFromCatalog 가 고를 published 후보들.
+        // combinable 바디: icon_uri NULL → face 합성이 강제됨(BODY_WITH_FACE).
+        seedPublishedBody("ava_body_basic_001_pub", COMBINABLE_BODY_URI, null, true, 60, 41);
+        // standalone 바디: 자체 icon_uri 보유(SINGLE_BODY).
+        seedPublishedBody("ava_body_basic_002_pub", STANDALONE_BODY_URI, STANDALONE_ICON_URI, false, 0, 0);
+        // 기본 face: combinable 합성 시 face-pair 아이콘 제공.
+        seedPublishedFace("ava_face_basic_001_pub", FACE_URI, FACE_ICON_URI);
+    }
+
+    private void seedPublishedBody(String name, String uri, String iconUri, boolean combinable, int px, int py) {
+        if (avatarBodyResourceRepository.findOneAvatarResourceByResourceUri(uri) != null) {
             return;
         }
-        // SINGLE_BODY 경로(face 비움)만 타도록 combinable=false + icon_uri 보유.
         AvatarBodyResourceData body = AvatarBodyResourceData.draft(
-                "ava_body_basic_001", DEFAULT_BODY_URI,
-                "https://example.test/icon_basic_001.png",
-                ObtainmentType.BASIC, 0, false, true, 60, 41, null);
+                name, uri, iconUri, ObtainmentType.BASIC, 0, combinable, false, px, py, null);
+        body.publish(null);   // PUBLISHED 여야 findPublishedBodies 에 노출
         avatarBodyResourceRepository.save(body);
+    }
+
+    private void seedPublishedFace(String name, String uri, String iconUri) {
+        if (avatarFaceResourceRepository.findOneAvatarResourceByResourceUri(uri) != null) {
+            return;
+        }
+        AvatarFaceResourceData face = AvatarFaceResourceData.draft(name, uri, iconUri, null);
+        face.publish(null);
+        avatarFaceResourceRepository.save(face);
     }
 
     @Test
@@ -97,5 +136,34 @@ class VirtualUserPoolServiceIT extends AbstractIntegrationTest {
 
         List<UserId> idle = poolService.findIdleBots(10);
         assertThat(idle).contains(bot);
+    }
+
+    @Test
+    @DisplayName("provision 후 모든 봇은 유효한 채팅 아이콘을 가진다 (null-icon 갭 제거, spec §0/§4-3)")
+    void provision_후_모든_봇은_유효한_채팅_아이콘을_가진다() {
+        // when: 생성 즉시 카탈로그 랜덤 변별 아바타가 부여돼야 한다.
+        List<UserId> bots = poolService.provision(5);
+
+        flushAndClear();
+
+        // then: 각 봇의 user_profile.avatar_icon_uri 가 non-blank.
+        // (현 디폴트 basic_001 combinable 의 NULL 아이콘 깨짐이 사라졌는지 = P1-D5 핵심 회귀 가드)
+        for (UserId id : bots) {
+            String iconUri = adminUserService.getVirtualMember(id)
+                    .getProfileData().getAvatarSetting().getAvatarIconUriValue();
+            assertThat(iconUri).as("bot %s avatar icon", id.getUid()).isNotBlank();
+
+            // 회귀 가드(replace-vs-mutate): provision = createVirtualMember(1 row) + 자동 변별 update.
+            // update 가 profile 을 교체하면 cascade 더블 인서트로 2 row 가 된다. create-drop 엔
+            // uk_user_profile_nickname 제약이 없어 SQL 에러 없이 통과하므로 row 개수로 직접 막는다
+            // (reference_ddl_auto_create_drop_hides_migration_drift).
+            long profileRows = ((Number) entityManager.createNativeQuery(
+                            "SELECT COUNT(*) FROM user_profile WHERE user_id = :uid")
+                    .setParameter("uid", id.getUid())
+                    .getSingleResult()).longValue();
+            assertThat(profileRows)
+                    .as("bot %s user_profile row count (provision 후 정확히 1개)", id.getUid())
+                    .isEqualTo(1L);
+        }
     }
 }
