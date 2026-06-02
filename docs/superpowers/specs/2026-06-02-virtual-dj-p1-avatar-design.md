@@ -87,7 +87,7 @@ P1의 목적은 운영자가 어드민 콘솔에서 **봇들에 카탈로그의 
 ### 2.3 신규 엔드포인트
 | Method | Path | 요청 | 응답 |
 |---|---|---|---|
-| GET | `/api/v1/admin/virtual-dj/avatar-catalog` | — | `[ { bodyUri, name, thumbnailUri, isCombinable, obtainableType } ]` |
+| GET | `/api/v1/admin/virtual-dj/avatar-catalog` | — | `[ { bodyUri, name, thumbnailUri, combinable, obtainableType } ]` |
 | GET | `/api/v1/admin/virtual-dj/bots` | — | `[ { userId, nickname, avatarBodyUri, avatarIconUri, placementRoomId?, placementRoomTitle? } ]` |
 | PUT | `/api/v1/admin/virtual-dj/bots/{userId}/avatar` | `{ avatarBodyUri }` | 200 `{ ...bot }` |
 | POST | `/api/v1/admin/virtual-dj/bots/avatar/distribute` | `{ botIds[], bodyUris[] }` | 200 `{ assigned: [ { userId, avatarBodyUri } ] }` |
