@@ -172,13 +172,11 @@ public class VirtualDjChatConfigAdminService {
                 .orElse(def);
     }
     private RuntimeException badRequest(String msg) {
-        // ExceptionCreator.create(VirtualDjException.CHAT_CONFIG_INVALID) 패턴 사용.
-        // VirtualDjException 에 CHAT_CONFIG_INVALID("VDJ-0NN", msg기본, ErrorType.BAD_REQUEST) 신규 추가(번호=현재 최대+1).
         return ExceptionCreator.create(VirtualDjException.CHAT_CONFIG_INVALID);
     }
 }
 ```
-> ⚠️ `SystemConfigData` 의 getter 명(`getConfigValue`) 실제 확인 후 일치. `VirtualDjException` 에 `CHAT_CONFIG_INVALID(BAD_REQUEST)` 코드 1개 추가(번호=현재 최대+1) — throw 형태는 송팩/페르소나 서비스(`ExceptionCreator.create(VirtualDjException.XXX)`)와 동일. (개별 필드 메시지를 다르게 주고 싶으면 코드 1개로 두고 검증 분기에서 로깅만; HTTP 400 동일.)
+> ✅ 사전 확인됨: `SystemConfigData` getter = **`getConfigValue`**. `VirtualDjException` 현재 최대 코드 = **VDJ-012** → 신규 **`CHAT_CONFIG_INVALID("VDJ-013", "채팅 설정 값이 유효하지 않습니다.", ErrorType.BAD_REQUEST)`** 1개 추가(Task 1.3 Step 3에서 enum에 선언). throw 형태는 `ExceptionCreator.create(VirtualDjException.XXX)`(송팩/페르소나/아바타 서비스 동일). 필드별 메시지 차등은 불필요(HTTP 400 동일, `msg`는 로깅용으로만 활용 가능).
 
 - [ ] **Step 4: 통과 확인** → GREEN.
 - [ ] **Step 5: 커밋** `git commit -am "feat(p3a): VirtualDjChatConfigAdminService (read/검증 upsert/이벤트) + 단위테스트"`
