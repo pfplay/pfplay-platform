@@ -23,18 +23,18 @@ class VirtualDjChatConfigTest {
     private VirtualDjChatConfig config;
 
     @Test
-    @DisplayName("isEnabled — VDJ_CHAT_ENABLED 키+기본값 true 로 readBoolean에 위임하고 캐시 값을 그대로 반환한다")
-    void isEnabledDelegatesWithDefaultTrue() {
-        when(cache.readBoolean(ConfigKey.VDJ_CHAT_ENABLED, true)).thenReturn(true);
+    @DisplayName("isEnabled — VDJ_CHAT_ENABLED 키+기본값 false(fail-closed) 로 readBoolean에 위임하고 캐시 값을 그대로 반환한다")
+    void isEnabledDelegatesWithDefaultFalse() {
+        when(cache.readBoolean(ConfigKey.VDJ_CHAT_ENABLED, false)).thenReturn(true);
 
         assertThat(config.isEnabled()).isTrue();
-        verify(cache).readBoolean(ConfigKey.VDJ_CHAT_ENABLED, true);
+        verify(cache).readBoolean(ConfigKey.VDJ_CHAT_ENABLED, false);
     }
 
     @Test
-    @DisplayName("isEnabled — 캐시가 false면 false를 반환한다 (kill switch)")
+    @DisplayName("isEnabled — 캐시가 false면 false를 반환한다 (kill switch, 기본 잠금)")
     void isEnabledReturnsCacheFalse() {
-        when(cache.readBoolean(ConfigKey.VDJ_CHAT_ENABLED, true)).thenReturn(false);
+        when(cache.readBoolean(ConfigKey.VDJ_CHAT_ENABLED, false)).thenReturn(false);
 
         assertThat(config.isEnabled()).isFalse();
     }

@@ -56,6 +56,14 @@ public class AnthropicChatProvider implements LlmChatProvider {
         this.baseUri = baseUri;
         this.model = model;
         this.restTemplate = buildRestTemplate(timeoutMs);
+
+        // 키 부재는 정상 상태다(프로세스 다운 아님) — 가시성을 위해 기동 시 한 번 알린다.
+        if (apiKey == null || apiKey.isBlank()) {
+            log.info("ANTHROPIC_API_KEY 미설정 — 봇 채팅 LLM 응답은 no-op(빈 응답→드롭). 프로세스 정상 기동. "
+                    + "키 설정 후 자동 동작(전역 토글 vdj.chat.enabled 과는 별개 레이어).");
+        } else {
+            log.info("AnthropicChatProvider 준비 완료 — model={}", model);
+        }
     }
 
     /**
