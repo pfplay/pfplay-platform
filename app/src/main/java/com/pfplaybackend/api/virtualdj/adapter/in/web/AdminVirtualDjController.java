@@ -12,6 +12,7 @@ import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.AssignPersonaRespo
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.AvatarCatalogItemResponse;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.BotRosterItemResponse;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.BulkApplyVirtualDjConfigRequest;
+import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.ChatConfigResponse;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.CreatePersonaRequest;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.CreateSongPackRequest;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.CreatedIdResponse;
@@ -25,11 +26,13 @@ import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.SetBotAvatarReques
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.SongPackDetailResponse;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.SongPackListItemResponse;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.UnassignPersonaRequest;
+import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.UpdateChatConfigRequest;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.VirtualDjLiveStatusResponse;
 import com.pfplaybackend.api.virtualdj.application.service.BotAvatarAdminService;
 import com.pfplaybackend.api.virtualdj.application.service.BotPersonaAssignmentService;
 import com.pfplaybackend.api.virtualdj.application.service.BotAvatarAssigner;
 import com.pfplaybackend.api.virtualdj.application.service.VirtualDjAdminService;
+import com.pfplaybackend.api.virtualdj.application.service.VirtualDjChatConfigAdminService;
 import com.pfplaybackend.api.virtualdj.application.service.VirtualPersonaService;
 import com.pfplaybackend.api.virtualdj.application.service.VirtualSongPackService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -71,6 +74,7 @@ public class AdminVirtualDjController {
     private final MusicSearchService musicSearchService;
     private final BotAvatarAdminService botAvatarAdminService;
     private final BotPersonaAssignmentService botPersonaAssignmentService;
+    private final VirtualDjChatConfigAdminService chatConfigAdminService;
 
     // ── 음악 검색 (어드민 프록시) ──
 
@@ -342,5 +346,28 @@ public class AdminVirtualDjController {
             @Valid @RequestBody UnassignPersonaRequest req) {
         int applied = botPersonaAssignmentService.unassign(req.botIds());
         return ResponseEntity.ok(ApiCommonResponse.success(new AssignPersonaResponse(applied)));
+    }
+
+    // ── 채팅/자가갱신 설정 (P3) ──
+
+    @Operation(summary = "가상 DJ 채팅/자가갱신 설정 조회",
+            description = "vdj.chat.* 5키 + 자가갱신 forward-gate 1키 (system_config, fail-open 폴백)")
+    @SecurityRequirement(name = "cookieAuth")
+    @PreAuthorize("@adminAuth.canManageVirtualDj()")
+    @GetMapping("/virtual-dj/chat-config")
+    public ResponseEntity<ApiCommonResponse<ChatConfigResponse>> getChatConfig() {
+        return ResponseEntity.ok(ApiCommonResponse.success(
+                ChatConfigResponse.from(chatConfigAdminService.read())));
+    }
+
+    @Operation(summary = "가상 DJ 채팅/자가갱신 설정 변경",
+            description = "6키 일괄 upsert 후 SystemConfigCache 무효화(AFTER_COMMIT)")
+    @SecurityRequirement(name = "cookieAuth")
+    @PreAuthorize("@adminAuth.canManageVirtualDj()")
+    @PutMapping("/virtual-dj/chat-config")
+    public ResponseEntity<Void> updateChatConfig(@Valid @RequestBody UpdateChatConfigRequest req) {
+        chatConfigAdminService.update(req.chatEnabled(), req.selfUpdateEnabled(),
+                req.probabilityPercent(), req.cooldownSeconds(), req.contextSize(), req.outputMaxTokens());
+        return ResponseEntity.noContent().build();
     }
 }

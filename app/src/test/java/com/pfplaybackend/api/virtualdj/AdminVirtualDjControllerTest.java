@@ -16,7 +16,9 @@ import com.pfplaybackend.api.virtualdj.application.dto.BotRosterRow;
 import com.pfplaybackend.api.virtualdj.application.service.BotAvatarAdminService;
 import com.pfplaybackend.api.virtualdj.application.service.BotAvatarAssigner;
 import com.pfplaybackend.api.virtualdj.application.service.BotPersonaAssignmentService;
+import com.pfplaybackend.api.virtualdj.application.dto.ChatConfigView;
 import com.pfplaybackend.api.virtualdj.application.service.VirtualDjAdminService;
+import com.pfplaybackend.api.virtualdj.application.service.VirtualDjChatConfigAdminService;
 import com.pfplaybackend.api.virtualdj.application.service.VirtualPersonaService;
 import com.pfplaybackend.api.virtualdj.application.service.VirtualSongPackService;
 import com.pfplaybackend.api.virtualdj.domain.enums.VirtualDjStatus;
@@ -38,8 +40,11 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
@@ -86,6 +91,7 @@ class AdminVirtualDjControllerTest {
     @MockBean private MusicSearchService musicSearchService;
     @MockBean private BotAvatarAdminService botAvatarAdminService;
     @MockBean private BotPersonaAssignmentService botPersonaAssignmentService;
+    @MockBean private VirtualDjChatConfigAdminService chatConfigAdminService;
 
     // SecurityConfig autoconfig deps — @MockBean shims so the slice context loads.
     @MockBean private JwtDecoder jwtDecoder;
@@ -862,6 +868,109 @@ class AdminVirtualDjControllerTest {
                         .with(csrf()).contentType(APPLICATION_JSON)
                         .content("""
                                 {"botIds":[1]}
+                                """))
+                .andExpect(status().isForbidden());
+    }
+
+    // ── 채팅/자가갱신 설정 (P3) ──
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void getChatConfig_admin_returns200WithBody() throws Exception {
+        given(chatConfigAdminService.read())
+                .willReturn(new ChatConfigView(true, false, 40, 60, 10, 512));
+        mockMvc.perform(get("/api/v1/admin/virtual-dj/chat-config"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.chatEnabled").value(true))
+                .andExpect(jsonPath("$.data.selfUpdateEnabled").value(false))
+                .andExpect(jsonPath("$.data.probabilityPercent").value(40))
+                .andExpect(jsonPath("$.data.cooldownSeconds").value(60))
+                .andExpect(jsonPath("$.data.contextSize").value(10))
+                .andExpect(jsonPath("$.data.outputMaxTokens").value(512));
+        verify(chatConfigAdminService).read();
+    }
+
+    @Test
+    @WithMockUser(roles = "MEMBER")
+    void getChatConfig_member_returns403() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/virtual-dj/chat-config"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithAnonymousUser
+    void getChatConfig_anonymous_returns401() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/virtual-dj/chat-config"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void updateChatConfig_admin_returns204() throws Exception {
+        mockMvc.perform(put("/api/v1/admin/virtual-dj/chat-config")
+                        .with(csrf()).contentType(APPLICATION_JSON)
+                        .content("""
+                                {"chatEnabled":true,"selfUpdateEnabled":true,"probabilityPercent":50,"cooldownSeconds":45,"contextSize":15,"outputMaxTokens":300}
+                                """))
+                .andExpect(status().isNoContent());
+        verify(chatConfigAdminService).update(true, true, 50, 45, 15, 300);
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void updateChatConfig_probabilityOutOfRange_returns400() throws Exception {
+        mockMvc.perform(put("/api/v1/admin/virtual-dj/chat-config")
+                        .with(csrf()).contentType(APPLICATION_JSON)
+                        .content("""
+                                {"chatEnabled":true,"selfUpdateEnabled":false,"probabilityPercent":101,"cooldownSeconds":30,"contextSize":20,"outputMaxTokens":256}
+                                """))
+                .andExpect(status().isBadRequest());
+        verify(chatConfigAdminService, never()).update(
+                anyBoolean(), anyBoolean(), anyInt(), anyInt(), anyInt(), anyInt());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void updateChatConfig_cooldownTooLow_returns400() throws Exception {
+        mockMvc.perform(put("/api/v1/admin/virtual-dj/chat-config")
+                        .with(csrf()).contentType(APPLICATION_JSON)
+                        .content("""
+                                {"chatEnabled":true,"selfUpdateEnabled":false,"probabilityPercent":12,"cooldownSeconds":0,"contextSize":20,"outputMaxTokens":256}
+                                """))
+                .andExpect(status().isBadRequest());
+        verify(chatConfigAdminService, never()).update(
+                anyBoolean(), anyBoolean(), anyInt(), anyInt(), anyInt(), anyInt());
+    }
+
+    @Test
+    @WithMockUser(roles = "MEMBER")
+    void updateChatConfig_member_returns403() throws Exception {
+        mockMvc.perform(put("/api/v1/admin/virtual-dj/chat-config")
+                        .with(csrf()).contentType(APPLICATION_JSON)
+                        .content("""
+                                {"chatEnabled":true,"selfUpdateEnabled":false,"probabilityPercent":12,"cooldownSeconds":30,"contextSize":20,"outputMaxTokens":256}
+                                """))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithAnonymousUser
+    void updateChatConfig_anonymous_returns401() throws Exception {
+        mockMvc.perform(put("/api/v1/admin/virtual-dj/chat-config")
+                        .with(csrf()).contentType(APPLICATION_JSON)
+                        .content("""
+                                {"chatEnabled":true,"selfUpdateEnabled":false,"probabilityPercent":12,"cooldownSeconds":30,"contextSize":20,"outputMaxTokens":256}
+                                """))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void updateChatConfig_missingCsrf_returns403() throws Exception {
+        mockMvc.perform(put("/api/v1/admin/virtual-dj/chat-config")
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                                {"chatEnabled":true,"selfUpdateEnabled":false,"probabilityPercent":12,"cooldownSeconds":30,"contextSize":20,"outputMaxTokens":256}
                                 """))
                 .andExpect(status().isForbidden());
     }
