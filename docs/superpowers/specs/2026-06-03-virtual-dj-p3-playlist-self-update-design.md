@@ -59,6 +59,8 @@ P2 까지의 봇 playlist 는 `SongPackApplier.applyToBot` 가 봇 투입 직전
 - **INV-2 (조용한 방 LLM 0):** 새 반응이 임계 K 미만인 방은 **LLM 을 절대 호출하지 않는다.** 비용 폭발 차단의
   1차 게이트. 빈 방/더미 점유 방은 사실상 영원히 no-op.
 - **INV-3 (재생 보호):** 현재 재생 중인 트랙과 임박(다음 커서) 트랙은 **절대 prune 되지 않는다.**
+  현재곡 식별 소스 = `partyroom_playback.current_playback_id` → 그 `playback.link_id`, 임박곡 = PR263
+  재생 커서의 다음 track. 두 linkId 를 prune 후보에서 제외한다.
 - **INV-4 (fail-closed):** 전역 게이트 `vdj.playlist.self_update.enabled` 가 false 면 어떤 갱신도 일어나지
   않는다. 키 부재/오타도 false 로 폴백한다(코드 default false).
 - **INV-5 (룸 격리):** 한 룸의 갱신 실패(예외)는 다른 룸의 sweep 을 막지 않는다.
@@ -127,6 +129,8 @@ P2 까지의 봇 playlist 는 `SongPackApplier.applyToBot` 가 봇 투입 직전
                  + w_complete·avg(end_time / durationSec)
    대상: 봇 자기 plays(user_id=botUserId, partyroom_id=roomId)를 link_id 로 group.
    한 번도 안 튼 곡 = score 없음(중립): prune 후보 아님, boost 입력도 아님.
+   ⚠️ durationSec == 0 / 파싱 실패 시 완주율 항 = 0 으로 처리(div-by-zero 회피). end_time 은
+      bigint(정수 초)이므로 완주율은 초 단위 granularity — 랭킹용으로 충분, 테스트 fixture 는 정수 초로.
 
 2. PRUNE 후보 선정
    현재 playlist track 중 score 최저 P 곡. 단 제외:
@@ -179,6 +183,14 @@ P2 까지의 봇 playlist 는 `SongPackApplier.applyToBot` 가 봇 투입 직전
 
 **설계 원칙:** `PlaylistSelfUpdateService` 는 조립자(orchestrator)이고, score 쿼리·LLM·검색·폴백·진동방지는
 각각 단일 책임 단위로 분리한다. 각 단위는 독립적으로 단위 테스트 가능해야 한다.
+
+> **ArchUnit 적용 범위 (정확히):** 기존 `VirtualDjArchitectureTest` 는 패키지 전역으로 `*AggregatePort`/
+> `*MessagePublisher` 직접의존만 막고, `*Repository` 직접의존은 **클래스명에 "Orchestrator" 포함 시에만**
+> 막는다. 신규 `PlaylistSelfUpdateService`/`ReactionScoreReader` 는 "Orchestrator" 미포함이므로 — 봇 자기
+> playlist 의 `Track`/`Playlist` repository 직접 접근은 **ArchUnit 상 허용**된다(§1 원칙대로, `SongPackApplier`
+> 와 동일). 위 표의 "port 경유"는 **다른 BC(playback) 의 데이터에 한정**한 규율이다: `ReactionScoreReader`
+> 의 adapter 는 playback BC query service 를 경유하고 그 BC 의 AggregatePort 를 직접 만지지 않는다. plan 은
+> 신규 ArchUnit 단언을 추가하지 말 것(비-Orchestrator 서비스의 `*Repository` 차단을 기대하는 테스트 금지).
 
 ---
 
