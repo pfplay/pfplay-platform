@@ -50,7 +50,7 @@ INSERT INTO system_config (config_key, config_value, description) VALUES
 ### 2.3 어드민 서비스 `VirtualDjChatConfigAdminService`
 `virtualdj/application/service/`. allowlist 6키만 read/validated-upsert.
 
-- **read** `ChatConfig read()`: **`SystemConfigRepository.findByConfigKey`로 각 키 직접 조회**(캐시 staleness 회피 — 캐시 스냅샷은 게터 경로 전용이라 편집기엔 ground-truth가 정직). 행 없으면 코드 default(enabled=false / selfUpdate=false / prob=12 / cooldown=30 / context=20 / maxTokens=256) 폴백. boolean은 `"true"/"false"` 파싱, 정수는 `Integer.parseInt`(실패 시 default).
+- **read** `ChatConfig read()`: **`SystemConfigRepository.findByConfigKey`로 각 키 직접 조회**(캐시 staleness 회피 — 캐시 스냅샷은 게터 경로 전용이라 편집기엔 ground-truth가 정직). 행 없으면 코드 default(enabled=false / selfUpdate=false / prob=12 / cooldown=30 / context=20 / maxTokens=256) 폴백. **파싱 의미는 `SystemConfigCache`와 동일하게**: boolean = trim 후 `"true"`(대소문자무시)→true / `"false"`→false / 그 외→default. 정수 = `Integer.parseInt`(실패/≤범위 → default). (러닝 피처가 읽는 값과 편집기 표시값의 의미 일치.)
 - **update** `@Transactional void update(UpdateCommand cmd, Long adminId)`:
   1. 범위 검증(§2.5) — 실패 시 `VirtualDjException`(BAD_REQUEST), **부분 저장 없음**(트랜잭션 롤백).
   2. 각 키: `findByConfigKey` → 존재하면 `updateValue(newValue, adminId)` / 없으면 `create(key, newValue, desc, adminId)` → `save`. (V27/V28 시드로 사실상 항상 존재.)
@@ -73,8 +73,8 @@ void onChanged(VirtualDjChatConfigChangedEvent e) { systemConfigCache.invalidate
 - (참고: `vdj.chat.room.cooldown.seconds`는 게이트 SETLNX 키 TTL 겸용이라 Anthropic 타임아웃(12s)보다 큰 게 권장이나, 하드 차단은 안 함 — 운영 재량. UI 힌트로만.)
 
 ### 2.6 컨트롤러 (AdminVirtualDjController 확장)
-- `GET /api/v1/admin/virtual-dj/chat-config` → `ApiCommonResponse<ChatConfigResponse>`
-- `PUT /api/v1/admin/virtual-dj/chat-config` (@Valid `UpdateChatConfigRequest`) → 204
+- `GET /api/v1/admin/virtual-dj/chat-config` → **200** `ApiCommonResponse<ChatConfigResponse>`
+- `PUT /api/v1/admin/virtual-dj/chat-config` (@Valid `UpdateChatConfigRequest`) → **204**
 - 둘 다 `@PreAuthorize("@adminAuth.canManageVirtualDj()")`(기존 일관). updatedBy는 서비스가 `AdminContext.currentAdministratorId()`로 채움(컨트롤러 아닌 서비스 inject, 기존 관례).
 - payload:
 ```java
