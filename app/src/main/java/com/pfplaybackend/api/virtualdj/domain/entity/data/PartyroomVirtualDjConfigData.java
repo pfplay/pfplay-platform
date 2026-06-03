@@ -37,6 +37,10 @@ public class PartyroomVirtualDjConfigData extends BaseEntity {
     @Column(name = "song_pack_id", columnDefinition = "bigint unsigned")
     private Long songPackId;
 
+    @Comment("마지막 자가갱신 시각(P3-B watermark 겸 쿨다운 기준). null=미실행")
+    @Column(name = "last_self_update_at")
+    private java.time.LocalDateTime lastSelfUpdateAt;
+
     protected PartyroomVirtualDjConfigData() {
     }
 
@@ -89,6 +93,11 @@ public class PartyroomVirtualDjConfigData extends BaseEntity {
      */
     public void turnOff() {
         this.status = VirtualDjStatus.OFF;
+    }
+
+    /** P3-B 자가갱신 사이클 완료 표시(watermark 전진). */
+    public void markSelfUpdated(java.time.LocalDateTime now) {
+        this.lastSelfUpdateAt = now;
     }
 
 }
