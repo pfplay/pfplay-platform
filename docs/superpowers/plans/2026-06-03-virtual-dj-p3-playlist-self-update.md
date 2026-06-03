@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 봇 playlist 가 그 방의 청취자 반응(좋아요/싫어요/완주율)에 적응해, 저반응 곡을 빼고 LLM 추천(실패 시 송팩 폴백)으로 채워 원자적 증분 교체한다.
+**Goal:** 봇 playlist 가 그 방의 청취자 반응(좋아요/싫어요/grab)에 적응해, 저반응 곡을 빼고 LLM 추천(실패 시 송팩 폴백)으로 채워 원자적 증분 교체한다.
 
 **Architecture:** 기존 `VirtualDjReconcileScheduler`(60s) 에 자가갱신 패스를 얹는다. 룸당 값싼 COUNT 게이트(새 반응 < K → no-op, LLM 0)를 통과한 룸에서만 봇별 score 계산 → prune 후보(재생중/커서/최근prune 제외) → LLM 추천→Pytube 해소 → 부족분 송팩 폴백 → `added` 수만큼만 prune(크기 하한 보장) → watermark 전진. 모든 cross-BC 읽기는 query service/cross-BC query repo 경유(ArchUnit 준수). 외부 LLM 은 best-effort 빈 리스트 계약.
 
@@ -634,7 +634,7 @@ ArchUnit AggregatePort 의존 금지 준수 — 평이한 String 만 반환).
   2. **cooldown 미경과 → no-op**: `lastSelfUpdateAt` = now-10s, cooldown=1800 → no-op.
   3. **count ≥ K & cooldown 경과 → 갱신**: score 저점 P곡 prune 후보(현재곡/커서/최근prune 제외) + LLM 추천 해소 → `botPlaylistEditor.swap` 호출, watermark 전진(`markSelfUpdated`).
   4. **LLM 빈손 → 송팩 폴백**: `recommend` = [] → `reservoir.untried(...)` 로 add 채워 `swap` 호출(added>0). (폴백 경로)
-  5. **LLM·송팩 둘 다 빈손 → swap add=0**: editor 가 n=0 처리(prune 0). watermark 는 전진(쿨다운 적용; 또는 미전진 — 결정 필요).
+  5. **LLM·송팩 둘 다 빈손 → swap add=0**: editor 가 n=0 처리(prune 0, 변경 없음). watermark 는 **전진**(아래 결정 참조).
   6. **현재곡 prune 제외(INV-3)**: 현재곡 linkId 가 score 최저여도 prune 후보에서 빠짐.
 
   > 결정: 케이스 5 에서 watermark 는 **전진시킨다**(시도했고 비용 게이트 통과했으므로 쿨다운 적용해 재시도 폭주 방지). 테스트로 고정.

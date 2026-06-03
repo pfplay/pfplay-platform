@@ -30,7 +30,7 @@ P2 까지의 봇 playlist 는 `SongPackApplier.applyToBot` 가 봇 투입 직전
 
 ### 0.1 1차 목적 (성공 기준)
 
-**청취자 반응 적응.** 그 방에서 실제 반응(좋아요/싫어요/완주)이 좋은 곡 계열은 남기고 키우며, 저반응 곡은
+**청취자 반응 적응.** 그 방에서 실제 반응(좋아요/싫어요/grab)이 좋은 곡 계열은 남기고 키우며, 저반응 곡은
 빼고 LLM 추천으로 유사·컨셉 곡을 채운다. 성공 = "세션이 길어질수록 봇 playlist 가 그 방 취향으로 수렴한다."
 
 방 컨셉 추종(비전 ③ 선곡 측면)은 본 목적의 **부차 입력**으로 들어간다(LLM refill 프롬프트에 방 컨셉 주입).
@@ -239,7 +239,7 @@ P3-A 의 `vdj.playlist.self_update.enabled`(V28, 기본 false) 를 **활성 게�
 ## 9. 테스트 전략
 
 - **단위:**
-  - score 산식: like/dislike/grab/완주율 조합 → 정렬 순서 검증.
+  - score 산식: like/dislike/grab 조합 → 정렬 순서 검증.
   - 게이트 AND: 4 조건 각각 단독 실패 시 no-op, 모두 충족 시 진입.
   - atomic swap: added < pruneCandidates / added=0 / added > 0 각각 INV-1(크기 하한) 검증.
   - 진동 방지: 최근prune set 의 linkId 가 refill 후보에서 제외되는지.
