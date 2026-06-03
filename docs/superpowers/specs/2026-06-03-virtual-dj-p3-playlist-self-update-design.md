@@ -81,10 +81,15 @@ P2 까지의 봇 playlist 는 `SongPackApplier.applyToBot` 가 봇 투입 직전
 | `partyroom_virtual_dj_config` | `partyroom_id, status, song_pack_id, ...` | 봇 운영 설정 (**V29 로 컬럼 추가**) |
 
 - **봇의 plays** = `playback WHERE user_id = botUserId AND partyroom_id = roomId`.
-- **`end_time`** = 재생이 종료된 위치(초). 완주율 = `end_time / durationSeconds`(`duration` 은 `"m:ss"` 문자열,
-  `Duration` 값객체로 파싱).
 - **신규 컬럼(V29):** `partyroom_virtual_dj_config.last_self_update_at DATETIME NULL` — watermark 겸
   쿨다운 기준. cron 이 stateless 이므로 config row 에 영속한다.
+
+> ⚠️ **완주율(completion) 신호는 채택하지 않는다 — 데이터로 산출 불가.** `playback.end_time` 은 생성 시
+> `duration.calculateEndTimeEpochMilli(now)`(= 시작 + 곡 전체 길이, **예정된 종료 epoch-millis**)로 1회 기록되며
+> 이후 갱신되지 않는다. "청취자가 끝까지 들었나" 정보를 0 비트도 담지 않는다. 또한 트랙 조기중단 경로(관리자
+> 스킵/DJ 자가하차/DJ 퇴장/방삭제 등 `tryProceed` 로 수렴)는 전부 **기계적·관리적**이며, *청취자 선호 주도 스킵*
+> (vote-skip)은 코드에 부재하다. 따라서 완주/스킵을 기록해도 선호를 거의 반영하지 못한다. 선호를 직접 재는
+> 신호는 `like/dislike/grab` 이며 score 는 이 셋만 쓴다(§5.1).
 
 > ⚠️ 마이그레이션 추가 → **로컬 풀스택 validate 부팅 게이트 필수**
 > ([[reference_ddl_auto_create_drop_hides_migration_drift]]). test=create-drop 가 drift 를 가린다.
@@ -125,12 +130,11 @@ P2 까지의 봇 playlist 는 `SongPackApplier.applyToBot` 가 봇 투입 직전
 입력: botUserId, roomId, 봇 playlistId, songPackId, roomPlaybackTimeLimit, 방 컨셉(RoomContextReader)
 
 1. SCORE
-   score(linkId) = w_react·(Σlike − Σdislike + w_grab·Σgrab)
-                 + w_complete·avg(end_time / durationSec)
+   score(linkId) = w_react·(Σlike − Σdislike) + w_grab·Σgrab
    대상: 봇 자기 plays(user_id=botUserId, partyroom_id=roomId)를 link_id 로 group.
+   집계 소스: playback_aggregation(like_count/dislike_count/grab_count) per linkId.
    한 번도 안 튼 곡 = score 없음(중립): prune 후보 아님, boost 입력도 아님.
-   ⚠️ durationSec == 0 / 파싱 실패 시 완주율 항 = 0 으로 처리(div-by-zero 회피). end_time 은
-      bigint(정수 초)이므로 완주율은 초 단위 granularity — 랭킹용으로 충분, 테스트 fixture 는 정수 초로.
+   ※ 완주율 항 없음 — 데이터 부재(§3). grab 이 강한 양성 선호 신호를 대체한다.
 
 2. PRUNE 후보 선정
    현재 playlist track 중 score 최저 P 곡. 단 제외:
@@ -163,7 +167,7 @@ P2 까지의 봇 playlist 는 `SongPackApplier.applyToBot` 가 봇 투입 직전
 - **add-to-head 결정 근거:** [[project_playlist_cursor_redesign_pr263]] 에서 order_number 이중용도 분리 +
   add-to-head 기획. 신곡을 머리에 넣어 빠르게 노출하되 grab tail·재생 커서는 보존한다. 정확한 삽입 위치는
   PR263 의 Track ordering 헬퍼를 재사용한다(구현 시 확정).
-- **w_react / w_grab / w_complete / N / T / P** 는 `system_config` 키(런타임 튜닝).
+- **w_react / w_grab / N / T / P** 는 `system_config` 키(런타임 튜닝).
 
 ---
 
@@ -173,7 +177,8 @@ P2 까지의 봇 playlist 는 `SongPackApplier.applyToBot` 가 봇 투입 직전
 |---|---|---|---|
 | `VirtualDjReconcileScheduler` | 기존 확장 | 게이트 1·2·3 검사 → 통과 룸을 `PlaylistSelfUpdateService` 에 위임 | — |
 | `PlaylistSelfUpdateService` | 신규 service | §5 사이클 오케스트레이션. score·refill·폴백·atomic swap 조립 | port 경유 |
-| `ReactionScoreReader` | 신규 port + adapter | 게이트 COUNT(조건 4) + score 집계 쿼리. playback BC query service 경유 | AggregatePort 직접의존 금지 |
+| `ReactionScoreReader` | 신규 port + adapter | 게이트 COUNT(조건 4) + score 집계 쿼리(linkId별 Σlike/Σdislike/Σgrab). virtualdj-adapter cross-BC 쿼리(`ActiveDjSnapshot` 패턴, QueryDSL) | AggregatePort/MessagePublisher 직접의존 금지 |
+| `PartyroomQueryService` | **기존 확장** | `getCurrentPlaybackLinkId(PartyroomId)` 신설(INV-3). `getCurrentPlaybackName` 미러 — `aggregatePort.findPlaybackState` → `getPlaybackById(currentPlaybackId).getLinkId()`, 비활성/없음=null. party BC 안에 AggregatePort 가둠 | (party BC 내부) |
 | `SongRecommendationProvider` | 신규 port + adapter | 우승곡+컨셉 → 곡명 리스트. 내부에서 `LlmChatProvider` 재사용 + 프롬프트 조립/파싱. best-effort 빈 리스트 | — |
 | `SongPackReservoir` | 신규(또는 `SongPackApplier` 추출) | songPackId 에서 "미시도 곡" 조회 (폴백 소스) | — |
 | `RecentlyPrunedStore` | 신규(Redis) | per-bot prune된 linkId set + TTL (INV-6) | — |
@@ -206,8 +211,12 @@ P3-A 의 `vdj.playlist.self_update.enabled`(V28, 기본 false) 를 **활성 게�
 | `vdj.playlist.self_update.target_size` (T) | (예: 20) | 목표 playlist 크기 |
 | `vdj.playlist.self_update.replace_per_cycle` (P) | (예: 3) | 사이클당 최대 교체 수 |
 | `vdj.playlist.self_update.recommend_count` (N) | (예: 6) | LLM 곡명 추천 수 |
-| `vdj.playlist.self_update.weight.*` | (튜닝) | w_react / w_grab / w_complete |
+| `vdj.playlist.self_update.weight.reaction` | (예: 1000‰=1.0) | w_react (순반응 가중치, 퍼밀) |
+| `vdj.playlist.self_update.weight.grab` | (예: 2000‰=2.0) | w_grab (grab 가중치, 퍼밀) |
 | `vdj.playlist.self_update.pruned_cooldown_seconds` | (예: 3600) | Redis 최근prune set TTL(INV-6) |
+
+> weight 는 `SystemConfigCache` 에 readDouble 이 없어 **정수 퍼밀(‰)** 로 저장하고 1000 으로 나눠 double 로 쓴다.
+> `weight.completion` 키는 **없다**(완주율 미채택, §3/§5.1).
 
 기본값 괄호는 초기 제안. plan 단계에서 확정. **활성화 = 키 설정 + 어드민 패널 토글 또는
 `UPDATE system_config`**(P3-A 패널 `selfUpdateEnabled` 가 이미 이 키를 read/write).

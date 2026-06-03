@@ -62,7 +62,6 @@ void selfUpdateTuningKeys_haveExpectedValues() {
     assertThat(ConfigKey.VDJ_SELF_UPDATE_RECOMMEND_COUNT.value()).isEqualTo("vdj.playlist.self_update.recommend_count");
     assertThat(ConfigKey.VDJ_SELF_UPDATE_WEIGHT_REACTION.value()).isEqualTo("vdj.playlist.self_update.weight.reaction");
     assertThat(ConfigKey.VDJ_SELF_UPDATE_WEIGHT_GRAB.value()).isEqualTo("vdj.playlist.self_update.weight.grab");
-    assertThat(ConfigKey.VDJ_SELF_UPDATE_WEIGHT_COMPLETION.value()).isEqualTo("vdj.playlist.self_update.weight.completion");
     assertThat(ConfigKey.VDJ_SELF_UPDATE_PRUNED_COOLDOWN_SECONDS.value()).isEqualTo("vdj.playlist.self_update.pruned_cooldown_seconds");
 }
 ```
@@ -81,7 +80,6 @@ void selfUpdateTuningKeys_haveExpectedValues() {
     public static final ConfigKey VDJ_SELF_UPDATE_RECOMMEND_COUNT = new ConfigKey("vdj.playlist.self_update.recommend_count");
     public static final ConfigKey VDJ_SELF_UPDATE_WEIGHT_REACTION = new ConfigKey("vdj.playlist.self_update.weight.reaction");
     public static final ConfigKey VDJ_SELF_UPDATE_WEIGHT_GRAB = new ConfigKey("vdj.playlist.self_update.weight.grab");
-    public static final ConfigKey VDJ_SELF_UPDATE_WEIGHT_COMPLETION = new ConfigKey("vdj.playlist.self_update.weight.completion");
     public static final ConfigKey VDJ_SELF_UPDATE_PRUNED_COOLDOWN_SECONDS = new ConfigKey("vdj.playlist.self_update.pruned_cooldown_seconds");
 ```
 
@@ -142,7 +140,6 @@ class SelfUpdateConfigTest {
         // weights: per-mille → double
         assertThat(config.weightReaction()).isEqualTo(1.0);   // 1000‰
         assertThat(config.weightGrab()).isEqualTo(2.0);       // 2000‰
-        assertThat(config.weightCompletion()).isEqualTo(0.5); // 500‰
     }
 }
 ```
@@ -179,7 +176,6 @@ public class SelfUpdateConfig {
     static final int DEFAULT_PRUNED_COOLDOWN_SECONDS = 3600;
     static final int DEFAULT_WEIGHT_REACTION_PERMILLE = 1000;   // 1.0
     static final int DEFAULT_WEIGHT_GRAB_PERMILLE = 2000;       // 2.0
-    static final int DEFAULT_WEIGHT_COMPLETION_PERMILLE = 500;  // 0.5
 
     private final SystemConfigCache cache;
 
@@ -218,10 +214,6 @@ public class SelfUpdateConfig {
     public double weightGrab() {
         return cache.readInt(ConfigKey.VDJ_SELF_UPDATE_WEIGHT_GRAB, DEFAULT_WEIGHT_GRAB_PERMILLE) / 1000.0;
     }
-
-    public double weightCompletion() {
-        return cache.readInt(ConfigKey.VDJ_SELF_UPDATE_WEIGHT_COMPLETION, DEFAULT_WEIGHT_COMPLETION_PERMILLE) / 1000.0;
-    }
 }
 ```
 
@@ -242,7 +234,6 @@ public class SelfUpdateConfig {
 ```java
 package com.pfplaybackend.api.virtualdj.domain.entity.data;
 
-import com.pfplaybackend.api.virtualdj.domain.enums.VirtualDjStatus;
 import org.junit.jupiter.api.Test;
 import java.time.LocalDateTime;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -295,7 +286,6 @@ INSERT INTO system_config (config_key, config_value, description) VALUES
     ('vdj.playlist.self_update.recommend_count', '6', 'P3-B LLM 곡명 추천 수 N'),
     ('vdj.playlist.self_update.weight.reaction', '1000', 'P3-B score 순반응 가중치(퍼밀 ‰, 1000=1.0)'),
     ('vdj.playlist.self_update.weight.grab', '2000', 'P3-B score grab 가중치(퍼밀 ‰)'),
-    ('vdj.playlist.self_update.weight.completion', '500', 'P3-B score 완주율 가중치(퍼밀 ‰)'),
     ('vdj.playlist.self_update.pruned_cooldown_seconds', '3600', 'P3-B prune 곡 재추가 차단 기간(초)');
 ```
 
@@ -312,8 +302,9 @@ INSERT INTO system_config (config_key, config_value, description) VALUES
 ### Task 4: LinkReactionScore DTO + ReactionScoreQueryRepository interface
 
 **점수 산식(spec §5.1):** linkId 별
-`score = w_react·(Σlike − Σdislike + w_grab·Σgrab) + w_completion·avg(end_time / durationSec)`
-저장은 raw 집계만(Σlike, Σdislike, Σgrab, avgCompletion). weight 적용은 `ReactionScoreReader`/`PlaylistSelfUpdateService` 가 한다(테스트 용이).
+`score = w_react·(Σlike − Σdislike) + w_grab·Σgrab`
+저장은 raw 집계만(Σlike, Σdislike, Σgrab). weight 적용은 `ReactionScoreReader` 가 한다(테스트 용이).
+**완주율 항 없음** — `playback.end_time` 은 예정 종료 epoch-millis 라 완주 신호 부재(spec §3). grab 이 대체.
 
 **Files:**
 - Create: `app/.../virtualdj/application/dto/LinkReactionScore.java`
@@ -331,9 +322,8 @@ package com.pfplaybackend.api.virtualdj.application.dto;
  * @param likeSum       Σ like_count
  * @param dislikeSum    Σ dislike_count
  * @param grabSum       Σ grab_count
- * @param avgCompletion 평균 완주율(end_time/durationSec, 0~1+; durationSec=0 이면 0 기여)
  */
-public record LinkReactionScore(String linkId, long likeSum, long dislikeSum, long grabSum, double avgCompletion) {}
+public record LinkReactionScore(String linkId, long likeSum, long dislikeSum, long grabSum) {}
 ```
 
 - [ ] **Step 2: Repository interface 작성**
@@ -379,13 +369,16 @@ public interface ReactionScoreQueryRepository {
 
 ### Task 5: ReactionScoreQueryRepositoryImpl + IT
 
-JPQL 로 엔티티(`PlaybackData`, `PlaybackAggregationData`, `PlaybackReactionHistoryData`) 를 조회. `end_time`(bigint 초)·`duration`(varchar "m:ss") 는 엔티티에서 읽어 자바에서 완주율 계산(JPQL 에서 varchar 파싱 불가).
+엔티티(`PlaybackData`, `PlaybackAggregationData`, `PlaybackReactionHistoryData`)를 조회해 linkId별
+Σlike/Σdislike/Σgrab 집계. **완주율 계산 없음**(end_time 미사용).
 
-> **구현 노트(실 컬럼):** `playback(user_id, partyroom_id, link_id, duration, end_time, created_at)`,
-> `playback_aggregation(playback_id PK, like_count, dislike_count, grab_count)`,
-> `playback_reaction_history(playback_id, user_id, created_at, ...)`. Impl 작성 전
-> `PlaybackData`/`PlaybackAggregationData`/`PlaybackReactionHistoryData` 엔티티의 필드명·연관을
-> 확인할 것(JPQL 작성 정확도). 연관이 없으면 두 단계 조회(plays → playbackIds → aggregation/history)로 한다.
+> **구현 노트(실 컬럼/패턴):** `playback(user_id, partyroom_id, link_id, created_at)`,
+> `playback_aggregation(@EmbeddedId PlaybackId, like_count, dislike_count, grab_count)`,
+> `playback_reaction_history(playback_id, user_id, created_at, ...)`. 기존 cross-BC 읽기
+> `ActiveDjSnapshotQueryRepositoryImpl` 는 **QueryDSL(`JPAQueryFactory`+Q-class)** 을 쓴다 — 일관성을 위해
+> 동일하게 QueryDSL 권장(JPQL 도 가능). ⚠️ `PlaybackAggregationData` PK 는 `@EmbeddedId PlaybackId` 이므로
+> `findAllById(...)` 인자는 `List<PlaybackId>`(raw Long 아님). Impl 작성 전 세 엔티티 필드명/연관 확인.
+> 연관이 없으면 두 단계 조회(plays → playbackIds → aggregation/history)로 한다.
 
 **Files:**
 - Create: `app/.../virtualdj/adapter/out/persistence/impl/ReactionScoreQueryRepositoryImpl.java`
@@ -395,7 +388,7 @@ JPQL 로 엔티티(`PlaybackData`, `PlaybackAggregationData`, `PlaybackReactionH
 
 ```java
 // 핵심 단언 (시드 후):
-// linkA: 2 plays, like 3 / dislike 1 / grab 1, end_time/duration → avgCompletion 계산
+// linkA: 2 plays, like 3 / dislike 1 / grab 1
 // linkB: 1 play,  like 0 / dislike 2 / grab 0
 // reaction_history rows: 일부는 since 이전, 일부는 이후
 long cnt = repo.countReactionsSince(List.of(botId), roomId, watermark);
@@ -407,18 +400,17 @@ LinkReactionScore a = scores.stream().filter(s -> s.linkId().equals("linkA")).fi
 assertThat(a.likeSum()).isEqualTo(3);
 assertThat(a.dislikeSum()).isEqualTo(1);
 assertThat(a.grabSum()).isEqualTo(1);
-assertThat(a.avgCompletion()).isBetween(0.0, 1.5);
 ```
-> IT 시드 시 `end_time`/`duration` 은 정수 초로 realistic 하게(예: duration "3:00"=180초, end_time 90 → 0.5). durationSec=0 케이스도 1건 넣어 avgCompletion 기여 0 검증.
+> 다른 봇(user_id)·다른 룸의 plays 를 1건씩 섞어 시드해 필터(user_id IN botIds AND partyroom_id) 정확성도 검증.
 
 - [ ] **Step 2: 실패 확인** — `./gradlew :app:integrationTest --tests "*ReactionScoreQueryRepositoryIT"` (또는 프로젝트의 IT 태스크) → 컴파일/빈 부재 실패
 
 - [ ] **Step 3: Impl 구현** — `@Repository`, `@PersistenceContext EntityManager em` 또는 Spring Data + `@Query`. 두 단계 조회 권장:
   1. `countReactionsSince`: `SELECT COUNT(rh) FROM PlaybackReactionHistoryData rh WHERE rh.playbackId IN (SELECT p.id FROM PlaybackData p WHERE p.userId IN :botIds AND p.partyroomId = :roomId) AND (:since IS NULL OR rh.createdAt > :since)` (필드명은 엔티티 확인 후 정정). `botUserIds` 비면 즉시 0 반환.
-  2. `aggregateByLink`: 봇 plays(`PlaybackData` where userId+partyroomId) 조회 → playbackId→linkId·완주율 매핑 → `PlaybackAggregationData` 일괄 조회(`findAllById`) → linkId 별 Σlike/Σdislike/Σgrab/avgCompletion 으로 fold. 완주율 = `durationSec>0 ? end_time/durationSec : 0`. `duration` 은 `Duration.fromString(...).toSeconds()` 류(공용 값객체 확인).
+  2. `aggregateByLink`: 봇 plays(`PlaybackData` where userId+partyroomId) 조회 → playbackId→linkId 매핑 → `PlaybackAggregationData` 일괄 조회(`findAllById(List<PlaybackId>)`) → linkId 별 Σlike/Σdislike/Σgrab 으로 fold. **end_time/duration 사용 안 함.**
 
 - [ ] **Step 4: 통과 확인** — IT PASS
-- [ ] **Step 5: 커밋** — `feat(vdj): ReactionScoreQueryRepositoryImpl + IT(완주율/순반응 집계)`
+- [ ] **Step 5: 커밋** — `feat(vdj): ReactionScoreQueryRepositoryImpl + IT(linkId별 순반응/grab 집계)`
 
 ---
 
@@ -433,15 +425,19 @@ assertThat(a.avgCompletion()).isBetween(0.0, 1.5);
 - [ ] **Step 1: 실패 테스트** (mock repo + mock SelfUpdateConfig) — weighted score 계산·정렬 검증
 
 ```java
-// 예: linkA(like3,dislike1,grab1,comp0.5), linkB(like0,dislike2,grab0,comp0.2)
-// w_react=1.0, w_grab=2.0, w_completion=0.5
-// scoreA = 1.0*(3-1 + 2.0*1) + 0.5*0.5 = 4.0 + 0.25 = 4.25
-// scoreB = 1.0*(0-2 + 0)     + 0.5*0.2 = -2.0 + 0.1 = -1.9
+// 예: linkA(like3,dislike1,grab1), linkB(like0,dislike2,grab0)
+// w_react=1.0, w_grab=2.0
+// scoreA = 1.0*(3-1) + 2.0*1 = 2.0 + 2.0 = 4.0
+// scoreB = 1.0*(0-2) + 2.0*0 = -2.0
 // → 오름차순(저점 먼저): [linkB, linkA]
-when(repo.aggregateByLink(7L, 99L)).thenReturn(List.of(scoreA, scoreB));
+when(config.weightReaction()).thenReturn(1.0);
+when(config.weightGrab()).thenReturn(2.0);
+when(repo.aggregateByLink(7L, 99L)).thenReturn(List.of(
+        new LinkReactionScore("linkA", 3, 1, 1),
+        new LinkReactionScore("linkB", 0, 2, 0)));
 List<ScoredLink> result = reader.scoredAscending(new UserId(7L), new PartyroomId(99L));
 assertThat(result).extracting(ScoredLink::linkId).containsExactly("linkB", "linkA");
-assertThat(result.get(0).score()).isCloseTo(-1.9, within(1e-9));
+assertThat(result.get(0).score()).isCloseTo(-2.0, within(1e-9));
 ```
 
 - [ ] **Step 2: 실패 확인**
@@ -560,24 +556,63 @@ P3-A 의 Redis 사용(SETNX 게이트키) 패턴 참고. per-bot key `vdj:pruned
   - 총 곡수 = 5(불변, INV-1)
   - order_number 연속(1..5), 중복 없음
 ```java
-botPlaylistEditor.swap(playlistId, pruneTrackIds, addTracks); // addTracks: List<NewTrack(name,linkId,duration,thumb)>
+int swapped = botPlaylistEditor.swap(playlistId, pruneTrackIds, addTracks); // addTracks: List<NewTrack(name,linkId,duration,thumb)>
+assertThat(swapped).isEqualTo(2);                       // min(2 add, 2 prune)
 List<TrackData> after = trackRepository.findAllByPlaylistId(new PlaylistId(playlistId));
 assertThat(after).hasSize(5);
 assertThat(after).extracting(TrackData::getLinkId).contains("newX", "newY");
 assertThat(after).extracting(TrackData::getOrderNumber).doesNotHaveDuplicates();
 ```
+> `NewTrack` record(공용 입력)도 이 Task 에서 정의: `record NewTrack(String name, String linkId, Duration duration, String thumbnailImage)` — `app/.../virtualdj/application/dto/NewTrack.java`. add=[] 또는 prune=[] 케이스(n=0, 변경 없음)도 IT 에 추가.
 
 - [ ] **Step 2: 실패 확인**
-- [ ] **Step 3: 구현** (`@Transactional`):
-  1. `n = min(addTracks.size(), pruneTrackIds.size())`. add 상위 n / prune 저점 n 만 사용(호출자가 정렬해 전달; editor 는 받은 순서 신뢰).
-  2. prune: `trackRepository.deleteAllById(pruneIds.subList(0,n))` (또는 개별 delete).
-  3. 남은 트랙 order 재정규화: `findAllByPlaylistId` → orderNumber asc 정렬 → 1..m 재할당(`reorder`) → save. (shiftUpOrderByDelete 다회보다 단순·안전.)
-  4. add-to-head: 신규 n곡을 order 1..n, 기존 m곡을 n+1..n+m 로. 즉 `shiftAllOrdersDown` n회 대신, 재정규화 단계에서 기존을 n+1 부터 시작하도록 한 번에 계산해 saveAll.
-  5. `NewTrack` → `TrackData.builder().playlistId(new PlaylistId(playlistId)).name().linkId().duration().orderNumber().thumbnailImage().build()`.
+- [ ] **Step 3: 구현** (`@Transactional`, 시그니처 `int swap(Long playlistId, List<Long> pruneTrackIds, List<NewTrack> addTracks)`):
+  1. `n = min(addTracks.size(), pruneTrackIds.size())`. add 상위 n / prune 저점 n 만 사용(호출자가 정렬해 전달; editor 는 받은 순서 신뢰). n==0 이면 변경 없이 0 반환.
+  2. prune: `trackRepository.deleteAllById(pruneTrackIds.subList(0,n))`.
+  3. 남은 트랙 order 재정규화: `findAllByPlaylistId(new PlaylistId(playlistId))` → orderNumber asc 정렬 → 1..m 재할당(`reorder`) → save. (shiftUpOrderByDelete 다회보다 단순·안전.)
+  4. add-to-head: 신규 n곡을 order 1..n, 기존 m곡을 n+1..n+m 로. 즉 재정규화 단계에서 기존을 n+1 부터 시작하도록 한 번에 계산해 saveAll.
+  5. `NewTrack` → `TrackData.builder().playlistId(new PlaylistId(playlistId)).name(t.name()).linkId(t.linkId()).duration(t.duration()).orderNumber(i+1).thumbnailImage(t.thumbnailImage()).build()`.
+  6. `return n;`
   > duration 은 `Duration`(공용 값객체). 해소결과(SearchResultRawDto.running_time 문자열)·ReservoirTrack 모두 `Duration` 으로 정규화해 `NewTrack` 에 담아 전달(상위 Task 11 책임).
 
 - [ ] **Step 4: 통과 확인** — IT PASS(특히 order 연속·size 불변)
 - [ ] **Step 5: 커밋** — `feat(vdj): BotPlaylistEditor 원자적 swap(add-to-head + prune, 크기 불변)`
+
+---
+
+### Task 10B: PartyroomQueryService.getCurrentPlaybackLinkId (INV-3 시임)
+
+INV-3(현재곡 prune 보호)는 현재곡 **linkId** 가 필요한데, 기존 `getCurrentPlaybackName` 은 이름(String)만
+준다. party BC 안에 AggregatePort 를 가둔 채 linkId 를 노출하는 형제 메서드를 신설한다(가상 DJ 패키지의
+ArchUnit AggregatePort 의존 금지 준수 — 평이한 String 만 반환).
+
+**Files:**
+- Modify: `app/src/main/java/com/pfplaybackend/api/party/application/service/PartyroomQueryService.java`
+- Test: `app/src/test/java/com/pfplaybackend/api/party/application/service/PartyroomQueryServiceTest.java` (기존; getCurrentPlaybackName 테스트 미러)
+
+- [ ] **Step 1: 실패 테스트** — 활성 재생 시 현재 playback 의 linkId 반환 / 비활성·currentPlaybackId=null 시 null. (기존 `getCurrentPlaybackName` 테스트의 mock 셋업 미러: `aggregatePort.findPlaybackState` + `playbackQueryService.getPlaybackById`.)
+
+- [ ] **Step 2: 실패 확인** — `./gradlew :app:test --tests "*PartyroomQueryServiceTest"` → 컴파일 실패
+
+- [ ] **Step 3: 구현** — `getCurrentPlaybackName`(`:151`) 바로 아래에 미러 메서드:
+```java
+    /**
+     * 현재 재생 중인 곡의 linkId 를 반환한다. 재생 비활성/곡 없음이면 {@code null}.
+     * P3-B 자가갱신의 현재곡 prune 보호(INV-3)용. AggregatePort 는 party BC 안에 가두고 String 만 노출.
+     */
+    @Transactional(readOnly = true)
+    public String getCurrentPlaybackLinkId(PartyroomId partyroomId) {
+        PartyroomPlaybackData playbackState = aggregatePort.findPlaybackState(partyroomId);
+        if (!playbackState.isActivated() || playbackState.getCurrentPlaybackId() == null) {
+            return null;
+        }
+        return playbackQueryService.getPlaybackById(playbackState.getCurrentPlaybackId()).getLinkId();
+    }
+```
+> `PlaybackData.getLinkId()` 존재(검증됨). `@Getter` 라 별도 추가 불필요.
+
+- [ ] **Step 4: 통과 확인** — PASS
+- [ ] **Step 5: 커밋** — `feat(party): getCurrentPlaybackLinkId 신설(P3-B INV-3 현재곡 보호 시임)`
 
 ---
 
@@ -605,41 +640,57 @@ assertThat(after).extracting(TrackData::getOrderNumber).doesNotHaveDuplicates();
   > 결정: 케이스 5 에서 watermark 는 **전진시킨다**(시도했고 비용 게이트 통과했으므로 쿨다운 적용해 재시도 폭주 방지). 테스트로 고정.
 
 - [ ] **Step 2: 실패 확인**
-- [ ] **Step 3: 구현** — `tryUpdateRoom(PartyroomId)`:
+- [ ] **Step 3: 구현** — `tryUpdateRoom(PartyroomId roomId)`. ⚠️ 실 시그니처 주의(리뷰 반영):
+  - `configRepository.findByPartyroomId(roomId.getId())` → `Optional<PartyroomVirtualDjConfigData>` (PK=Long, **findById 아님**; `VirtualDjOrchestratorImpl.doReconcile` 동일).
+  - 룸 playbackTimeLimit = `partyroomQueryService.getPartyroomById(roomId).getPlaybackTimeLimit().getMinutes()` (`VirtualDjOrchestratorImpl.addBots` 동일 경로).
+  - 현재곡 linkId = `partyroomQueryService.getCurrentPlaybackLinkId(roomId)` (Task 10B 신설, null 가능).
 ```
-config = configRepository.findById(roomId); if absent or status != MANAGED → return
-if (now - config.lastSelfUpdateAt < cooldown) return            // cooldown
+cfgOpt = configRepository.findByPartyroomId(roomId.getId()); if empty or status != MANAGED → return
+config = cfgOpt.get()
+if (config.lastSelfUpdateAt != null && now - lastSelfUpdateAt < cooldown) return        // cooldown (null=첫 사이클 통과)
 snapshot = activeDjSnapshotService.snapshot(roomId)
-botIds = snapshot.botUserIdsByJoinedDesc(); if empty → return
-if (reader.countNewReactions(botIds(asLong), roomId, config.lastSelfUpdateAt) < K) return   // INV-2 ⭐ LLM 전에
+botIds = snapshot.botUserIdsByJoinedDesc(); if empty → return                            // List<UserId>
+botIdLongs = botIds.map(UserId::getUid)
+if (reader.countNewReactions(botIdLongs, roomId.getId(), config.lastSelfUpdateAt) < K) return   // INV-2 ⭐ LLM 전에
 roomCtx = roomContextReader.read(roomId)
-nowPlayingLinkId = currentTrackReader.currentLinkId(roomId)     // partyroom_playback→playback→link_id, null 가능
+nowPlayingLinkId = partyroomQueryService.getCurrentPlaybackLinkId(roomId)                // null 가능
+limitMin = partyroomQueryService.getPartyroomById(roomId).getPlaybackTimeLimit().getMinutes()
 for botUserId in botIds:
-    updateBot(botUserId, roomId, roomCtx, nowPlayingLinkId)     // 각 봇 자기 사이클, 예외 격리(try/catch 봇 단위)
-config.markSelfUpdated(now); configRepository.save(config)
+    try { updateBot(botUserId, roomId, roomCtx, nowPlayingLinkId, limitMin, config.songPackId) }  // 봇 단위 예외 격리
+    catch (Exception e) { log.warn(...) }
+config.markSelfUpdated(now); configRepository.save(config)                               // watermark 1회
 ```
-`updateBot(...)`:
+`updateBot(botUserId, roomId, roomCtx, nowPlayingLinkId, limitMin, songPackId)`:
 ```
-scored = reader.scoredAscending(botUserId, roomId)              // 오름차순
-playlistId = virtualUserPoolService.playlistIdOf(botUserId)
-tracks = trackRepository.findAllByPlaylistId(playlistId)        // 현 playlist
-protectedLinks = {nowPlayingLinkId} ∪ cursorAndNext(playlistId) ∪ recentlyPrunedStore.recentlyPruned(botUserId)
-pruneCandidates = scored where linkId in tracks AND linkId not in protectedLinks, 저점순 take P → trackId 매핑
-winners = scored 상위에서 protect 무관 top → titles
-recommended = recommendationProvider.recommend(roomCtx, winnerTitles, N)   // best-effort
-resolved = []
+scored = reader.scoredAscending(botUserId, roomId)                          // List<ScoredLink> 오름차순
+playlistIdLong = virtualUserPoolService.playlistIdOf(botUserId)             // Long
+tracks = trackRepository.findAllByPlaylistId(new PlaylistId(playlistIdLong))// ⚠️ PlaylistId 래핑
+trackLinkIds = tracks.map(getLinkId)
+protectedLinks = nonNull(nowPlayingLinkId) ∪ cursorAndNext(playlistIdLong, tracks)
+                 ∪ recentlyPrunedStore.recentlyPruned(botUserId)
+pruneCandidates = scored.filter(linkId ∈ trackLinkIds AND linkId ∉ protectedLinks)
+                        .take(P) → 각 linkId 의 trackId 매핑(tracks 에서)
+winnerTitles = scored(점수 내림차순) 상위에서 곡명(tracks 의 name) 추출
+recommended = recommendationProvider.recommend(roomCtx, winnerTitles, N)    // best-effort, 빈 리스트 가능
+resolved = []   // List<NewTrack>
 for q in recommended:
-    raw = pytube.searchByWord(q, 1).data().firstOrNull()
-    if raw != null and duration ok and linkId not in (tracks ∪ protected ∪ resolved) → resolved.add(NewTrack)
+    raw = pytube.searchByWord(q, 1).data() 의 첫 요소(없으면 skip)
+    d = Duration.fromString(raw.running_time())
+    if !PlaybackTimeLimit.ofMinutes(limitMin).exceedsDuration(d)
+       AND raw.video_id ∉ (trackLinkIds ∪ protectedLinks ∪ resolved.linkIds):
+        resolved += new NewTrack(raw.video_title, raw.video_id, d, raw.thumbnail_url)
 if resolved.size < pruneCandidates.size:
-    fill = reservoir.untried(songPackId, exclude=tracks∪resolved∪recentlyPruned, timeLimit, need)
-    resolved += fill (NewTrack 변환)
-botPlaylistEditor.swap(playlistId, pruneCandidateTrackIds, resolved)   // editor 가 n=min 적용
-prunedLinkIds = 실제 prune된 n곡의 linkId
+    need = pruneCandidates.size − resolved.size
+    fill = reservoir.untried(songPackId, exclude=trackLinkIds ∪ resolved.linkIds ∪ protectedLinks, limitMin, need)
+    resolved += fill.map(→ NewTrack)
+swappedN = botPlaylistEditor.swap(playlistIdLong, pruneCandidates.trackIds, resolved)   // editor 가 n=min 적용, 반환=실제 swap 수
+prunedLinkIds = pruneCandidates 의 앞 swappedN 곡 linkId
 recentlyPrunedStore.markPruned(botUserId, prunedLinkIds)
 ```
-> `cursorAndNext(playlistId)`: `PlaylistData.lastPlayedTrackId` 로 현재 커서 트랙 + order_number 다음 트랙의 linkId 반환(INV-3 임박 보호). null 커서면 빈셋.
-> duration ok = `PlaybackTimeLimit.ofMinutes(roomLimit).exceedsDuration(d)` 가 false. roomLimit 은 party query service 에서 룸 playbackTimeLimit 읽기(또는 RoomContext 확장). **구현 시 룸 playbackTimeLimit 읽는 경로 확인**(SongPackApplier 는 호출자가 분 단위로 받음 — orchestrator 가 어디서 얻는지 grep).
+> `cursorAndNext(playlistIdLong, tracks)`: `PlaylistRepository.findById(playlistIdLong)` 로 `PlaylistData` 로드 →
+> `getLastPlayedTrackId()`(커서, null 가능) 의 linkId + 그 트랙 order_number 다음 트랙의 linkId 반환(INV-3
+> 임박 보호). 커서 null 이면 빈셋. (PlaylistRepository 는 playlist BC repo — 비-Orchestrator 클래스라 ArchUnit 허용.)
+> `BotPlaylistEditor.swap(...)` 은 Task 10 에서 **실제 swap 한 곡 수(int)를 반환**하도록 시그니처 확정(markPruned 정확도).
 
 - [ ] **Step 4: 통과 확인** — 6 케이스 PASS
 - [ ] **Step 5: 커밋** — `feat(vdj): PlaylistSelfUpdateService 사이클 조립(게이트+score+refill+폴백+swap+watermark)`
