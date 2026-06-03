@@ -28,9 +28,12 @@ import java.time.Duration;
  * HTTP 4xx/5xx, 타임아웃, 파싱 실패 → catch 후 {@code log.warn} + {@code ""}. 성공 시 첫 text 블록 텍스트
  * (없으면 {@code ""}).
  *
- * <h2>prompt caching</h2>
- * system 을 {@code [{type:text, text:…, cache_control:{type:ephemeral}}]} 블록 배열로 보내 고정 규칙 +
- * 페르소나 + 방 컨텍스트 prefix 의 prompt caching(GA, beta 헤더 불필요)을 활성화한다.
+ * <h2>system 프롬프트 / prompt caching</h2>
+ * system 은 평문 문자열로 보낸다. 채팅용 system(고정 규칙 + 페르소나 + 방 컨텍스트)은 짧아(수백 토큰)
+ * Haiku 4.5 의 최소 캐시 prefix(4096 토큰) 미만이라 prompt caching 이 어차피 걸리지 않는다
+ * (cache_control 을 붙여도 silent no-op). 따라서 불필요한 블록 배열/cache_control 을 두지 않는다.
+ * 향후 system 이 4096 토큰을 넘기게 설계되면 그때 {@code [{type:text,…,cache_control:{type:ephemeral}}]}
+ * 배열 형태 + cache_control 로 캐싱을 도입한다.
  */
 @Slf4j
 @Component
@@ -47,7 +50,7 @@ public class AnthropicChatProvider implements LlmChatProvider {
     public AnthropicChatProvider(
             @Value("${service-api.anthropic.api-key:}") String apiKey,
             @Value("${service-api.anthropic.base-uri:https://api.anthropic.com}") String baseUri,
-            @Value("${service-api.anthropic.model:claude-haiku-4-5-20251001}") String model,
+            @Value("${service-api.anthropic.model:claude-haiku-4-5}") String model,
             @Value("${service-api.anthropic.timeout-ms:12000}") long timeoutMs) {
         this.apiKey = apiKey;
         this.baseUri = baseUri;
@@ -107,12 +110,8 @@ public class AnthropicChatProvider implements LlmChatProvider {
         root.put("model", model);
         root.put("max_tokens", maxTokens);
 
-        // system: [{ type:text, text:…, cache_control:{type:ephemeral} }]
-        ArrayNode systemArr = root.putArray("system");
-        ObjectNode systemBlock = systemArr.addObject();
-        systemBlock.put("type", "text");
-        systemBlock.put("text", systemPrompt);
-        systemBlock.putObject("cache_control").put("type", "ephemeral");
+        // system: 평문 문자열(짧은 채팅 프롬프트 → 캐싱 임계 미만, 블록배열/cache_control 불필요)
+        root.put("system", systemPrompt);
 
         // messages: [{ role:user, content:… }]
         ArrayNode messagesArr = root.putArray("messages");

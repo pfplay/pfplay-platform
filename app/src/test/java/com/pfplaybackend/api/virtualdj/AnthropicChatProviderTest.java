@@ -30,7 +30,7 @@ class AnthropicChatProviderTest {
     private static final String BASE_URI = "http://anthropic.test";
 
     private AnthropicChatProvider newProvider(String apiKey) {
-        return new AnthropicChatProvider(apiKey, BASE_URI, "claude-haiku-4-5-20251001", 12000L);
+        return new AnthropicChatProvider(apiKey, BASE_URI, "claude-haiku-4-5", 12000L);
     }
 
     private MockRestServiceServer bindServer(AnthropicChatProvider provider) {
@@ -48,11 +48,11 @@ class AnthropicChatProviderTest {
                 .andExpect(method(POST))
                 .andExpect(header("x-api-key", "sk-test"))
                 .andExpect(header("anthropic-version", "2023-06-01"))
-                .andExpect(jsonPath("$.model").value("claude-haiku-4-5-20251001"))
+                .andExpect(jsonPath("$.model").value("claude-haiku-4-5"))
                 .andExpect(jsonPath("$.max_tokens").value(64))
-                .andExpect(jsonPath("$.system[0].cache_control.type").value("ephemeral"))
-                .andExpect(jsonPath("$.system[0].type").value("text"))
+                .andExpect(jsonPath("$.system").value("system-prompt"))
                 .andExpect(jsonPath("$.messages[0].role").value("user"))
+                .andExpect(jsonPath("$.messages[0].content").value("user-content"))
                 .andRespond(withStatus(HttpStatus.OK)
                         .contentType(MediaType.APPLICATION_JSON)
                         .body("{\"content\":[{\"type\":\"text\",\"text\":\"안녕!\"}]}"));
