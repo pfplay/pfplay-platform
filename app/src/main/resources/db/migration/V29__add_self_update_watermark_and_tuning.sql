@@ -8,7 +8,6 @@ ALTER TABLE partyroom_virtual_dj_config
 INSERT INTO system_config (config_key, config_value, description) VALUES
     ('vdj.playlist.self_update.cooldown_seconds', '1800', 'P3-B 자가갱신 룸별 최소 간격(초)'),
     ('vdj.playlist.self_update.min_reactions', '5', 'P3-B 갱신 트리거 새 반응 임계 K(미만이면 LLM 미호출)'),
-    ('vdj.playlist.self_update.target_size', '20', 'P3-B 봇 playlist 목표 크기 T'),
     ('vdj.playlist.self_update.replace_per_cycle', '3', 'P3-B 사이클당 최대 교체 수 P'),
     ('vdj.playlist.self_update.recommend_count', '6', 'P3-B LLM 곡명 추천 수 N'),
     ('vdj.playlist.self_update.weight.reaction', '1000', 'P3-B score 순반응 가중치(퍼밀 ‰, 1000=1.0)'),

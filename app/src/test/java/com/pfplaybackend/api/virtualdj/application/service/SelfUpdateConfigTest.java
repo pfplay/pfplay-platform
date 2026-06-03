@@ -26,7 +26,6 @@ class SelfUpdateConfigTest {
         when(cache.readInt(any(), anyInt())).thenAnswer(inv -> inv.getArgument(1));
         assertThat(config.cooldownSeconds()).isEqualTo(1800);
         assertThat(config.minReactions()).isEqualTo(5);
-        assertThat(config.targetSize()).isEqualTo(20);
         assertThat(config.replacePerCycle()).isEqualTo(3);
         assertThat(config.recommendCount()).isEqualTo(6);
         assertThat(config.prunedCooldownSeconds()).isEqualTo(3600);

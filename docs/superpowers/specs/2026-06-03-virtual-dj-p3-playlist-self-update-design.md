@@ -124,7 +124,7 @@ P2 까지의 봇 playlist 는 `SongPackApplier.applyToBot` 가 봇 투입 직전
 
 ## 5. 갱신 사이클 (원자적 증분 교체)
 
-게이트 통과 룸에서만 실행. 목표 크기 T 를 유지하며 최저점 P 곡을 고반응 계열 신곡으로 교체한다.
+게이트 통과 룸에서만 실행. 최저점 P 곡을 고반응 계열 신곡으로 교체한다(원자적 swap이 크기를 보존 — 별도 목표크기 키 없음).
 
 ```
 입력: botUserId, roomId, 봇 playlistId, songPackId, roomPlaybackTimeLimit, 방 컨셉(RoomContextReader)
@@ -167,7 +167,7 @@ P2 까지의 봇 playlist 는 `SongPackApplier.applyToBot` 가 봇 투입 직전
 - **add-to-head 결정 근거:** [[project_playlist_cursor_redesign_pr263]] 에서 order_number 이중용도 분리 +
   add-to-head 기획. 신곡을 머리에 넣어 빠르게 노출하되 grab tail·재생 커서는 보존한다. 정확한 삽입 위치는
   PR263 의 Track ordering 헬퍼를 재사용한다(구현 시 확정).
-- **w_react / w_grab / N / T / P** 는 `system_config` 키(런타임 튜닝).
+- **w_react / w_grab / N / P** 는 `system_config` 키(런타임 튜닝). (크기는 swap이 보존하므로 목표크기 키 없음.)
 
 ---
 
@@ -208,7 +208,6 @@ P3-A 의 `vdj.playlist.self_update.enabled`(V28, 기본 false) 를 **활성 게�
 | `vdj.playlist.self_update.enabled` | `false` | 전역 게이트(V28 기존, INV-4) |
 | `vdj.playlist.self_update.cooldown_seconds` | (예: 1800) | 쿨다운(조건 3) |
 | `vdj.playlist.self_update.min_reactions` (K) | (예: 5) | 비용 게이트 임계(조건 4) |
-| `vdj.playlist.self_update.target_size` (T) | (예: 20) | 목표 playlist 크기 |
 | `vdj.playlist.self_update.replace_per_cycle` (P) | (예: 3) | 사이클당 최대 교체 수 |
 | `vdj.playlist.self_update.recommend_count` (N) | (예: 6) | LLM 곡명 추천 수 |
 | `vdj.playlist.self_update.weight.reaction` | (예: 1000‰=1.0) | w_react (순반응 가중치, 퍼밀) |

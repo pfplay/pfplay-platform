@@ -19,7 +19,6 @@ public class SelfUpdateConfig {
     static final boolean DEFAULT_ENABLED = false;          // fail-closed
     static final int DEFAULT_COOLDOWN_SECONDS = 1800;      // 30분
     static final int DEFAULT_MIN_REACTIONS = 5;            // K
-    static final int DEFAULT_TARGET_SIZE = 20;             // T
     static final int DEFAULT_REPLACE_PER_CYCLE = 3;        // P
     static final int DEFAULT_RECOMMEND_COUNT = 6;          // N
     static final int DEFAULT_PRUNED_COOLDOWN_SECONDS = 3600;
@@ -38,10 +37,6 @@ public class SelfUpdateConfig {
 
     public int minReactions() {
         return cache.readInt(ConfigKey.VDJ_SELF_UPDATE_MIN_REACTIONS, DEFAULT_MIN_REACTIONS);
-    }
-
-    public int targetSize() {
-        return cache.readInt(ConfigKey.VDJ_SELF_UPDATE_TARGET_SIZE, DEFAULT_TARGET_SIZE);
     }
 
     public int replacePerCycle() {

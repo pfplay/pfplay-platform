@@ -58,7 +58,6 @@ class ConfigKeyTest {
     void selfUpdateTuningKeys_haveExpectedValues() {
         assertThat(ConfigKey.VDJ_SELF_UPDATE_COOLDOWN_SECONDS.value()).isEqualTo("vdj.playlist.self_update.cooldown_seconds");
         assertThat(ConfigKey.VDJ_SELF_UPDATE_MIN_REACTIONS.value()).isEqualTo("vdj.playlist.self_update.min_reactions");
-        assertThat(ConfigKey.VDJ_SELF_UPDATE_TARGET_SIZE.value()).isEqualTo("vdj.playlist.self_update.target_size");
         assertThat(ConfigKey.VDJ_SELF_UPDATE_REPLACE_PER_CYCLE.value()).isEqualTo("vdj.playlist.self_update.replace_per_cycle");
         assertThat(ConfigKey.VDJ_SELF_UPDATE_RECOMMEND_COUNT.value()).isEqualTo("vdj.playlist.self_update.recommend_count");
         assertThat(ConfigKey.VDJ_SELF_UPDATE_WEIGHT_REACTION.value()).isEqualTo("vdj.playlist.self_update.weight.reaction");

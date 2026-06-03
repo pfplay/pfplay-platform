@@ -57,7 +57,6 @@
 void selfUpdateTuningKeys_haveExpectedValues() {
     assertThat(ConfigKey.VDJ_SELF_UPDATE_COOLDOWN_SECONDS.value()).isEqualTo("vdj.playlist.self_update.cooldown_seconds");
     assertThat(ConfigKey.VDJ_SELF_UPDATE_MIN_REACTIONS.value()).isEqualTo("vdj.playlist.self_update.min_reactions");
-    assertThat(ConfigKey.VDJ_SELF_UPDATE_TARGET_SIZE.value()).isEqualTo("vdj.playlist.self_update.target_size");
     assertThat(ConfigKey.VDJ_SELF_UPDATE_REPLACE_PER_CYCLE.value()).isEqualTo("vdj.playlist.self_update.replace_per_cycle");
     assertThat(ConfigKey.VDJ_SELF_UPDATE_RECOMMEND_COUNT.value()).isEqualTo("vdj.playlist.self_update.recommend_count");
     assertThat(ConfigKey.VDJ_SELF_UPDATE_WEIGHT_REACTION.value()).isEqualTo("vdj.playlist.self_update.weight.reaction");
@@ -75,7 +74,6 @@ void selfUpdateTuningKeys_haveExpectedValues() {
 ```java
     public static final ConfigKey VDJ_SELF_UPDATE_COOLDOWN_SECONDS = new ConfigKey("vdj.playlist.self_update.cooldown_seconds");
     public static final ConfigKey VDJ_SELF_UPDATE_MIN_REACTIONS = new ConfigKey("vdj.playlist.self_update.min_reactions");
-    public static final ConfigKey VDJ_SELF_UPDATE_TARGET_SIZE = new ConfigKey("vdj.playlist.self_update.target_size");
     public static final ConfigKey VDJ_SELF_UPDATE_REPLACE_PER_CYCLE = new ConfigKey("vdj.playlist.self_update.replace_per_cycle");
     public static final ConfigKey VDJ_SELF_UPDATE_RECOMMEND_COUNT = new ConfigKey("vdj.playlist.self_update.recommend_count");
     public static final ConfigKey VDJ_SELF_UPDATE_WEIGHT_REACTION = new ConfigKey("vdj.playlist.self_update.weight.reaction");
@@ -133,7 +131,6 @@ class SelfUpdateConfigTest {
         when(cache.readInt(any(), anyInt())).thenAnswer(inv -> inv.getArgument(1));
         assertThat(config.cooldownSeconds()).isEqualTo(1800);
         assertThat(config.minReactions()).isEqualTo(5);
-        assertThat(config.targetSize()).isEqualTo(20);
         assertThat(config.replacePerCycle()).isEqualTo(3);
         assertThat(config.recommendCount()).isEqualTo(6);
         assertThat(config.prunedCooldownSeconds()).isEqualTo(3600);
@@ -170,7 +167,6 @@ public class SelfUpdateConfig {
     static final boolean DEFAULT_ENABLED = false;          // fail-closed
     static final int DEFAULT_COOLDOWN_SECONDS = 1800;      // 30분
     static final int DEFAULT_MIN_REACTIONS = 5;            // K
-    static final int DEFAULT_TARGET_SIZE = 20;             // T
     static final int DEFAULT_REPLACE_PER_CYCLE = 3;        // P
     static final int DEFAULT_RECOMMEND_COUNT = 6;          // N
     static final int DEFAULT_PRUNED_COOLDOWN_SECONDS = 3600;
@@ -189,10 +185,6 @@ public class SelfUpdateConfig {
 
     public int minReactions() {
         return cache.readInt(ConfigKey.VDJ_SELF_UPDATE_MIN_REACTIONS, DEFAULT_MIN_REACTIONS);
-    }
-
-    public int targetSize() {
-        return cache.readInt(ConfigKey.VDJ_SELF_UPDATE_TARGET_SIZE, DEFAULT_TARGET_SIZE);
     }
 
     public int replacePerCycle() {
@@ -281,7 +273,6 @@ ALTER TABLE partyroom_virtual_dj_config
 INSERT INTO system_config (config_key, config_value, description) VALUES
     ('vdj.playlist.self_update.cooldown_seconds', '1800', 'P3-B 자가갱신 룸별 최소 간격(초)'),
     ('vdj.playlist.self_update.min_reactions', '5', 'P3-B 갱신 트리거 새 반응 임계 K(미만이면 LLM 미호출)'),
-    ('vdj.playlist.self_update.target_size', '20', 'P3-B 봇 playlist 목표 크기 T'),
     ('vdj.playlist.self_update.replace_per_cycle', '3', 'P3-B 사이클당 최대 교체 수 P'),
     ('vdj.playlist.self_update.recommend_count', '6', 'P3-B LLM 곡명 추천 수 N'),
     ('vdj.playlist.self_update.weight.reaction', '1000', 'P3-B score 순반응 가중치(퍼밀 ‰, 1000=1.0)'),
