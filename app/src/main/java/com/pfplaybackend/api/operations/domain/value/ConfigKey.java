@@ -50,4 +50,7 @@ public record ConfigKey(String value) {
     public static final ConfigKey VDJ_CHAT_ROOM_COOLDOWN_SECONDS = new ConfigKey("vdj.chat.room.cooldown.seconds");
     public static final ConfigKey VDJ_CHAT_CONTEXT_SIZE = new ConfigKey("vdj.chat.context.size");
     public static final ConfigKey VDJ_CHAT_OUTPUT_MAX_TOKENS = new ConfigKey("vdj.chat.output.max.tokens");
+
+    // 가상 DJ P3-B 플레이리스트 자가갱신 forward-gate (구현 전 기본 잠금)
+    public static final ConfigKey VDJ_PLAYLIST_SELF_UPDATE_ENABLED = new ConfigKey("vdj.playlist.self_update.enabled");
 }
