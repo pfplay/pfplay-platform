@@ -53,4 +53,14 @@ public record ConfigKey(String value) {
 
     // 가상 DJ P3-B 플레이리스트 자가갱신 forward-gate (구현 전 기본 잠금)
     public static final ConfigKey VDJ_PLAYLIST_SELF_UPDATE_ENABLED = new ConfigKey("vdj.playlist.self_update.enabled");
+
+    // 가상 DJ P3-B 자가갱신 튜닝 키
+    public static final ConfigKey VDJ_SELF_UPDATE_COOLDOWN_SECONDS = new ConfigKey("vdj.playlist.self_update.cooldown_seconds");
+    public static final ConfigKey VDJ_SELF_UPDATE_MIN_REACTIONS = new ConfigKey("vdj.playlist.self_update.min_reactions");
+    public static final ConfigKey VDJ_SELF_UPDATE_TARGET_SIZE = new ConfigKey("vdj.playlist.self_update.target_size");
+    public static final ConfigKey VDJ_SELF_UPDATE_REPLACE_PER_CYCLE = new ConfigKey("vdj.playlist.self_update.replace_per_cycle");
+    public static final ConfigKey VDJ_SELF_UPDATE_RECOMMEND_COUNT = new ConfigKey("vdj.playlist.self_update.recommend_count");
+    public static final ConfigKey VDJ_SELF_UPDATE_WEIGHT_REACTION = new ConfigKey("vdj.playlist.self_update.weight.reaction");
+    public static final ConfigKey VDJ_SELF_UPDATE_WEIGHT_GRAB = new ConfigKey("vdj.playlist.self_update.weight.grab");
+    public static final ConfigKey VDJ_SELF_UPDATE_PRUNED_COOLDOWN_SECONDS = new ConfigKey("vdj.playlist.self_update.pruned_cooldown_seconds");
 }
