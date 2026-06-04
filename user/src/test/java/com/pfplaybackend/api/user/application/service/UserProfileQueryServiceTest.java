@@ -113,6 +113,28 @@ class UserProfileQueryServiceTest {
         assertThat(result).isEmpty();
     }
 
+    @Test
+    @DisplayName("getUsersProfileSetting — 프로필 없는 userId 도 placeholder 로 채워 맵에서 누락되지 않는다 (로비 NPE 방어, #291)")
+    void getUsersProfileSettingFillsMissingWithPlaceholder() {
+        // given: user2 는 프로필 행이 없음 (봇 아바타 생성 실패 / 더미 / phantom 데이터)
+        UserId user2 = new UserId(2L);
+        ProfileData profile1 = createProfileData(userId, "User1");
+        when(userProfileRepository.findAllByUserIdIn(List.of(userId, user2)))
+                .thenReturn(List.of(profile1)); // user2 는 silent drop 되던 케이스
+
+        // when
+        Map<UserId, ProfileSettingDto> result = userProfileQueryService.getUsersProfileSetting(List.of(userId, user2));
+
+        // then: 요청한 모든 userId 가 맵에 존재해야 한다 (silent drop 금지)
+        assertThat(result).containsKeys(userId, user2);
+        // 누락 유저는 non-null placeholder → 소비처의 .avatarIconUri()/.nickname() NPE 원천 차단
+        assertThat(result.get(user2)).isNotNull();
+        assertThat(result.get(user2).nickname()).isNotNull();
+        assertThat(result.get(user2).avatarCompositionType()).isNotNull();
+        // 정상 유저는 그대로
+        assertThat(result.get(userId).nickname()).isEqualTo("User1");
+    }
+
     // ========== getMyProfileSummary ==========
 
     @Test
