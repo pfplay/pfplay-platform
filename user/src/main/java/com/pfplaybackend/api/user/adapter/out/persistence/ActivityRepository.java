@@ -51,10 +51,10 @@ public interface ActivityRepository extends JpaRepository<ActivityData, Long> {
      *  - returns 1: row found and updated
      *  - returns 0: no row for (user, activityType) — caller decides (warn / create / throw)
      *
-     * <p>{@code @Modifying(clearAutomatically = true)} invalidates the 1st-level cache
+     * <p>{@code @Modifying(clearAutomatically = true, flushAutomatically = true)} invalidates the 1st-level cache
      * so subsequent reads in the same transaction see the persisted value.
      */
-    @Modifying(clearAutomatically = true)
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = "UPDATE user_activity " +
            "SET score = GREATEST(0, CAST(score AS SIGNED) + :delta) " +
            "WHERE user_id = :#{#userId.uid} AND activity_type = :#{#activityType.name()}",

@@ -26,7 +26,7 @@ public interface CrewRepository extends JpaRepository<CrewData, Long> {
      * Resets exited_at and pending_exit_at to NULL so stale values from prior sessions
      * do not poison the new active row (fixes Issue #193).
      */
-    @Modifying(clearAutomatically = true)
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE CrewData c " +
            "SET c.isActive = true, c.enteredAt = :now, c.exitedAt = NULL, c.pendingExitAt = NULL " +
            "WHERE c.partyroomId = :partyroomId AND c.userId = :userId AND c.isActive = false")
@@ -47,7 +47,7 @@ public interface CrewRepository extends JpaRepository<CrewData, Long> {
      * PENDING_EXIT → ONLINE actually occurred (caller is the unique winner; race losers
      * see 0 and return idempotently).
      */
-    @Modifying(clearAutomatically = true)
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE CrewData c SET c.pendingExitAt = NULL " +
            "WHERE c.partyroomId = :partyroomId AND c.userId = :userId " +
            "AND c.isActive = true AND c.pendingExitAt IS NOT NULL")
@@ -59,7 +59,7 @@ public interface CrewRepository extends JpaRepository<CrewData, Long> {
      * ONLINE → PENDING_EXIT actually occurred. Idempotent: returns 0 if already pending
      * (so the original timestamp/grace is not extended) or if crew is already inactive.
      */
-    @Modifying(clearAutomatically = true)
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE CrewData c SET c.pendingExitAt = :now " +
            "WHERE c.partyroomId = :partyroomId AND c.userId = :userId " +
            "AND c.isActive = true AND c.pendingExitAt IS NULL")
@@ -72,7 +72,7 @@ public interface CrewRepository extends JpaRepository<CrewData, Long> {
      *  - 반환 1: is_active=true → false 전이 발생 (호출자는 EXIT 이벤트 발행 의무)
      *  - 반환 0: row 없거나 이미 inactive (호출자 idempotent return)
      */
-    @Modifying(clearAutomatically = true)
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE CrewData c " +
            "SET c.isActive = false, c.exitedAt = :now " +
            "WHERE c.partyroomId = :partyroomId AND c.userId = :userId AND c.isActive = true")
@@ -89,7 +89,7 @@ public interface CrewRepository extends JpaRepository<CrewData, Long> {
      *  - 동시에 같은 룸에 enter 시도하는 crew는 별 race 영역
      *    (UNIQUE 제약 + B-3은 즉시 status=TERMINATED라 PartyroomEntrySpecification에서 거부됨)
      */
-    @Modifying(clearAutomatically = true)
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE CrewData c SET c.isActive = false, c.exitedAt = :now " +
            "WHERE c.partyroomId = :partyroomId AND c.isActive = true")
     int bulkDeactivateByPartyroomId(@Param("partyroomId") PartyroomId partyroomId,
