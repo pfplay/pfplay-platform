@@ -156,6 +156,19 @@ public class PartyroomQueryService {
         return playbackQueryService.getPlaybackById(playbackState.getCurrentPlaybackId()).getName();
     }
 
+    /**
+     * 현재 재생 중인 곡의 linkId 를 반환한다. 재생 비활성/곡 없음이면 {@code null}.
+     * P3-B 자가갱신의 현재곡 prune 보호(INV-3)용. AggregatePort 는 party BC 안에 가두고 String 만 노출.
+     */
+    @Transactional(readOnly = true)
+    public String getCurrentPlaybackLinkId(PartyroomId partyroomId) {
+        PartyroomPlaybackData playbackState = aggregatePort.findPlaybackState(partyroomId);
+        if (!playbackState.isActivated() || playbackState.getCurrentPlaybackId() == null) {
+            return null;
+        }
+        return playbackQueryService.getPlaybackById(playbackState.getCurrentPlaybackId()).getLinkId();
+    }
+
     @Transactional(readOnly = true)
     public Optional<CrewData> getCrewByUserId(PartyroomId partyroomId, UserId userId) {
         return aggregatePort.findCrew(partyroomId, userId);

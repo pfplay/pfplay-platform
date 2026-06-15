@@ -29,6 +29,8 @@ public class VirtualDjReconcileScheduler {
 
     private final PartyroomVirtualDjConfigRepository configRepository;
     private final VirtualDjOrchestrator orchestrator;
+    private final SelfUpdateConfig selfUpdateConfig;
+    private final PlaylistSelfUpdateService playlistSelfUpdateService;
 
     @Scheduled(fixedDelay = 60_000)
     public void reconcileManagedRooms() {
@@ -43,6 +45,17 @@ public class VirtualDjReconcileScheduler {
             } catch (Exception e) {
                 log.warn("[vdj-cron] reconcile failed for partyroomId={} : {}",
                         cfg.getPartyroomId(), e.getMessage());
+            }
+        }
+
+        if (selfUpdateConfig.isEnabled()) {
+            for (PartyroomVirtualDjConfigData cfg : managed) {
+                try {
+                    playlistSelfUpdateService.tryUpdateRoom(new PartyroomId(cfg.getPartyroomId()));
+                } catch (Exception e) {
+                    log.warn("[vdj-cron] self-update failed for partyroomId={} : {}",
+                            cfg.getPartyroomId(), e.getMessage());
+                }
             }
         }
     }
