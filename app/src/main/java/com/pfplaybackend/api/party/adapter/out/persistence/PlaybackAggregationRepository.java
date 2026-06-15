@@ -21,7 +21,7 @@ public interface PlaybackAggregationRepository extends JpaRepository<PlaybackAgg
      * JPQL 표준이 아니므로 MySQL native query 로 작성한다.
      * {@code @Modifying(clearAutomatically=true)} 로 1차 캐시는 비워진다(반환값 계약: affected rows).
      */
-    @Modifying(clearAutomatically = true)
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = "UPDATE playback_aggregation " +
            "SET like_count = GREATEST(0, like_count + :deltaLike), " +
            "    dislike_count = GREATEST(0, dislike_count + :deltaDislike), " +
