@@ -74,8 +74,9 @@ class SystemConfigCacheTest {
         cache.getDjGraceSeconds();
         cache.getListenerGraceSeconds();
 
-        // One snapshot fetch loads both grace keys; further reads within TTL hit no repo.
-        verify(repository, times(2)).findByConfigKey(anyString());
+        // One snapshot fetch loads all config keys (2 grace + 2 anti-flap + 1 toggle);
+        // further reads within TTL hit no repo.
+        verify(repository, times(5)).findByConfigKey(anyString());
     }
 
     @Test

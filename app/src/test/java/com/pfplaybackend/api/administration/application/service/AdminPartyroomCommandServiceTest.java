@@ -110,6 +110,27 @@ class AdminPartyroomCommandServiceTest {
     }
 
     @Test
+    @DisplayName("terminate - MAIN stage 룸은 거부 (ConflictException, #280 root-cause fix). " +
+            "admin bulk action 으로 partyroom_id=1 받아도 sweep 못 함")
+    void terminate_rejects_main_stage() {
+        PartyroomData mainStage = PartyroomData.builder()
+                .id(1L).partyroomId(PID).hostId(new UserId(1L)).stageType(StageType.MAIN)
+                .title("Main Stage").introduction("Welcome")
+                .linkDomain(LinkDomain.of("main")).playbackTimeLimit(PlaybackTimeLimit.ofMinutes(10))
+                .noticeContent("").status(PartyroomStatus.ACTIVE).build();
+        when(aggregatePort.findPartyroomById(PID.getId())).thenReturn(Optional.of(mainStage));
+
+        assertThatThrownBy(() -> service.terminate(PID, "demo cleanup", ADMIN_ID))
+                .isInstanceOf(ConflictException.class);
+
+        // 가드는 bulkDeactivate 보다 먼저 작동해야 한다 (crew 부수효과 차단).
+        verify(crewRepository, never()).bulkDeactivateByPartyroomId(any(), any());
+        verify(aggregatePort, never()).savePartyroom(any());
+        verify(eventPublisher, never()).publishEvent(any(PartyroomTerminatedEvent.class));
+        assertThat(mainStage.getStatus()).isEqualTo(PartyroomStatus.ACTIVE);
+    }
+
+    @Test
     @DisplayName("suspend - ACTIVE -> SUSPENDED + event")
     void suspend_happy() {
         PartyroomData p = activeRoom();

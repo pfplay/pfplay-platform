@@ -9,6 +9,7 @@ import com.pfplaybackend.api.party.application.dto.playback.PlaybackDto;
 import com.pfplaybackend.api.party.domain.entity.data.*;
 import com.pfplaybackend.api.party.domain.enums.DisplayFlag;
 import com.pfplaybackend.api.party.domain.enums.PartyroomStatus;
+import com.pfplaybackend.api.party.domain.enums.StageType;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import com.querydsl.core.Tuple;
 import com.querydsl.core.types.ConstructorExpression;
@@ -173,7 +174,11 @@ public class PartyroomRepositoryImpl implements PartyroomRepositoryCustom {
                 .from(qPartyroomData)
                 .where(
                         qPartyroomData.updatedAt.before(LocalDateTime.now(clock).minusDays(days)),
-                        qPartyroomData.status.ne(PartyroomStatus.TERMINATED)
+                        qPartyroomData.status.ne(PartyroomStatus.TERMINATED),
+                        // #280 root-cause fix — MAIN 시스템 stage 는 cleanup 대상 아님.
+                        // 호출자 deleteUnusedPartyroom 가 무가드 terminate forEach 라
+                        // repo level 에서 제외하는 게 가장 깔끔 (load 작아짐 + 의도 명확).
+                        qPartyroomData.stageType.ne(StageType.MAIN)
                 )
                 .fetch();
     }

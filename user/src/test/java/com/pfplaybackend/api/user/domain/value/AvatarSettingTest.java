@@ -124,6 +124,28 @@ class AvatarSettingTest {
     }
 
     @Test
+    @DisplayName("getAvatarXxxUriValue는 body/face/icon이 null이면 빈 문자열 반환 (NPE 방지)")
+    void avatarUriValuesAreNullSafe() {
+        // given: body/face/icon 모두 미설정 아바타 (최소 정체성 계정 등 — 컬럼 NULL 가능)
+        AvatarSetting empty = AvatarSetting.builder()
+                .avatarCompositionType(AvatarCompositionType.SINGLE_BODY)
+                .build();
+
+        // then: 임베디드 값 객체 자체가 null 이지만 접근자는 "" 반환 (직접 .getValue() 는 NPE)
+        assertThat(empty.getAvatarBodyUri()).isNull();
+        assertThat(empty.getAvatarFaceUri()).isNull();
+        assertThat(empty.getAvatarIconUri()).isNull();
+        assertThat(empty.getAvatarBodyUriValue()).isEmpty();
+        assertThat(empty.getAvatarFaceUriValue()).isEmpty();
+        assertThat(empty.getAvatarIconUriValue()).isEmpty();
+
+        // 설정된 경우 값 그대로 반환
+        assertThat(avatarSetting.getAvatarBodyUriValue()).isEqualTo(BODY_PNG);
+        assertThat(avatarSetting.getAvatarFaceUriValue()).isEqualTo(FACE_PNG);
+        assertThat(avatarSetting.getAvatarIconUriValue()).isEqualTo(ICON_PNG);
+    }
+
+    @Test
     @DisplayName("applyDefaults는 이미 설정된 URI를 덮어쓰지 않음")
     void applyDefaultsDoesNotOverwriteExistingValues() {
         // when

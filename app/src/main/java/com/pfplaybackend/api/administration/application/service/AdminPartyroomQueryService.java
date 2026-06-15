@@ -194,7 +194,8 @@ public class AdminPartyroomQueryService {
                 r.status(),
                 r.displayFlag(),
                 r.createdAt(),
-                r.lastActivityAt()
+                r.lastActivityAt(),
+                r.virtualDj()                                  // P2 Task 2.2 — null when no config row
         );
     }
 

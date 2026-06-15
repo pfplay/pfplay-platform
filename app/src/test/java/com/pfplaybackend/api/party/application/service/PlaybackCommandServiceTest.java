@@ -6,10 +6,12 @@ import com.pfplaybackend.api.common.domain.value.Duration;
 import com.pfplaybackend.api.common.domain.value.PlaylistId;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.enums.AuthorityTier;
+import com.pfplaybackend.api.common.exception.ExceptionCreator;
 import com.pfplaybackend.api.common.exception.http.ForbiddenException;
+import com.pfplaybackend.api.common.exception.http.NotFoundException;
+import com.pfplaybackend.api.party.domain.exception.CrewException;
 import com.pfplaybackend.api.party.adapter.out.persistence.PlaybackAggregationRepository;
 import com.pfplaybackend.api.party.adapter.out.persistence.PlaybackRepository;
-import com.pfplaybackend.api.party.application.dto.partyroom.ActivePartyroomDto;
 import com.pfplaybackend.api.party.application.port.out.ExpirationTaskPort;
 import com.pfplaybackend.api.party.application.port.out.PlaylistCommandPort;
 import com.pfplaybackend.api.party.application.port.out.UserActivityPort;
@@ -40,6 +42,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -117,15 +120,13 @@ class PlaybackCommandServiceTest {
     @Test
     @DisplayName("skipByManager — MODERATOR 이상 등급이면 스킵이 실행된다")
     void skipByManagerModeratorSucceeds() {
-        // given
-        ActivePartyroomDto activeDto = new ActivePartyroomDto(partyroomId.getId(), false, 1L, true, new PlaybackId(1L), new CrewId(1L));
+        // given — #297: 가드는 경로 partyroomId 기준 crew
         CrewData adjuster = CrewData.builder()
                 .id(1L).userId(userId).gradeType(GradeType.MODERATOR).build();
         PartyroomData partyroom = PartyroomData.builder().id(partyroomId.getId()).partyroomId(partyroomId)
                 .playbackTimeLimit(PlaybackTimeLimit.ofMinutes(10)).build();
 
-        when(partyroomQueryService.getMyActivePartyroom(userId)).thenReturn(Optional.of(activeDto));
-        when(partyroomQueryService.getCrewOrThrow(new PartyroomId(activeDto.id()), userId)).thenReturn(adjuster);
+        when(partyroomQueryService.getCrewOrThrow(partyroomId, userId)).thenReturn(adjuster);
         when(partyroomQueryService.getPartyroomById(partyroomId)).thenReturn(partyroom);
         when(aggregatePort.findDjsOrdered(partyroomId)).thenReturn(List.of());
 
@@ -140,17 +141,54 @@ class PlaybackCommandServiceTest {
     @Test
     @DisplayName("skipByManager — MODERATOR 미만 등급이면 예외가 발생한다")
     void skipByManagerBelowModeratorThrows() {
-        // given
-        ActivePartyroomDto activeDto = new ActivePartyroomDto(partyroomId.getId(), false, 1L, true, new PlaybackId(1L), new CrewId(1L));
+        // given — #297: 가드는 경로 partyroomId 기준 crew
         CrewData adjuster = CrewData.builder()
                 .id(1L).userId(userId).gradeType(GradeType.CLUBBER).build();
 
-        when(partyroomQueryService.getMyActivePartyroom(userId)).thenReturn(Optional.of(activeDto));
-        when(partyroomQueryService.getCrewOrThrow(new PartyroomId(activeDto.id()), userId)).thenReturn(adjuster);
+        when(partyroomQueryService.getCrewOrThrow(partyroomId, userId)).thenReturn(adjuster);
 
         // when & then
         assertThatThrownBy(() -> playbackCommandService.skipByManager(partyroomId))
                 .isInstanceOf(ForbiddenException.class);
+    }
+
+    // ── #297 skipByManager 권한 검사를 경로 partyroomId 기준으로 정렬 ──
+    // 운영진 가드 관례(CrewGrade/CrewPenalty/DjCommand)와 동일하게 경로 룸의 crew로 검증한다.
+    // '내 active 룸' 우회 조회는 (1) active crew 부재 시 bare orElseThrow → 500,
+    // (2) 등급 검사 룸 ≠ skip 적용 룸 cross-room 결함의 원인.
+
+    @Test
+    @DisplayName("#297 skipByManager — 권한 검사는 '내 active 룸' 조회 없이 경로의 partyroomId 기준 crew로 수행한다")
+    void skipByManagerGuardsByPathPartyroom() {
+        // given — 경로 룸의 crew만 스텁 (getMyActivePartyroom 스텁 없음)
+        CrewData adjuster = CrewData.builder()
+                .id(1L).partyroomId(partyroomId).userId(userId).gradeType(GradeType.MODERATOR).build();
+        when(partyroomQueryService.getCrewOrThrow(partyroomId, userId)).thenReturn(adjuster);
+
+        PartyroomData partyroom = PartyroomData.builder().id(partyroomId.getId()).partyroomId(partyroomId)
+                .playbackTimeLimit(PlaybackTimeLimit.ofMinutes(10)).build();
+        when(partyroomQueryService.getPartyroomById(partyroomId)).thenReturn(partyroom);
+        when(aggregatePort.findDjsOrdered(partyroomId)).thenReturn(List.of());
+
+        // when
+        playbackCommandService.skipByManager(partyroomId);
+
+        // then — 스킵 수행 + active 룸 우회 조회 미사용
+        verify(expirationTaskPort).cancelExpiration(String.valueOf(partyroomId.getId()));
+        verify(partyroomQueryService, never()).getMyActivePartyroom(any(UserId.class));
+    }
+
+    @Test
+    @DisplayName("#297 skipByManager — 경로 룸의 crew가 아니면 CRW-001 NotFoundException(4xx)이며 NoSuchElementException(500)이 아니다")
+    void skipByManagerNonCrewThrowsDomainNotFound() {
+        // given — 경로 룸에 crew 없음 (getCrewOrThrow 실제 계약과 동일한 도메인 예외)
+        when(partyroomQueryService.getCrewOrThrow(partyroomId, userId))
+                .thenThrow(ExceptionCreator.create(CrewException.NOT_FOUND_ACTIVE_ROOM));
+
+        // when & then — 어드민 세션 덮어쓰기 등으로 crew가 아닌 사용자가 호출해도 500이 아닌 404
+        assertThatThrownBy(() -> playbackCommandService.skipByManager(partyroomId))
+                .isInstanceOf(NotFoundException.class)
+                .isNotInstanceOf(NoSuchElementException.class);
     }
 
     @Test
@@ -268,11 +306,9 @@ class PlaybackCommandServiceTest {
     @Test
     @DisplayName("#222 skipByManager — MODERATOR 타의 skip 도 DJ큐 회전 + 플레이리스트 커서 갱신(advancePlaybackCursor)을 함께 호출한다")
     void skipByManagerWithQueuedDjRotatesQueueAndPlaylist() {
-        // given — MODERATOR 권한 컨텍스트
-        ActivePartyroomDto activeDto = new ActivePartyroomDto(partyroomId.getId(), false, 1L, true, new PlaybackId(1L), new CrewId(1L));
+        // given — MODERATOR 권한 컨텍스트 (#297: 경로 partyroomId 기준 crew)
         CrewData adjuster = CrewData.builder().id(1L).userId(userId).gradeType(GradeType.MODERATOR).build();
-        when(partyroomQueryService.getMyActivePartyroom(userId)).thenReturn(Optional.of(activeDto));
-        when(partyroomQueryService.getCrewOrThrow(new PartyroomId(activeDto.id()), userId)).thenReturn(adjuster);
+        when(partyroomQueryService.getCrewOrThrow(partyroomId, userId)).thenReturn(adjuster);
 
         DjData dj = stubDoStartWithQueuedDj(PlaybackTimeLimit.ofMinutes(10), Duration.fromString("3:30"));
 

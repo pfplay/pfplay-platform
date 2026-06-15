@@ -140,6 +140,35 @@ public class PartyroomQueryService {
         }
     }
 
+    /**
+     * 현재 재생 중인 곡 이름을 반환한다. 재생 비활성/곡 없음이면 {@code null}.
+     *
+     * <p>가상 DJ 관찰 파이프라인(RoomContextReader)이 LLM 프롬프트에 "지금 트는 곡" 컨텍스트를
+     * 넣기 위해 호출한다. {@link PartyroomAggregatePort} 접근은 party BC 안에 가두고, 호출자에게는
+     * 평이한 {@link String} 만 노출한다(가상 DJ 패키지의 ArchUnit AggregatePort 의존 금지 가드 준수).
+     */
+    @Transactional(readOnly = true)
+    public String getCurrentPlaybackName(PartyroomId partyroomId) {
+        PartyroomPlaybackData playbackState = aggregatePort.findPlaybackState(partyroomId);
+        if (!playbackState.isActivated() || playbackState.getCurrentPlaybackId() == null) {
+            return null;
+        }
+        return playbackQueryService.getPlaybackById(playbackState.getCurrentPlaybackId()).getName();
+    }
+
+    /**
+     * 현재 재생 중인 곡의 linkId 를 반환한다. 재생 비활성/곡 없음이면 {@code null}.
+     * P3-B 자가갱신의 현재곡 prune 보호(INV-3)용. AggregatePort 는 party BC 안에 가두고 String 만 노출.
+     */
+    @Transactional(readOnly = true)
+    public String getCurrentPlaybackLinkId(PartyroomId partyroomId) {
+        PartyroomPlaybackData playbackState = aggregatePort.findPlaybackState(partyroomId);
+        if (!playbackState.isActivated() || playbackState.getCurrentPlaybackId() == null) {
+            return null;
+        }
+        return playbackQueryService.getPlaybackById(playbackState.getCurrentPlaybackId()).getLinkId();
+    }
+
     @Transactional(readOnly = true)
     public Optional<CrewData> getCrewByUserId(PartyroomId partyroomId, UserId userId) {
         return aggregatePort.findCrew(partyroomId, userId);

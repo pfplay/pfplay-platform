@@ -7,6 +7,7 @@ import com.pfplaybackend.api.common.exception.http.NotFoundException;
 import com.pfplaybackend.api.party.application.dto.chat.ChatMessageDto;
 import com.pfplaybackend.api.party.application.dto.partyroom.PartyroomSessionDto;
 import com.pfplaybackend.api.party.application.port.out.ChatPenaltyCachePort;
+import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import com.pfplaybackend.realtime.port.SessionCachePort;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -55,6 +56,17 @@ public class PartyroomChatCommandService {
                                 + ", ex: " + e.getMessage()
                 );
             }
+        }
+    }
+
+    /**
+     * 봇(가상 사용자) 채팅 송신 — STOMP 세션이 없는 실계정 봇이 crewId 만으로 채팅을 발행하는 path A 시임.
+     * 세션 캐시를 우회하지만 {@link #isPossibleChat} 채팅밴 가드는 동일하게 적용된다.
+     */
+    public void sendMessageAsCrew(PartyroomId partyroomId, long crewId, String content) {
+        if (isPossibleChat(crewId)) {
+            ChatMessageDto chatPayload = ChatMessageDto.ofCrew(partyroomId, crewId, content, clock.millis());
+            messagePublisher.publish(MessageTopic.CHAT_MESSAGE_SENT.topic(), chatPayload);
         }
     }
 

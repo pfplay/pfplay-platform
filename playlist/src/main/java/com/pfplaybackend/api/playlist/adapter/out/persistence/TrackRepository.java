@@ -8,11 +8,18 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface TrackRepository extends JpaRepository<TrackData, Long>, TrackRepositoryCustom {
 
     Optional<TrackData> findByPlaylistIdAndLinkId(PlaylistId playlistId, String linkId);
+
+    List<TrackData> findAllByPlaylistId(PlaylistId playlistId);
+
+    @Modifying
+    @Query("DELETE FROM TrackData t WHERE t.playlistId.id = :playlistId")
+    void deleteAllByPlaylistIdValue(@Param("playlistId") Long playlistId);
 
     TrackData findFirstByLinkId(String linkId);
 

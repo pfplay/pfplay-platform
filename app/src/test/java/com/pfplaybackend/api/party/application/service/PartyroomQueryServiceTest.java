@@ -544,4 +544,43 @@ class PartyroomQueryServiceTest {
         // then
         assertThat(result.getId()).isEqualTo(1L);
     }
+
+    // ── getCurrentPlaybackLinkId ──
+
+    @Test
+    @DisplayName("getCurrentPlaybackLinkId — 재생 활성 시 현재 곡의 linkId 를 반환한다")
+    void getCurrentPlaybackLinkId_활성_시_linkId_반환() {
+        // given
+        PlaybackId playbackId = new PlaybackId(200L);
+        PartyroomPlaybackData playbackState = PartyroomPlaybackData.createFor(partyroomId);
+        playbackState.activate(playbackId, new CrewId(1L));
+
+        PlaybackData playback = mock(PlaybackData.class);
+        when(playback.getLinkId()).thenReturn("youtube_abc123");
+
+        when(aggregatePort.findPlaybackState(partyroomId)).thenReturn(playbackState);
+        when(playbackQueryService.getPlaybackById(playbackId)).thenReturn(playback);
+
+        // when
+        String result = partyroomQueryService.getCurrentPlaybackLinkId(partyroomId);
+
+        // then
+        assertThat(result).isEqualTo("youtube_abc123");
+    }
+
+    @Test
+    @DisplayName("getCurrentPlaybackLinkId — 재생 비활성 시 null 을 반환한다")
+    void getCurrentPlaybackLinkId_비활성_시_null_반환() {
+        // given
+        PartyroomPlaybackData playbackState = PartyroomPlaybackData.createFor(partyroomId);
+        // 활성화 안 함 → isActivated() == false
+
+        when(aggregatePort.findPlaybackState(partyroomId)).thenReturn(playbackState);
+
+        // when
+        String result = partyroomQueryService.getCurrentPlaybackLinkId(partyroomId);
+
+        // then
+        assertThat(result).isNull();
+    }
 }

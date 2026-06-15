@@ -51,6 +51,10 @@ public class UserAccountData extends BaseEntity {
     @Column(name = "must_change_password", nullable = false)
     private boolean mustChangePassword;
 
+    // Same primitive-not-Boolean reasoning as mustChangePassword above.
+    @Column(name = "is_dummy", nullable = false, columnDefinition = "TINYINT(1)")
+    private boolean isDummy;
+
     @Builder(access = AccessLevel.PRIVATE)
     private UserAccountData(UserId userId, String email, ProviderType providerType,
                             String passwordHash, LocalDateTime lastLoginAt,
@@ -136,6 +140,15 @@ public class UserAccountData extends BaseEntity {
 
     public void recordLogin() {
         this.lastLoginAt = LocalDateTime.now();
+    }
+
+    /**
+     * 이 계정을 가상 사용자(봇)로 표시한다. 봇은 실제 정식 회원과 동일하게 생성되지만(LOCAL provider,
+     * 프로필·플레이리스트·activity 보유) is_dummy 플래그로 식별되어 리더보드 등 집계에서 제외된다.
+     * 가산적 표시이므로 기존 회원 생성 경로를 재사용한 뒤 호출하는 것을 전제로 한다.
+     */
+    public void markAsDummy() {
+        this.isDummy = true;
     }
 
     public void withdraw(Long byAdministratorId) {

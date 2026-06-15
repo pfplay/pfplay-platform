@@ -3,7 +3,6 @@ package com.pfplaybackend.api.party.application.service;
 import com.pfplaybackend.api.common.ThreadLocalContext;
 import com.pfplaybackend.api.common.aspect.context.AuthContext;
 import com.pfplaybackend.api.common.domain.value.UserId;
-import com.pfplaybackend.api.common.enums.AuthorityTier;
 import com.pfplaybackend.api.common.exception.ExceptionCreator;
 import com.pfplaybackend.api.party.application.dto.command.CreatePartyroomCommand;
 import com.pfplaybackend.api.party.application.dto.command.UpdateDjQueueStatusCommand;
@@ -111,12 +110,17 @@ public class PartyroomCommandService {
 
     @Transactional
     public void deletePartyRoom(PartyroomId partyroomId) {
+        // 권한 체크: host 본인만 삭제 가능. AuthorityTier 비대칭 fix —
+        // createGeneralPartyRoom 은 PartyroomCreationPolicy (FM || AM) 허용이지만
+        // 종전 deletePartyRoom 은 하드코딩 FM 만 허용해 AM 가 만든 룸을 본인이 종료 못 했음.
+        // updatePartyroom (line 105) 의 host validate 와 동일 패턴.
         AuthContext authContext = ThreadLocalContext.getAuthContext();
-        if (authContext.getAuthorityTier() != AuthorityTier.FM) {
-            throw ExceptionCreator.create(PartyroomException.RESTRICTED_AUTHORITY);
-        }
         PartyroomData partyroom = aggregatePort.findPartyroomById(partyroomId.getId())
                 .orElseThrow(() -> ExceptionCreator.create(PartyroomException.NOT_FOUND_ROOM));
+        partyroom.validateHost(authContext.getUserId());
+        // #280 root-cause fix — MAIN 시스템 stage 는 host 본인 (super-admin) 이라도 종료 불가.
+        // super-admin 토큰 + DELETE /v1/partyrooms/1 footgun 차단.
+        partyroom.validateNotMainStage();
         partyroom.terminate();
         aggregatePort.savePartyroom(partyroom);
         partyroom.pollDomainEvents().forEach(eventPublisher::publishEvent);
@@ -145,13 +149,27 @@ public class PartyroomCommandService {
         aggregatePort.saveDjQueueState(djQueue);
     }
 
+    /**
+     * #280 안전망 — 부팅 시 MAIN 자동 복원.
+     * <p>termination 경로 3곳에 가드 추가 (root-cause fix) 한 위에 추가 layer 로,
+     * 어떤 식으로든 (수동 SQL / 과거 footgun row / 마이그레이션 사고) MAIN 이 비-ACTIVE
+     * 상태로 남아 있어도 다음 부팅에서 자동 ACTIVE 로 복원한다. manual SQL UPDATE 외 자동
+     * 복구 경로 0 이었던 상태 (이슈 #280) 를 해소.
+     */
+    @Transactional
     public void initializeMainStage(UserId adminId) {
         CreatePartyroomCommand command = new CreatePartyroomCommand(
                 "Main Stage",
                 "Welcome to the main stage",
                 "main",
                 10);
-        if (aggregatePort.findByLinkDomain(LinkDomain.of(command.linkDomain())).isPresent()) {
+        Optional<PartyroomData> existing = aggregatePort.findByLinkDomain(LinkDomain.of(command.linkDomain()));
+        if (existing.isPresent()) {
+            PartyroomData mainStage = existing.get();
+            if (!mainStage.isActive()) {
+                mainStage.reactivateAsMainStage();
+                aggregatePort.savePartyroom(mainStage);
+            }
             return;
         }
         createMainStage(command, adminId);

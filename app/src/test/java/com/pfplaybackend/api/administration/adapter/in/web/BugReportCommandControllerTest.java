@@ -95,6 +95,25 @@ class BugReportCommandControllerTest extends AbstractVocCommandWebMvcTest {
     }
 
     @Test
+    @DisplayName("submit — 게스트(ROLE_GUEST)도 201 (게스트 허용 회귀 잠금)")
+    void submitAsGuestReturns201() throws Exception {
+        // VOC 버그 신고는 게스트+AM+FM 모두 허용이 의도된 동작. 누군가 실수로 'MEMBER 만'
+        // 가드를 넣으면 게스트가 막히는데, 기존 통과 케이스가 전부 ROLE_MEMBER 라 CI 가 못 잡았다.
+        // 이 케이스가 게스트 허용 계약을 잠근다 (회귀 시 403 으로 실패).
+        when(bugReportCommandService.submit(any(), any(), any(), any(), any())).thenReturn(42L);
+
+        mockMvc.perform(post("/api/v1/voc/bug-reports")
+                        .with(authedGuest(100L))
+                        .with(csrf())
+                        .header("Referer", "https://pfplay.xyz/parties/7")
+                        .header("User-Agent", "Mozilla/5.0")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"재생이 안 됩니다\",\"partyroomId\":7}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.bugReportId").value(42));
+    }
+
+    @Test
     @DisplayName("submit — rate-limit 시 429 + BUG-001")
     void submitRateLimitReturns429() throws Exception {
         doThrow(ExceptionCreator.create(BugReportException.RATE_LIMIT_EXCEEDED))

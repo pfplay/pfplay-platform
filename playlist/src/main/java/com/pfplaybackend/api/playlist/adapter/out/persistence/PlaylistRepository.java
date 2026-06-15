@@ -26,4 +26,6 @@ public interface PlaylistRepository extends JpaRepository<PlaylistData, Long>, P
     Optional<PlaylistData> findByIdAndOwnerIdAndType(Long playlistId, UserId userId, PlaylistType type);
 
     Optional<PlaylistData> findByIdAndOwnerId(Long playlistId, UserId userId);
+
+    boolean existsBySourceSongPackId(Long sourceSongPackId);
 }
