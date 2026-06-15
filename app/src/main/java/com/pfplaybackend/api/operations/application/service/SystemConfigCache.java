@@ -94,7 +94,7 @@ public class SystemConfigCache {
      * Fail-open: missing rows, blank values, non-numeric values, or non-positive integers
      * fall back to {@code fallback}. A typo must not brick presence semantics.
      */
-    private int readInt(ConfigKey key, int fallback) {
+    public int readInt(ConfigKey key, int fallback) {
         Optional<SystemConfigData> row = repository.findByConfigKey(key.value());
         if (row.isEmpty()) return fallback;
         String v = row.get().getConfigValue();
@@ -111,7 +111,7 @@ public class SystemConfigCache {
      * Fail-open: missing/blank rows fall back to {@code fallback}. Accepts {@code true}/{@code false}
      * (case-insensitive, trimmed); any other value falls back. A typo must not flip a feature toggle.
      */
-    private boolean readBoolean(ConfigKey key, boolean fallback) {
+    public boolean readBoolean(ConfigKey key, boolean fallback) {
         Optional<SystemConfigData> row = repository.findByConfigKey(key.value());
         if (row.isEmpty()) return fallback;
         String v = row.get().getConfigValue();

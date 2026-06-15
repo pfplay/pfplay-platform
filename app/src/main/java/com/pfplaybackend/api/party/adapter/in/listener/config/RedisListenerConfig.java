@@ -2,6 +2,9 @@ package com.pfplaybackend.api.party.adapter.in.listener.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pfplaybackend.api.common.config.redis.RedisMessagePublisher;
+import com.pfplaybackend.api.common.domain.enums.MessageTopic;
+import com.pfplaybackend.api.virtualdj.adapter.in.listener.BotChatTrigger;
+import com.pfplaybackend.api.virtualdj.adapter.in.listener.ChatMessageTopicListener;
 import com.pfplaybackend.api.party.adapter.in.listener.CrewProfilePreCheckTopicListener;
 import com.pfplaybackend.api.party.adapter.in.listener.GroupBroadcastTopicListener;
 import com.pfplaybackend.api.party.adapter.in.listener.PlaybackDurationWaitTopicListener;
@@ -40,6 +43,7 @@ public class RedisListenerConfig {
                                                         PartyroomPresenceService presenceService,
                                                         ExpirationTaskPort expirationTaskPort,
                                                         RedisMessagePublisher messagePublisher,
+                                                        BotChatTrigger botChatTrigger,
                                                         ObjectMapper objectMapper) {
         RedisMessageListenerContainer container = new RedisMessageListenerContainer();
         container.setConnectionFactory(connectionFactory);
@@ -62,6 +66,11 @@ public class RedisListenerConfig {
                 container.addMessageListener(
                         new GroupBroadcastTopicListener<>(simpMessageSender, objectMapper, type),
                         new ChannelTopic(topic)));
+
+        // 가상 DJ 채팅 관찰 — chat_message_sent 토픽의 두 번째 구독자(WS 브로드캐스트와 독립).
+        container.addMessageListener(
+                new ChatMessageTopicListener(objectMapper, botChatTrigger),
+                new ChannelTopic(MessageTopic.CHAT_MESSAGE_SENT.topic()));
 
         // Special listeners with business logic
         container.addMessageListener(new CrewProfilePreCheckTopicListener(objectMapper, distributedLockExecutor, crewProfileService, messagePublisher), new ChannelTopic("crew_profile_pre_check"));

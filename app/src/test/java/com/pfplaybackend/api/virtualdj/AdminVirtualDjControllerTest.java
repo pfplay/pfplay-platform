@@ -15,7 +15,11 @@ import com.pfplaybackend.api.virtualdj.adapter.in.web.AdminVirtualDjController;
 import com.pfplaybackend.api.virtualdj.application.dto.BotRosterRow;
 import com.pfplaybackend.api.virtualdj.application.service.BotAvatarAdminService;
 import com.pfplaybackend.api.virtualdj.application.service.BotAvatarAssigner;
+import com.pfplaybackend.api.virtualdj.application.service.BotPersonaAssignmentService;
+import com.pfplaybackend.api.virtualdj.application.dto.ChatConfigView;
 import com.pfplaybackend.api.virtualdj.application.service.VirtualDjAdminService;
+import com.pfplaybackend.api.virtualdj.application.service.VirtualDjChatConfigAdminService;
+import com.pfplaybackend.api.virtualdj.application.service.VirtualPersonaService;
 import com.pfplaybackend.api.virtualdj.application.service.VirtualSongPackService;
 import com.pfplaybackend.api.virtualdj.domain.enums.VirtualDjStatus;
 import com.pfplaybackend.api.virtualdj.domain.exception.VirtualDjException;
@@ -36,8 +40,11 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
@@ -80,8 +87,11 @@ class AdminVirtualDjControllerTest {
     @Autowired private MockMvc mockMvc;
     @MockBean private VirtualDjAdminService adminService;
     @MockBean private VirtualSongPackService songPackService;
+    @MockBean private VirtualPersonaService personaService;
     @MockBean private MusicSearchService musicSearchService;
     @MockBean private BotAvatarAdminService botAvatarAdminService;
+    @MockBean private BotPersonaAssignmentService botPersonaAssignmentService;
+    @MockBean private VirtualDjChatConfigAdminService chatConfigAdminService;
 
     // SecurityConfig autoconfig deps — @MockBean shims so the slice context loads.
     @MockBean private JwtDecoder jwtDecoder;
@@ -506,7 +516,7 @@ class AdminVirtualDjControllerTest {
     void bots_admin_returns200WithBody() throws Exception {
         given(botAvatarAdminService.roster())
                 .willReturn(List.of(new BotRosterRow(
-                        1L, "봇", "https://cdn/body.png", "https://cdn/icon.png", 7L, "룸")));
+                        1L, "봇", "https://cdn/body.png", "https://cdn/icon.png", 7L, "룸", 3L, "DJ 챌린저")));
         mockMvc.perform(get("/api/v1/admin/virtual-dj/bots"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].userId").value(1))
@@ -514,7 +524,9 @@ class AdminVirtualDjControllerTest {
                 .andExpect(jsonPath("$.data[0].avatarBodyUri").value("https://cdn/body.png"))
                 .andExpect(jsonPath("$.data[0].avatarIconUri").value("https://cdn/icon.png"))
                 .andExpect(jsonPath("$.data[0].placementRoomId").value(7))
-                .andExpect(jsonPath("$.data[0].placementRoomTitle").value("룸"));
+                .andExpect(jsonPath("$.data[0].placementRoomTitle").value("룸"))
+                .andExpect(jsonPath("$.data[0].personaId").value(3))
+                .andExpect(jsonPath("$.data[0].personaName").value("DJ 챌린저"));
         verify(botAvatarAdminService).roster();
     }
 
@@ -596,6 +608,369 @@ class AdminVirtualDjControllerTest {
                         .contentType(APPLICATION_JSON)
                         .content("""
                                 {"botIds":[1],"bodyUris":["https://cdn/a.png"]}
+                                """))
+                .andExpect(status().isForbidden());
+    }
+
+    // ── 페르소나 CRUD (P3) ──
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void listPersonas_admin_returns200WithBody() throws Exception {
+        given(personaService.list())
+                .willReturn(List.of(
+                        new VirtualPersonaService.PersonaListItem(1L, "DJ 챌린저", true),
+                        new VirtualPersonaService.PersonaListItem(2L, "DJ 힐러", false)));
+        mockMvc.perform(get("/api/v1/admin/virtual-dj/personas"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].id").value(1))
+                .andExpect(jsonPath("$.data[0].name").value("DJ 챌린저"))
+                .andExpect(jsonPath("$.data[0].active").value(true))
+                .andExpect(jsonPath("$.data[1].id").value(2))
+                .andExpect(jsonPath("$.data[1].active").value(false));
+        verify(personaService).list();
+    }
+
+    @Test
+    @WithMockUser(roles = "MEMBER")
+    void listPersonas_member_returns403() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/virtual-dj/personas"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithAnonymousUser
+    void listPersonas_anonymous_returns401() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/virtual-dj/personas"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void getPersona_admin_returns200WithBody() throws Exception {
+        given(personaService.get(3L))
+                .willReturn(new VirtualPersonaService.PersonaDetail(
+                        3L, "DJ 챌린저", "당신은 에너지 넘치는 DJ입니다.", true));
+        mockMvc.perform(get("/api/v1/admin/virtual-dj/personas/3"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(3))
+                .andExpect(jsonPath("$.data.name").value("DJ 챌린저"))
+                .andExpect(jsonPath("$.data.instruction").value("당신은 에너지 넘치는 DJ입니다."))
+                .andExpect(jsonPath("$.data.active").value(true));
+        verify(personaService).get(3L);
+    }
+
+    @Test
+    @WithMockUser(roles = "MEMBER")
+    void getPersona_member_returns403() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/virtual-dj/personas/3"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithAnonymousUser
+    void getPersona_anonymous_returns401() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/virtual-dj/personas/3"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void createPersona_admin_returns201() throws Exception {
+        given(personaService.create("DJ 챌린저", "당신은 에너지 넘치는 DJ입니다.")).willReturn(5L);
+        mockMvc.perform(post("/api/v1/admin/virtual-dj/personas")
+                        .with(csrf()).contentType(APPLICATION_JSON)
+                        .content("""
+                                {"name":"DJ 챌린저","instruction":"당신은 에너지 넘치는 DJ입니다."}
+                                """))
+                .andExpect(status().isCreated());
+        verify(personaService).create("DJ 챌린저", "당신은 에너지 넘치는 DJ입니다.");
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void createPersona_blankName_returns400() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/virtual-dj/personas")
+                        .with(csrf()).contentType(APPLICATION_JSON)
+                        .content("""
+                                {"name":"","instruction":"당신은 에너지 넘치는 DJ입니다."}
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void createPersona_blankInstruction_returns400() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/virtual-dj/personas")
+                        .with(csrf()).contentType(APPLICATION_JSON)
+                        .content("""
+                                {"name":"DJ 챌린저","instruction":""}
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @WithMockUser(roles = "MEMBER")
+    void createPersona_member_returns403() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/virtual-dj/personas")
+                        .with(csrf()).contentType(APPLICATION_JSON)
+                        .content("""
+                                {"name":"DJ 챌린저","instruction":"지시문"}
+                                """))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void updatePersona_admin_returns204() throws Exception {
+        mockMvc.perform(put("/api/v1/admin/virtual-dj/personas/3")
+                        .with(csrf()).contentType(APPLICATION_JSON)
+                        .content("""
+                                {"name":"DJ 힐러","instruction":"당신은 차분한 DJ입니다.","active":true}
+                                """))
+                .andExpect(status().isNoContent());
+        verify(personaService).update(3L, "DJ 힐러", "당신은 차분한 DJ입니다.", true);
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void updatePersona_blankName_returns400() throws Exception {
+        mockMvc.perform(put("/api/v1/admin/virtual-dj/personas/3")
+                        .with(csrf()).contentType(APPLICATION_JSON)
+                        .content("""
+                                {"name":"","instruction":"당신은 차분한 DJ입니다.","active":true}
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @WithMockUser(roles = "MEMBER")
+    void updatePersona_member_returns403() throws Exception {
+        mockMvc.perform(put("/api/v1/admin/virtual-dj/personas/3")
+                        .with(csrf()).contentType(APPLICATION_JSON)
+                        .content("""
+                                {"name":"DJ 힐러","instruction":"지시문","active":false}
+                                """))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void deletePersona_admin_returns204() throws Exception {
+        mockMvc.perform(delete("/api/v1/admin/virtual-dj/personas/3").with(csrf()))
+                .andExpect(status().isNoContent());
+        verify(personaService).delete(3L);
+    }
+
+    @Test
+    @WithMockUser(roles = "MEMBER")
+    void deletePersona_member_returns403() throws Exception {
+        mockMvc.perform(delete("/api/v1/admin/virtual-dj/personas/3").with(csrf()))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithAnonymousUser
+    void deletePersona_anonymous_returns401() throws Exception {
+        mockMvc.perform(delete("/api/v1/admin/virtual-dj/personas/3").with(csrf()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    // ── 봇↔페르소나 매핑 (P3) ──
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void assignPersona_admin_returns200WithApplied() throws Exception {
+        given(botPersonaAssignmentService.assign(List.of(1L, 2L), 5L)).willReturn(2);
+        mockMvc.perform(post("/api/v1/admin/virtual-dj/bots/persona/assign")
+                        .with(csrf()).contentType(APPLICATION_JSON)
+                        .content("""
+                                {"botIds":[1,2],"personaId":5}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.applied").value(2));
+        verify(botPersonaAssignmentService).assign(List.of(1L, 2L), 5L);
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void assignPersona_emptyBotIds_returns400() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/virtual-dj/bots/persona/assign")
+                        .with(csrf()).contentType(APPLICATION_JSON)
+                        .content("""
+                                {"botIds":[],"personaId":5}
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void assignPersona_nullPersonaId_returns400() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/virtual-dj/bots/persona/assign")
+                        .with(csrf()).contentType(APPLICATION_JSON)
+                        .content("""
+                                {"botIds":[1]}
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @WithMockUser(roles = "MEMBER")
+    void assignPersona_member_returns403() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/virtual-dj/bots/persona/assign")
+                        .with(csrf()).contentType(APPLICATION_JSON)
+                        .content("""
+                                {"botIds":[1],"personaId":5}
+                                """))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void assignPersona_missingCsrf_returns403() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/virtual-dj/bots/persona/assign")
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                                {"botIds":[1],"personaId":5}
+                                """))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void unassignPersona_admin_returns200WithApplied() throws Exception {
+        given(botPersonaAssignmentService.unassign(List.of(1L, 2L))).willReturn(2);
+        mockMvc.perform(post("/api/v1/admin/virtual-dj/bots/persona/unassign")
+                        .with(csrf()).contentType(APPLICATION_JSON)
+                        .content("""
+                                {"botIds":[1,2]}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.applied").value(2));
+        verify(botPersonaAssignmentService).unassign(List.of(1L, 2L));
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void unassignPersona_emptyBotIds_returns400() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/virtual-dj/bots/persona/unassign")
+                        .with(csrf()).contentType(APPLICATION_JSON)
+                        .content("""
+                                {"botIds":[]}
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @WithMockUser(roles = "MEMBER")
+    void unassignPersona_member_returns403() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/virtual-dj/bots/persona/unassign")
+                        .with(csrf()).contentType(APPLICATION_JSON)
+                        .content("""
+                                {"botIds":[1]}
+                                """))
+                .andExpect(status().isForbidden());
+    }
+
+    // ── 채팅/자가갱신 설정 (P3) ──
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void getChatConfig_admin_returns200WithBody() throws Exception {
+        given(chatConfigAdminService.read())
+                .willReturn(new ChatConfigView(true, false, 40, 60, 10, 512));
+        mockMvc.perform(get("/api/v1/admin/virtual-dj/chat-config"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.chatEnabled").value(true))
+                .andExpect(jsonPath("$.data.selfUpdateEnabled").value(false))
+                .andExpect(jsonPath("$.data.probabilityPercent").value(40))
+                .andExpect(jsonPath("$.data.cooldownSeconds").value(60))
+                .andExpect(jsonPath("$.data.contextSize").value(10))
+                .andExpect(jsonPath("$.data.outputMaxTokens").value(512));
+        verify(chatConfigAdminService).read();
+    }
+
+    @Test
+    @WithMockUser(roles = "MEMBER")
+    void getChatConfig_member_returns403() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/virtual-dj/chat-config"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithAnonymousUser
+    void getChatConfig_anonymous_returns401() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/virtual-dj/chat-config"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void updateChatConfig_admin_returns204() throws Exception {
+        mockMvc.perform(put("/api/v1/admin/virtual-dj/chat-config")
+                        .with(csrf()).contentType(APPLICATION_JSON)
+                        .content("""
+                                {"chatEnabled":true,"selfUpdateEnabled":true,"probabilityPercent":50,"cooldownSeconds":45,"contextSize":15,"outputMaxTokens":300}
+                                """))
+                .andExpect(status().isNoContent());
+        verify(chatConfigAdminService).update(true, true, 50, 45, 15, 300);
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void updateChatConfig_probabilityOutOfRange_returns400() throws Exception {
+        mockMvc.perform(put("/api/v1/admin/virtual-dj/chat-config")
+                        .with(csrf()).contentType(APPLICATION_JSON)
+                        .content("""
+                                {"chatEnabled":true,"selfUpdateEnabled":false,"probabilityPercent":101,"cooldownSeconds":30,"contextSize":20,"outputMaxTokens":256}
+                                """))
+                .andExpect(status().isBadRequest());
+        verify(chatConfigAdminService, never()).update(
+                anyBoolean(), anyBoolean(), anyInt(), anyInt(), anyInt(), anyInt());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void updateChatConfig_cooldownTooLow_returns400() throws Exception {
+        mockMvc.perform(put("/api/v1/admin/virtual-dj/chat-config")
+                        .with(csrf()).contentType(APPLICATION_JSON)
+                        .content("""
+                                {"chatEnabled":true,"selfUpdateEnabled":false,"probabilityPercent":12,"cooldownSeconds":0,"contextSize":20,"outputMaxTokens":256}
+                                """))
+                .andExpect(status().isBadRequest());
+        verify(chatConfigAdminService, never()).update(
+                anyBoolean(), anyBoolean(), anyInt(), anyInt(), anyInt(), anyInt());
+    }
+
+    @Test
+    @WithMockUser(roles = "MEMBER")
+    void updateChatConfig_member_returns403() throws Exception {
+        mockMvc.perform(put("/api/v1/admin/virtual-dj/chat-config")
+                        .with(csrf()).contentType(APPLICATION_JSON)
+                        .content("""
+                                {"chatEnabled":true,"selfUpdateEnabled":false,"probabilityPercent":12,"cooldownSeconds":30,"contextSize":20,"outputMaxTokens":256}
+                                """))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithAnonymousUser
+    void updateChatConfig_anonymous_returns401() throws Exception {
+        mockMvc.perform(put("/api/v1/admin/virtual-dj/chat-config")
+                        .with(csrf()).contentType(APPLICATION_JSON)
+                        .content("""
+                                {"chatEnabled":true,"selfUpdateEnabled":false,"probabilityPercent":12,"cooldownSeconds":30,"contextSize":20,"outputMaxTokens":256}
+                                """))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void updateChatConfig_missingCsrf_returns403() throws Exception {
+        mockMvc.perform(put("/api/v1/admin/virtual-dj/chat-config")
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                                {"chatEnabled":true,"selfUpdateEnabled":false,"probabilityPercent":12,"cooldownSeconds":30,"contextSize":20,"outputMaxTokens":256}
                                 """))
                 .andExpect(status().isForbidden());
     }

@@ -92,6 +92,11 @@ service-api:
     uri: ${PYTUBE_URI:http://localhost:9000}
     api-key: ${PYTUBE_API_KEY:pfplay_streaming}
     api-secret: ${PYTUBE_API_SECRET}
+  anthropic:
+    api-key: ${ANTHROPIC_API_KEY:}            # blank allowed — 미설정 시 봇 채팅 응답 skip
+    base-uri: ${ANTHROPIC_BASE_URI:https://api.anthropic.com}
+    model: ${ANTHROPIC_MODEL:claude-haiku-4-5}   # 고볼륨 ambient 채팅용 비용 효율 기본값(별칭)
+    timeout-ms: ${ANTHROPIC_TIMEOUT_MS:12000}
 
 vercel:
   edge-config:

@@ -7,11 +7,16 @@ import com.pfplaybackend.api.playlist.adapter.in.web.payload.response.QueryMusic
 import com.pfplaybackend.api.playlist.application.service.search.MusicSearchService;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.AddPackTrackRequest;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.ApplyVirtualDjConfigRequest;
+import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.AssignPersonaRequest;
+import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.AssignPersonaResponse;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.AvatarCatalogItemResponse;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.BotRosterItemResponse;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.BulkApplyVirtualDjConfigRequest;
+import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.ChatConfigResponse;
+import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.CreatePersonaRequest;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.CreateSongPackRequest;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.CreatedIdResponse;
+import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.UpdatePersonaRequest;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.DistributeBotAvatarRequest;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.DistributeBotAvatarResponse;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.PoolSummaryResponse;
@@ -20,10 +25,15 @@ import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.RenameSongPackRequ
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.SetBotAvatarRequest;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.SongPackDetailResponse;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.SongPackListItemResponse;
+import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.UnassignPersonaRequest;
+import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.UpdateChatConfigRequest;
 import com.pfplaybackend.api.virtualdj.adapter.in.web.payload.VirtualDjLiveStatusResponse;
 import com.pfplaybackend.api.virtualdj.application.service.BotAvatarAdminService;
+import com.pfplaybackend.api.virtualdj.application.service.BotPersonaAssignmentService;
 import com.pfplaybackend.api.virtualdj.application.service.BotAvatarAssigner;
 import com.pfplaybackend.api.virtualdj.application.service.VirtualDjAdminService;
+import com.pfplaybackend.api.virtualdj.application.service.VirtualDjChatConfigAdminService;
+import com.pfplaybackend.api.virtualdj.application.service.VirtualPersonaService;
 import com.pfplaybackend.api.virtualdj.application.service.VirtualSongPackService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -60,8 +70,11 @@ public class AdminVirtualDjController {
 
     private final VirtualDjAdminService adminService;
     private final VirtualSongPackService songPackService;
+    private final VirtualPersonaService personaService;
     private final MusicSearchService musicSearchService;
     private final BotAvatarAdminService botAvatarAdminService;
+    private final BotPersonaAssignmentService botPersonaAssignmentService;
+    private final VirtualDjChatConfigAdminService chatConfigAdminService;
 
     // ── 음악 검색 (어드민 프록시) ──
 
@@ -169,6 +182,55 @@ public class AdminVirtualDjController {
         return ResponseEntity.noContent().build();
     }
 
+    // ── 페르소나 CRUD ──
+
+    @Operation(summary = "페르소나 목록 조회", description = "전체 페르소나 목록 (활성 여부 포함)")
+    @SecurityRequirement(name = "cookieAuth")
+    @PreAuthorize("@adminAuth.canManageVirtualDj()")
+    @GetMapping("/virtual-dj/personas")
+    public ResponseEntity<ApiCommonResponse<List<VirtualPersonaService.PersonaListItem>>> listPersonas() {
+        return ResponseEntity.ok(ApiCommonResponse.success(personaService.list()));
+    }
+
+    @Operation(summary = "페르소나 상세 조회", description = "instruction 포함")
+    @SecurityRequirement(name = "cookieAuth")
+    @PreAuthorize("@adminAuth.canManageVirtualDj()")
+    @GetMapping("/virtual-dj/personas/{id}")
+    public ResponseEntity<ApiCommonResponse<VirtualPersonaService.PersonaDetail>> getPersona(
+            @PathVariable("id") Long id) {
+        return ResponseEntity.ok(ApiCommonResponse.success(personaService.get(id)));
+    }
+
+    @Operation(summary = "페르소나 생성")
+    @SecurityRequirement(name = "cookieAuth")
+    @PreAuthorize("@adminAuth.canManageVirtualDj()")
+    @PostMapping("/virtual-dj/personas")
+    public ResponseEntity<ApiCommonResponse<CreatedIdResponse>> createPersona(
+            @Valid @RequestBody CreatePersonaRequest req) {
+        Long id = personaService.create(req.name(), req.instruction());
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiCommonResponse.success(new CreatedIdResponse(id)));
+    }
+
+    @Operation(summary = "페르소나 수정", description = "이름·instruction·활성 상태 일괄 변경")
+    @SecurityRequirement(name = "cookieAuth")
+    @PreAuthorize("@adminAuth.canManageVirtualDj()")
+    @PutMapping("/virtual-dj/personas/{id}")
+    public ResponseEntity<Void> updatePersona(@PathVariable("id") Long id,
+                                              @Valid @RequestBody UpdatePersonaRequest req) {
+        personaService.update(id, req.name(), req.instruction(), req.active());
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "페르소나 삭제")
+    @SecurityRequirement(name = "cookieAuth")
+    @PreAuthorize("@adminAuth.canManageVirtualDj()")
+    @DeleteMapping("/virtual-dj/personas/{id}")
+    public ResponseEntity<Void> deletePersona(@PathVariable("id") Long id) {
+        personaService.delete(id);
+        return ResponseEntity.noContent().build();
+    }
+
     // ── 룸별 config ──
 
     @Operation(summary = "룸 가상 DJ config 적용", description = "MANAGED 적용 후 reconcile 즉시 트리거, OFF 면 drain")
@@ -262,5 +324,50 @@ public class AdminVirtualDjController {
             @Valid @RequestBody DistributeBotAvatarRequest req) {
         List<BotAvatarAssigner.Assigned> assigned = botAvatarAdminService.distribute(req.botIds(), req.bodyUris());
         return ResponseEntity.ok(ApiCommonResponse.success(DistributeBotAvatarResponse.from(assigned)));
+    }
+
+    // ── 봇↔페르소나 매핑 (P3) ──
+
+    @Operation(summary = "봇 페르소나 일괄 매핑", description = "선택 봇들에 페르소나 1개 일괄 매핑(이미 매핑된 봇은 교체)")
+    @SecurityRequirement(name = "cookieAuth")
+    @PreAuthorize("@adminAuth.canManageVirtualDj()")
+    @PostMapping("/virtual-dj/bots/persona/assign")
+    public ResponseEntity<ApiCommonResponse<AssignPersonaResponse>> assignPersona(
+            @Valid @RequestBody AssignPersonaRequest req) {
+        int applied = botPersonaAssignmentService.assign(req.botIds(), req.personaId());
+        return ResponseEntity.ok(ApiCommonResponse.success(new AssignPersonaResponse(applied)));
+    }
+
+    @Operation(summary = "봇 페르소나 일괄 해제", description = "선택 봇들의 페르소나 매핑 해제")
+    @SecurityRequirement(name = "cookieAuth")
+    @PreAuthorize("@adminAuth.canManageVirtualDj()")
+    @PostMapping("/virtual-dj/bots/persona/unassign")
+    public ResponseEntity<ApiCommonResponse<AssignPersonaResponse>> unassignPersona(
+            @Valid @RequestBody UnassignPersonaRequest req) {
+        int applied = botPersonaAssignmentService.unassign(req.botIds());
+        return ResponseEntity.ok(ApiCommonResponse.success(new AssignPersonaResponse(applied)));
+    }
+
+    // ── 채팅/자가갱신 설정 (P3) ──
+
+    @Operation(summary = "가상 DJ 채팅/자가갱신 설정 조회",
+            description = "vdj.chat.* 5키 + 자가갱신 forward-gate 1키 (system_config, fail-open 폴백)")
+    @SecurityRequirement(name = "cookieAuth")
+    @PreAuthorize("@adminAuth.canManageVirtualDj()")
+    @GetMapping("/virtual-dj/chat-config")
+    public ResponseEntity<ApiCommonResponse<ChatConfigResponse>> getChatConfig() {
+        return ResponseEntity.ok(ApiCommonResponse.success(
+                ChatConfigResponse.from(chatConfigAdminService.read())));
+    }
+
+    @Operation(summary = "가상 DJ 채팅/자가갱신 설정 변경",
+            description = "6키 일괄 upsert 후 SystemConfigCache 무효화(AFTER_COMMIT)")
+    @SecurityRequirement(name = "cookieAuth")
+    @PreAuthorize("@adminAuth.canManageVirtualDj()")
+    @PutMapping("/virtual-dj/chat-config")
+    public ResponseEntity<Void> updateChatConfig(@Valid @RequestBody UpdateChatConfigRequest req) {
+        chatConfigAdminService.update(req.chatEnabled(), req.selfUpdateEnabled(),
+                req.probabilityPercent(), req.cooldownSeconds(), req.contextSize(), req.outputMaxTokens());
+        return ResponseEntity.noContent().build();
     }
 }
