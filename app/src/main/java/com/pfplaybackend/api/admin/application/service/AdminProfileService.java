@@ -7,6 +7,7 @@ import com.pfplaybackend.api.avatar.application.dto.AvatarBodyDto;
 import com.pfplaybackend.api.avatar.domain.value.AvatarBodyUri;
 import com.pfplaybackend.api.avatar.domain.value.AvatarFaceUri;
 import com.pfplaybackend.api.avatar.domain.value.AvatarIconUri;
+import com.pfplaybackend.api.user.domain.entity.data.MemberData;
 import com.pfplaybackend.api.user.domain.entity.data.ProfileData;
 import com.pfplaybackend.api.user.domain.enums.FaceSourceType;
 import com.pfplaybackend.api.user.domain.value.Nickname;
@@ -55,6 +56,81 @@ public class AdminProfileService {
                 ? nickname
                 : generateRandomNickname();
 
+        // Resolve composition/icon/transform from the body+face inputs (single source of truth).
+        ResolvedAvatar resolved = resolveAvatar(avatarBodyUri, avatarFaceUri);
+
+        // Build ProfileData directly (CREATE path — a brand-new transient profile is correct here).
+        ProfileData profileData = ProfileData.builder()
+                .userId(userId)
+                .nickname(new Nickname(finalNickname))
+                .introduction("")
+                .avatarCompositionType(resolved.compositionType())
+                .faceSourceType(resolved.faceSourceType())
+                .avatarBodyUri(resolved.bodyUri())
+                .avatarFaceUri(resolved.faceUri())
+                .avatarIconUri(resolved.iconUri())
+                .combinePositionX(resolved.combinePositionX())
+                .combinePositionY(resolved.combinePositionY())
+                .offsetX(0)
+                .offsetY(0)
+                .scale(1.0)
+                .build();
+
+        return profileData;
+    }
+
+    /**
+     * Apply an avatar (body + optional face) to an <b>already-persisted</b> virtual member by
+     * MUTATING its existing {@link ProfileData} row — NOT by replacing the {@code @OneToOne}
+     * profile reference.
+     *
+     * <p>Replacing the reference (the old behaviour of the UPDATE path) made the cascade persist
+     * a SECOND transient {@code user_profile} row with the same user_id/nickname, which hits the
+     * Flyway V15 unique constraint {@code uk_user_profile_nickname} on the real {@code validate}
+     * profile (HTTP 500). The {@code create-drop} test schema lacks that constraint, so the
+     * double-insert was silent in tests — see {@code reference_ddl_auto_create_drop_hides_migration_drift}.
+     *
+     * <p>This mirrors the canonical real-member avatar path
+     * ({@code UserAvatarCommandService.setUserAvatar}): it calls the member's mutation delegates
+     * on the existing profile, keeping the SAME id (an UPDATE, not an INSERT).
+     *
+     * @param member        existing virtual member (its profile is mutated in place)
+     * @param avatarBodyUri optional body URI (default if null)
+     * @param avatarFaceUri optional face URI (empty/SINGLE_BODY if null)
+     */
+    public void applyAvatarToExistingMember(
+            MemberData member,
+            AvatarBodyUri avatarBodyUri,
+            AvatarFaceUri avatarFaceUri) {
+
+        ResolvedAvatar resolved = resolveAvatar(avatarBodyUri, avatarFaceUri);
+
+        member.updateAvatarBody(
+                resolved.bodyUri(), resolved.combinePositionX(), resolved.combinePositionY());
+
+        if (resolved.compositionType() == AvatarCompositionType.SINGLE_BODY) {
+            member.updateAvatarFace(resolved.faceUri());   // SINGLE_BODY + empty face
+        } else {
+            member.updateAvatarFace(resolved.faceUri(), resolved.faceSourceType(), 0, 0, 1.0);
+        }
+        member.updateAvatarIcon(resolved.iconUri());
+    }
+
+    /**
+     * Resolved avatar attributes (composition/face-source/icon/position) derived from a
+     * body+face pair. Shared by the CREATE path (builds a new ProfileData) and the UPDATE path
+     * (mutates an existing one) so the combinable/NFT/icon rules live in ONE place.
+     */
+    private record ResolvedAvatar(
+            AvatarCompositionType compositionType,
+            FaceSourceType faceSourceType,
+            AvatarBodyUri bodyUri,
+            AvatarFaceUri faceUri,
+            AvatarIconUri iconUri,
+            int combinePositionX,
+            int combinePositionY) {}
+
+    private ResolvedAvatar resolveAvatar(AvatarBodyUri avatarBodyUri, AvatarFaceUri avatarFaceUri) {
         // Get avatar URIs (use provided or default)
         AvatarBodyUri finalBodyUri = (avatarBodyUri != null)
                 ? avatarBodyUri
@@ -100,24 +176,9 @@ public class AdminProfileService {
             );
         }
 
-        // Build ProfileData directly
-        ProfileData profileData = ProfileData.builder()
-                .userId(userId)
-                .nickname(new Nickname(finalNickname))
-                .introduction("")
-                .avatarCompositionType(compositionType)
-                .faceSourceType(faceSourceType)
-                .avatarBodyUri(finalBodyUri)
-                .avatarFaceUri(finalFaceUri)
-                .avatarIconUri(iconUri)
-                .combinePositionX(avatarBodyDto.getCombinePositionX())
-                .combinePositionY(avatarBodyDto.getCombinePositionY())
-                .offsetX(0)
-                .offsetY(0)
-                .scale(1.0)
-                .build();
-
-        return profileData;
+        return new ResolvedAvatar(
+                compositionType, faceSourceType, finalBodyUri, finalFaceUri, iconUri,
+                avatarBodyDto.getCombinePositionX(), avatarBodyDto.getCombinePositionY());
     }
 
     /**

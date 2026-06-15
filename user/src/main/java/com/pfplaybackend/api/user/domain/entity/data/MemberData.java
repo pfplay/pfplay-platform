@@ -138,15 +138,15 @@ public class MemberData extends BaseEntity {
         return new ProfileSummary(
                 bio != null ? bio.getNicknameValue() : null,
                 bio != null ? bio.getIntroduction() : null,
-                avatar.getAvatarBodyUri().getValue(),
+                avatar.getAvatarBodyUriValue(),
                 avatar.getAvatarCompositionType(),
                 avatar.getCombinePositionX(),
                 avatar.getCombinePositionY(),
                 avatar.getOffsetX(),
                 avatar.getOffsetY(),
                 avatar.getScale(),
-                avatar.getAvatarFaceUri().getValue(),
-                avatar.getAvatarIconUri().getValue(),
+                avatar.getAvatarFaceUriValue(),
+                avatar.getAvatarIconUriValue(),
                 this.profileData.getWalletAddress().getValue(),
                 activitySummaries
         );

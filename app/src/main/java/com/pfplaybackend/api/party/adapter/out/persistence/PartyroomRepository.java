@@ -28,7 +28,7 @@ public interface PartyroomRepository extends JpaRepository<PartyroomData, Long>,
      * crew_count +1 + lastActivityAt 갱신. TERMINATED 룸은 거부 (반환 0).
      * Race A 차단: DB row lock이 동시 호출을 직렬화.
      */
-    @Modifying(clearAutomatically = true)
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE PartyroomData p " +
            "SET p.activeCrewCount = p.activeCrewCount + 1, p.lastActivityAt = :now " +
            "WHERE p.id = :id " +
@@ -38,7 +38,7 @@ public interface PartyroomRepository extends JpaRepository<PartyroomData, Long>,
     /**
      * crew_count -1 + lastActivityAt 갱신. 음수 방지 (CASE WHEN). TERMINATED 룸 거부.
      */
-    @Modifying(clearAutomatically = true)
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE PartyroomData p " +
            "SET p.activeCrewCount = CASE WHEN p.activeCrewCount > 0 THEN p.activeCrewCount - 1 ELSE 0 END, " +
            "    p.lastActivityAt = :now " +
@@ -50,7 +50,7 @@ public interface PartyroomRepository extends JpaRepository<PartyroomData, Long>,
      * lastActivityAt만 갱신. ACTIVE 룸만 (SUSPENDED/TERMINATED 룸은 거부).
      * Playback 이벤트가 SUSPENDED/TERMINATED 룸 lastActivity 갱신하는 건 의미 없음.
      */
-    @Modifying(clearAutomatically = true)
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE PartyroomData p SET p.lastActivityAt = :now " +
            "WHERE p.id = :id " +
            "AND p.status = com.pfplaybackend.api.party.domain.enums.PartyroomStatus.ACTIVE")
@@ -63,7 +63,7 @@ public interface PartyroomRepository extends JpaRepository<PartyroomData, Long>,
      * status 가드 없음 — TERMINATED 룸의 reset이 본 use case.
      * 이미 0인 row를 reset해도 멱등 (UPDATE 자체는 실행, affected row 1).
      */
-    @Modifying(clearAutomatically = true)
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE PartyroomData p SET p.activeCrewCount = 0 WHERE p.id = :id")
     int resetCrewCount(@Param("id") Long id);
 }

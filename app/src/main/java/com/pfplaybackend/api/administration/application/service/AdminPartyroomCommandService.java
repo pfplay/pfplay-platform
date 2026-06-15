@@ -44,6 +44,9 @@ public class AdminPartyroomCommandService {
     @Transactional
     public void terminate(PartyroomId partyroomId, String reason, Long administratorId) {
         PartyroomData partyroom = loadPartyroom(partyroomId);
+        // #280 root-cause fix — admin bulk action 으로 partyroom_id=1 받아도 sweep 못 함.
+        // bulkDeactivate 부수효과 차단 위해 가드는 가장 먼저.
+        partyroom.validateNotMainStage();
         LocalDateTime now = LocalDateTime.now(clock);
 
         int crewsDeactivated = crewRepository.bulkDeactivateByPartyroomId(partyroomId, now);

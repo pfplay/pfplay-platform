@@ -366,4 +366,84 @@ class PartyroomCommandServiceTest {
         assertThat(djQueue.isClosed()).isFalse();
         verify(aggregatePort).saveDjQueueState(djQueue);
     }
+
+    // ========== #280 MAIN 보호 가드 + initializeMainStage idempotent ==========
+
+    @Test
+    @DisplayName("deletePartyRoom — MAIN stage 룸은 거부 (ConflictException, terminate 호출 안 함)")
+    void deletePartyRoomRejectsMainStage() {
+        // given — host 본인이지만 MAIN stage
+        PartyroomId partyroomId = new PartyroomId(1L);
+        PartyroomData mainStage = PartyroomData.builder()
+                .id(1L).partyroomId(partyroomId).hostId(userId).stageType(StageType.MAIN)
+                .title("Main Stage").introduction("Welcome")
+                .linkDomain(LinkDomain.of("main")).playbackTimeLimit(PlaybackTimeLimit.ofMinutes(10))
+                .noticeContent("").status(PartyroomStatus.ACTIVE).build();
+        when(aggregatePort.findPartyroomById(1L)).thenReturn(Optional.of(mainStage));
+
+        // when & then — validateHost 통과 후 validateNotMainStage 에서 차단
+        assertThatThrownBy(() -> partyroomCommandService.deletePartyRoom(partyroomId))
+                .isInstanceOf(ConflictException.class);
+        assertThat(mainStage.isTerminated()).isFalse();
+        verify(aggregatePort, never()).savePartyroom(any());
+    }
+
+    @Test
+    @DisplayName("initializeMainStage — MAIN 없으면 새로 생성 (기존 동작 유지)")
+    void initializeMainStageCreatesWhenAbsent() {
+        // given
+        when(aggregatePort.findByLinkDomain(LinkDomain.of("main"))).thenReturn(Optional.empty());
+        when(aggregatePort.savePartyroom(any(PartyroomData.class))).thenAnswer(invocation -> {
+            PartyroomData p = invocation.getArgument(0);
+            return PartyroomData.builder()
+                    .id(1L).hostId(p.getHostId()).stageType(p.getStageType())
+                    .title(p.getTitle()).introduction(p.getIntroduction())
+                    .linkDomain(p.getLinkDomain()).playbackTimeLimit(p.getPlaybackTimeLimit())
+                    .noticeContent("").status(PartyroomStatus.ACTIVE).build();
+        });
+
+        // when
+        partyroomCommandService.initializeMainStage(userId);
+
+        // then — createMainStage 경로로 새 partyroom 생성
+        verify(aggregatePort).savePartyroom(any(PartyroomData.class));
+    }
+
+    @Test
+    @DisplayName("initializeMainStage — 기존 MAIN 이 ACTIVE 면 no-op (idempotent)")
+    void initializeMainStageNoOpWhenActive() {
+        // given
+        PartyroomData existingActive = PartyroomData.builder()
+                .id(1L).hostId(userId).stageType(StageType.MAIN)
+                .title("Main Stage").introduction("Welcome")
+                .linkDomain(LinkDomain.of("main")).playbackTimeLimit(PlaybackTimeLimit.ofMinutes(10))
+                .noticeContent("").status(PartyroomStatus.ACTIVE).build();
+        when(aggregatePort.findByLinkDomain(LinkDomain.of("main"))).thenReturn(Optional.of(existingActive));
+
+        // when
+        partyroomCommandService.initializeMainStage(userId);
+
+        // then — save 호출 없음
+        verify(aggregatePort, never()).savePartyroom(any());
+    }
+
+    @Test
+    @DisplayName("initializeMainStage — 기존 MAIN 이 TERMINATED 면 reactivate 후 save (#280 안전망)")
+    void initializeMainStageReactivatesWhenTerminated() {
+        // given — 어떤 footgun 으로 MAIN 이 TERMINATED 된 상태
+        PartyroomData terminatedMain = PartyroomData.builder()
+                .id(1L).hostId(userId).stageType(StageType.MAIN)
+                .title("Main Stage").introduction("Welcome")
+                .linkDomain(LinkDomain.of("main")).playbackTimeLimit(PlaybackTimeLimit.ofMinutes(10))
+                .noticeContent("").status(PartyroomStatus.TERMINATED).build();
+        when(aggregatePort.findByLinkDomain(LinkDomain.of("main"))).thenReturn(Optional.of(terminatedMain));
+
+        // when
+        partyroomCommandService.initializeMainStage(userId);
+
+        // then — reactivate + save (createMainStage 는 호출되지 않음)
+        assertThat(terminatedMain.isActive()).isTrue();
+        verify(aggregatePort).savePartyroom(terminatedMain);
+        verify(partyroomAccessCommandService, never()).enterByHost(any(), any());
+    }
 }

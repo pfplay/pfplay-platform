@@ -6,7 +6,6 @@ import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.exception.ExceptionCreator;
 import com.pfplaybackend.api.party.adapter.out.persistence.PlaybackAggregationRepository;
 import com.pfplaybackend.api.party.adapter.out.persistence.PlaybackRepository;
-import com.pfplaybackend.api.party.application.dto.partyroom.ActivePartyroomDto;
 import com.pfplaybackend.api.party.application.dto.playback.PlaybackDurationWaitDto;
 import com.pfplaybackend.api.party.application.port.out.ExpirationTaskPort;
 import com.pfplaybackend.api.party.application.port.out.PlaybackControlPort;
@@ -73,8 +72,9 @@ public class PlaybackCommandService implements PlaybackControlPort {
     @Transactional
     public void skipByManager(PartyroomId partyroomId) {
         AuthContext authContext = ThreadLocalContext.getAuthContext();
-        ActivePartyroomDto activePartyroomDto = partyroomQueryService.getMyActivePartyroom(authContext.getUserId()).orElseThrow();
-        CrewData adjusterCrew = partyroomQueryService.getCrewOrThrow(new PartyroomId(activePartyroomDto.id()), authContext.getUserId());
+        // #297: 등급 검사는 skip이 적용되는 경로의 룸 기준이어야 한다.
+        // '내 active 룸' 우회 조회는 active crew 부재 시 500, 타 룸 운영진의 cross-room skip을 허용했다.
+        CrewData adjusterCrew = partyroomQueryService.getCrewOrThrow(partyroomId, authContext.getUserId());
         if (adjusterCrew.isBelowGrade(GradeType.MODERATOR)) throw ExceptionCreator.create(GradeException.MANAGER_GRADE_REQUIRED);
         cancelTask(partyroomId);
         tryProceed(partyroomId);

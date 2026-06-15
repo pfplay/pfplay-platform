@@ -243,6 +243,88 @@ class PartyroomDataTest {
     }
 
     @Nested
+    @DisplayName("validateNotMainStage() — MAIN stage 보호 가드 (#280 root-cause fix)")
+    class ValidateNotMainStage {
+        // 모든 termination 경로 (host self-delete / cron / admin) 가 MAIN 까지 잡지 않도록
+        // 도메인 측 가드. 일반 파티룸은 그대로 통과.
+
+        private PartyroomData mainStage() {
+            return PartyroomData.builder()
+                    .id(1L)
+                    .hostId(new UserId(1L))
+                    .stageType(StageType.MAIN)
+                    .title("Main Stage")
+                    .introduction("Welcome")
+                    .linkDomain(LinkDomain.of("main"))
+                    .playbackTimeLimit(PlaybackTimeLimit.ofMinutes(10))
+                    .noticeContent("")
+                    .status(PartyroomStatus.ACTIVE)
+                    .build();
+        }
+
+        @Test @DisplayName("MAIN stage → ConflictException (MAIN_STAGE_PROTECTED)")
+        void rejectsMainStage() {
+            PartyroomData p = mainStage();
+            assertThatThrownBy(p::validateNotMainStage).isInstanceOf(ConflictException.class);
+        }
+
+        @Test @DisplayName("GENERAL stage → 통과 (예외 없음)")
+        void acceptsGeneralStage() {
+            assertThatNoException().isThrownBy(() -> newPartyroom().validateNotMainStage());
+        }
+    }
+
+    @Nested
+    @DisplayName("reactivateAsMainStage() — MAIN 시스템 stage 전용 lifecycle 복원 (#280 안전망)")
+    class ReactivateAsMainStage {
+        // 일반 파티룸은 TERMINATED 가 terminal invariant 이지만, MAIN 은 시스템 stage 라
+        // ApplicationReadyEventListener.initializeMainStage 가 부팅마다 자동 복원해야 한다.
+
+        private PartyroomData mainWithStatus(PartyroomStatus status) {
+            return PartyroomData.builder()
+                    .id(1L)
+                    .hostId(new UserId(1L))
+                    .stageType(StageType.MAIN)
+                    .title("Main Stage")
+                    .introduction("Welcome")
+                    .linkDomain(LinkDomain.of("main"))
+                    .playbackTimeLimit(PlaybackTimeLimit.ofMinutes(10))
+                    .noticeContent("")
+                    .status(status)
+                    .build();
+        }
+
+        @Test @DisplayName("MAIN + TERMINATED → ACTIVE 복원")
+        void mainTerminatedToActive() {
+            PartyroomData p = mainWithStatus(PartyroomStatus.TERMINATED);
+            p.reactivateAsMainStage();
+            assertThat(p.isActive()).isTrue();
+            assertThat(p.isTerminated()).isFalse();
+        }
+
+        @Test @DisplayName("MAIN + SUSPENDED → ACTIVE 복원")
+        void mainSuspendedToActive() {
+            PartyroomData p = mainWithStatus(PartyroomStatus.SUSPENDED);
+            p.reactivateAsMainStage();
+            assertThat(p.isActive()).isTrue();
+        }
+
+        @Test @DisplayName("MAIN + ACTIVE → no-op (idempotent)")
+        void mainActiveIdempotent() {
+            PartyroomData p = mainWithStatus(PartyroomStatus.ACTIVE);
+            assertThatNoException().isThrownBy(p::reactivateAsMainStage);
+            assertThat(p.isActive()).isTrue();
+        }
+
+        @Test @DisplayName("GENERAL stage → ConflictException (일반 파티룸 terminal invariant 보호)")
+        void rejectsGeneralStage() {
+            PartyroomData p = newPartyroom();
+            p.terminate();
+            assertThatThrownBy(p::reactivateAsMainStage).isInstanceOf(ConflictException.class);
+        }
+    }
+
+    @Nested
     @DisplayName("validateNotTerminated() — 기존 시맨틱 유지 (TERMINATED만 거부)")
     class ValidateNotTerminated {
         @Test @DisplayName("ACTIVE 통과")

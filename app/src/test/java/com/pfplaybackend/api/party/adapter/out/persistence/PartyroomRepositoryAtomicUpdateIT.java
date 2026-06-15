@@ -38,6 +38,16 @@ class PartyroomRepositoryAtomicUpdateIT extends AbstractIntegrationTest {
         return partyroomRepository.saveAndFlush(p);
     }
 
+    private PartyroomData createAndSaveMainStage(long hostUid) {
+        // #280 — MAIN stage 별도 row. link_domain 은 cross-class pollution 회피 위해
+        // hostUid 기반 unique. ApplicationReadyEventListener 가 띄우는 link="main" 과 분리.
+        PartyroomData p = PartyroomData.create(
+                "main-test-" + hostUid, "intro", LinkDomain.of("main-test-" + hostUid),
+                PlaybackTimeLimit.ofMinutes(10), StageType.MAIN,
+                new UserId(hostUid));
+        return partyroomRepository.saveAndFlush(p);
+    }
+
     // ── incrementCrewCount ─────────────────────────────────────────
 
     @Test
@@ -231,5 +241,22 @@ class PartyroomRepositoryAtomicUpdateIT extends AbstractIntegrationTest {
         assertThat(unused).extracting(PartyroomData::getId)
                 .contains(active.getId())
                 .doesNotContain(terminated.getId());
+    }
+
+    @Test
+    @DisplayName("findAllUnusedPartyroomDataByDay — MAIN stage 룸은 결과에서 제외 (#280 root-cause fix). " +
+            "cron 03:00 sweep 가 MAIN 까지 잡지 않도록 repo level 가드")
+    void unused_excludes_main_stage() {
+        // given: GENERAL ACTIVE room + MAIN stage room
+        PartyroomData generalActive = createAndSaveActive(2020L);
+        PartyroomData mainActive = createAndSaveMainStage(2021L);
+
+        // when: same days=-1 시간축 변동성 흡수 패턴 (DATETIME(0) 라운딩 flake 회피)
+        List<PartyroomData> unused = partyroomRepository.findAllUnusedPartyroomDataByDay(-1);
+
+        // then: GENERAL 은 결과에 포함, MAIN 은 결과에서 제외
+        assertThat(unused).extracting(PartyroomData::getId)
+                .contains(generalActive.getId())
+                .doesNotContain(mainActive.getId());
     }
 }

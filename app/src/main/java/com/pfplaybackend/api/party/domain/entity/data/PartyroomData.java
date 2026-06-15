@@ -211,6 +211,32 @@ public class PartyroomData extends BaseEntity {
         registerEvent(new PartyroomClosedEvent(this.partyroomId, this.hostId, this.title));
     }
 
+    /**
+     * MAIN 시스템 stage 전용 lifecycle 복원 (#280).
+     * <p>일반 파티룸은 {@link #terminate()} 가 terminal 이지만, MAIN 은 시스템 stage 라
+     * {@code ApplicationReadyEventListener.initializeMainStage} 가 부팅마다 자동 복원해야 한다.
+     * 어떤 비-ACTIVE 상태에서든 ACTIVE 로 idempotent 복원하며, GENERAL stage 에서 호출 시 거부한다.
+     * <p>일반 파티룸의 terminal invariant 는 그대로 보존된다.
+     */
+    public void reactivateAsMainStage() {
+        if (this.stageType != StageType.MAIN) {
+            throw ExceptionCreator.create(PartyroomException.ILLEGAL_STATE_TRANSITION);
+        }
+        this.status = PartyroomStatus.ACTIVE;
+    }
+
+    /**
+     * MAIN 시스템 stage 보호 가드 (#280 root-cause fix).
+     * <p>모든 termination 경로 (host self-delete / cron / admin terminate) 가
+     * MAIN 까지 잡지 않도록 하는 도메인 측 가드. caller 의 호출 의도 컨텍스트와
+     * 결합돼 footgun 을 차단한다 (suspend/setHidden 같은 비-terminal 동작은 정책 미정으로 미적용).
+     */
+    public void validateNotMainStage() {
+        if (this.stageType == StageType.MAIN) {
+            throw ExceptionCreator.create(PartyroomException.MAIN_STAGE_PROTECTED);
+        }
+    }
+
     // ── Display Flag (admin-only via Administration BC; ArchUnit 가드는 별 task) ──
 
     /**

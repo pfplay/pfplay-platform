@@ -1,8 +1,10 @@
 package com.pfplaybackend.api.administration.adapter.out.persistence.impl;
 
 import com.pfplaybackend.api.administration.adapter.out.persistence.AdminPartyroomQueryRepository;
+import com.pfplaybackend.api.administration.adapter.in.web.payload.response.AdminPartyroomListItemResponse.VirtualDjSummary;
 import com.pfplaybackend.api.administration.application.dto.AdminPartyroomListFilter;
 import com.pfplaybackend.api.administration.application.dto.AdminPartyroomListRow;
+import com.pfplaybackend.api.party.domain.entity.data.QCrewData;
 import com.pfplaybackend.api.party.domain.entity.data.QDjData;
 import com.pfplaybackend.api.party.domain.entity.data.QPartyroomData;
 import com.pfplaybackend.api.party.domain.entity.data.QPartyroomPlaybackData;
@@ -11,6 +13,8 @@ import com.pfplaybackend.api.user.domain.entity.data.QMemberData;
 import com.pfplaybackend.api.user.domain.entity.data.QProfileData;
 import com.pfplaybackend.api.user.domain.entity.data.QUserAccountData;
 import com.pfplaybackend.api.user.domain.value.Nickname;
+import com.pfplaybackend.api.virtualdj.domain.entity.data.QPartyroomVirtualDjConfigData;
+import com.pfplaybackend.api.virtualdj.domain.enums.VirtualDjStatus;
 import com.querydsl.core.BooleanBuilder;
 import com.querydsl.core.Tuple;
 import com.querydsl.core.types.dsl.ComparableExpressionBase;
@@ -69,6 +73,11 @@ public class AdminPartyroomQueryRepositoryImpl implements AdminPartyroomQueryRep
         QProfileData profile = QProfileData.profileData;
         QDjData dj = QDjData.djData;
         QPartyroomPlaybackData pb = QPartyroomPlaybackData.partyroomPlaybackData;
+        // P2 Task 2.2: 가상 DJ config (left join) + 봇 DJ 카운트(상관 서브쿼리).
+        QPartyroomVirtualDjConfigData cfg = QPartyroomVirtualDjConfigData.partyroomVirtualDjConfigData;
+        // 서브쿼리 전용 alias — 외부 `ua`(host user_account)와 충돌하지 않도록 별도 인스턴스를 둔다.
+        QCrewData botCrew = new QCrewData("botCrew");
+        QUserAccountData botUa = new QUserAccountData("botUa");
 
         // Path-projecting m.profileData.bio.nickname forces an implicit INNER JOIN
         // on profile, which silently excludes any partyroom whose host has
@@ -83,6 +92,19 @@ public class AdminPartyroomQueryRepositoryImpl implements AdminPartyroomQueryRep
                 .select(dj.count())
                 .from(dj)
                 .where(dj.partyroomId.id.eq(p.id));
+
+        // 봇 DJ 카운트: DJ → CrewData(is_active=true 단언, stale DJ 방어) → user_account(is_dummy=true).
+        // DjData 에는 userId 가 없어 crew 를 경유한다.
+        // 조인키 + is_active 단언은 ActiveDjSnapshotQueryRepositoryImpl 의 canonical 패턴을 그대로 미러링한다.
+        QDjData botDj = new QDjData("botDj");
+        JPQLQuery<Long> botDjCountSubquery = JPAExpressions
+                .select(botDj.count())
+                .from(botDj)
+                .join(botCrew).on(botCrew.id.eq(botDj.crewId.id))
+                .join(botUa).on(botUa.userId.uid.eq(botCrew.userId.uid))
+                .where(botDj.partyroomId.id.eq(p.id)
+                        .and(botCrew.isActive.isTrue())
+                        .and(botUa.isDummy.isTrue()));
 
         BooleanBuilder where = buildPredicates(filter, p, ua, nicknameLikeExpr);
 
@@ -99,13 +121,17 @@ public class AdminPartyroomQueryRepositoryImpl implements AdminPartyroomQueryRep
                         p.status,
                         p.displayFlag,
                         p.createdAt,
-                        p.lastActivityAt
+                        p.lastActivityAt,
+                        cfg.status,
+                        cfg.targetCount,
+                        botDjCountSubquery
                 )
                 .from(p)
                 .leftJoin(ua).on(ua.userId.uid.eq(p.hostId.uid))
                 .leftJoin(m).on(m.userAccountId.eq(ua.userId.uid))
                 .leftJoin(m.profileData, profile)
                 .leftJoin(pb).on(pb.partyroomId.id.eq(p.id))
+                .leftJoin(cfg).on(cfg.partyroomId.eq(p.id))
                 .where(where);
 
         applySort(query, pageable.getSort(), p, nicknameLikeExpr);
@@ -125,7 +151,7 @@ public class AdminPartyroomQueryRepositoryImpl implements AdminPartyroomQueryRep
                 .fetch();
 
         List<AdminPartyroomListRow> content = tuples.stream()
-                .map(t -> mapRow(t, p, ua, profile, pb, djCountSubquery))
+                .map(t -> mapRow(t, p, ua, profile, pb, djCountSubquery, cfg, botDjCountSubquery))
                 .toList();
 
         return new PageImpl<>(content, pageable, total == null ? 0L : total);
@@ -136,10 +162,23 @@ public class AdminPartyroomQueryRepositoryImpl implements AdminPartyroomQueryRep
                                          QUserAccountData ua,
                                          QProfileData profile,
                                          QPartyroomPlaybackData pb,
-                                         JPQLQuery<Long> djCountSubquery) {
+                                         JPQLQuery<Long> djCountSubquery,
+                                         QPartyroomVirtualDjConfigData cfg,
+                                         JPQLQuery<Long> botDjCountSubquery) {
         Nickname nickname = t.get(profile.bio.nickname);
         Long djCount = t.get(djCountSubquery);
         Integer crewCount = t.get(p.activeCrewCount);
+        // 가상 DJ 요약: config row 가 없으면 left join 으로 cfg.status 가 null → virtualDj=null.
+        VirtualDjStatus vdjStatus = t.get(cfg.status);
+        VirtualDjSummary virtualDj = null;
+        if (vdjStatus != null) {
+            Long botDjCount = t.get(botDjCountSubquery);
+            virtualDj = new VirtualDjSummary(
+                    vdjStatus,
+                    t.get(cfg.targetCount),
+                    botDjCount == null ? 0L : botDjCount
+            );
+        }
         return new AdminPartyroomListRow(
                 t.get(p.id),
                 t.get(p.title),
@@ -152,7 +191,8 @@ public class AdminPartyroomQueryRepositoryImpl implements AdminPartyroomQueryRep
                 t.get(p.status),
                 t.get(p.displayFlag),
                 t.get(p.createdAt),
-                t.get(p.lastActivityAt)
+                t.get(p.lastActivityAt),
+                virtualDj
         );
     }
 
