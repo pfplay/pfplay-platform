@@ -77,6 +77,27 @@ class PushSubscriptionServiceTest {
     }
 
     @Test
+    @DisplayName("subscribe — 같은 회원 활성 재구독이면 키를 갱신한다(새 row 없음)")
+    void subscribeSameUserActiveRotatesKeys() {
+        // given: 같은 회원이 해지 없이 재구독(브라우저 키 회전)
+        initService();
+        PushSubscriptionData existing = PushSubscriptionData.create(user, "ep-1", "old-p256dh", "old-auth", "EN");
+        ReflectionTestUtils.setField(existing, "id", 7L);
+        assertThat(existing.isActive()).isTrue();
+        when(repository.findByEndpoint("ep-1")).thenReturn(Optional.of(existing));
+
+        // when
+        Long id = service.subscribe(user, "ep-1", "rot-p256dh", "rot-auth", "KO");
+
+        // then
+        assertThat(id).isEqualTo(7L);
+        assertThat(existing.getP256dh()).isEqualTo("rot-p256dh");
+        assertThat(existing.getAuth()).isEqualTo("rot-auth");
+        assertThat(existing.getLang()).isEqualTo("KO");
+        verify(repository, never()).save(any());
+    }
+
+    @Test
     @DisplayName("subscribe — 폐기된 타인 row 재구독은 기기 hand-off로 허용(새 소유자로 부활)")
     void subscribeRevivesRevokedRowOfDifferentUserAsHandoff() {
         // given: 이전 소유자(otherUser)가 로그아웃하며 해지한 endpoint를 새 회원(user)이 재점유
