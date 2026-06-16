@@ -20,6 +20,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
@@ -66,7 +67,7 @@ class AdminAnnouncementControllerTest extends AbstractAdminWebMvcTest {
                 any(AnnouncementType.class), any(AnnouncementSeverity.class),
                 any(), any(), any(), any(),
                 any(), any(), any(),
-                anyLong()))
+                anyLong(), anyBoolean()))
                 .willReturn(ANNOUNCEMENT_ID);
 
         mockMvc.perform(post("/api/v1/admin/announcements")
@@ -130,7 +131,7 @@ class AdminAnnouncementControllerTest extends AbstractAdminWebMvcTest {
                 AnnouncementType.EVENT, AnnouncementSeverity.INFO,
                 "제목", "title", "본문", "body",
                 null, null, null,
-                LocalDateTime.now(), 1L);
+                LocalDateTime.now(), 1L, false);
 
         Page<SystemAnnouncementData> page = new PageImpl<>(List.of(entity), Pageable.ofSize(20), 1);
         given(systemAnnouncementRepository.findAll(any(Pageable.class))).willReturn(page);

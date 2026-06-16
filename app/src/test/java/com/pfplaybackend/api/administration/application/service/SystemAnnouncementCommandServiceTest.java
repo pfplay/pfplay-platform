@@ -79,7 +79,7 @@ class SystemAnnouncementCommandServiceTest {
                 AnnouncementType.EVENT, AnnouncementSeverity.INFO,
                 "이벤트", "Event", "본문", "Body",
                 null, null, NOW.plusDays(1),
-                ADMIN_ID);
+                ADMIN_ID, false);
 
         assertThat(id).isEqualTo(42L);
 
@@ -111,7 +111,7 @@ class SystemAnnouncementCommandServiceTest {
                 AnnouncementType.MAINTENANCE_NOTICE, AnnouncementSeverity.WARN,
                 "점검", "Maintenance", "메시지", "msg",
                 pastStart, end, null,
-                ADMIN_ID))
+                ADMIN_ID, false))
                 .isInstanceOf(BadRequestException.class)
                 .hasFieldOrPropertyWithValue("errorCode", "ANN-005");
 
@@ -130,7 +130,7 @@ class SystemAnnouncementCommandServiceTest {
                 AnnouncementType.MAINTENANCE_NOTICE, AnnouncementSeverity.WARN,
                 "점검", "Maintenance", "메시지", "msg",
                 NOW, end, null,
-                ADMIN_ID))
+                ADMIN_ID, false))
                 .isInstanceOf(BadRequestException.class)
                 .hasFieldOrPropertyWithValue("errorCode", "ANN-005");
 
@@ -155,7 +155,7 @@ class SystemAnnouncementCommandServiceTest {
                 AnnouncementType.MAINTENANCE_NOTICE, AnnouncementSeverity.WARN,
                 "점검", "M", "안내", "N",
                 start, end, null,
-                ADMIN_ID);
+                ADMIN_ID, false);
 
         assertThat(id).isEqualTo(7L);
         verify(eventPublisher).publishEvent(any(AnnouncementPublishedEvent.class));
@@ -173,7 +173,7 @@ class SystemAnnouncementCommandServiceTest {
                 AnnouncementType.EVENT, AnnouncementSeverity.INFO,
                 "이벤트", "E", "본문", "B",
                 null, null, null,
-                NOW.minusDays(1), 1L);
+                NOW.minusDays(1), 1L, false);
         org.springframework.test.util.ReflectionTestUtils.setField(entity, "id", 100L);
         given(repository.findById(100L)).willReturn(Optional.of(entity));
 
@@ -215,7 +215,7 @@ class SystemAnnouncementCommandServiceTest {
                 AnnouncementType.MAINTENANCE_NOTICE, AnnouncementSeverity.WARN,
                 "점검", "m", "본문", "b",
                 start, end, null,
-                NOW.minusHours(1), 1L);
+                NOW.minusHours(1), 1L, false);
         org.springframework.test.util.ReflectionTestUtils.setField(entity, "id", 55L);
         entity.markMaintenanceStarted(clock);
         given(repository.findById(55L)).willReturn(Optional.of(entity));
@@ -257,7 +257,7 @@ class SystemAnnouncementCommandServiceTest {
                 AnnouncementType.MAINTENANCE_NOTICE, AnnouncementSeverity.WARN,
                 "점검", "m", "본문", "b",
                 start, originalEnd, null,
-                NOW.minusHours(1), 1L);
+                NOW.minusHours(1), 1L, false);
         org.springframework.test.util.ReflectionTestUtils.setField(entity, "id", 77L);
         entity.markMaintenanceStarted(clock);
         given(repository.findById(77L)).willReturn(Optional.of(entity));

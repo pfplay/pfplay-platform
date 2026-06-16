@@ -47,7 +47,7 @@ public class SystemAnnouncementCommandService {
     public Long publish(AnnouncementType type, AnnouncementSeverity severity,
                         String titleKo, String titleEn, String messageKo, String messageEn,
                         LocalDateTime scheduledStartAt, LocalDateTime scheduledEndAt, LocalDateTime expiresAt,
-                        Long administratorId) {
+                        Long administratorId, boolean sendPush) {
         LocalDateTime now = LocalDateTime.now(clock);
         if (type == AnnouncementType.MAINTENANCE_NOTICE
                 && scheduledStartAt != null
@@ -56,7 +56,7 @@ public class SystemAnnouncementCommandService {
         }
         SystemAnnouncementData entity = SystemAnnouncementData.create(
                 type, severity, titleKo, titleEn, messageKo, messageEn,
-                scheduledStartAt, scheduledEndAt, expiresAt, now, administratorId);
+                scheduledStartAt, scheduledEndAt, expiresAt, now, administratorId, sendPush);
         SystemAnnouncementData saved = repository.save(entity);
         eventPublisher.publishEvent(new AnnouncementPublishedEvent(saved));
         return saved.getId();

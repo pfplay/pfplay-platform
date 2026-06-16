@@ -29,7 +29,7 @@ class SystemAnnouncementDataTest {
         SystemAnnouncementData e = SystemAnnouncementData.create(
                 AnnouncementType.MAINTENANCE_NOTICE, AnnouncementSeverity.WARN,
                 "점검", "maint", "본문", "body",
-                start, end, null, start.minusHours(1), 1L);
+                start, end, null, start.minusHours(1), 1L, false);
         e.markMaintenanceStarted(startedClock);
         return e;
     }
@@ -41,7 +41,7 @@ class SystemAnnouncementDataTest {
     void createEvent() {
         SystemAnnouncementData a = SystemAnnouncementData.create(
             AnnouncementType.EVENT, AnnouncementSeverity.INFO,
-            "이벤트", "Event", "본문", "Body", null, null, now.plusDays(1), now, 1L);
+            "이벤트", "Event", "본문", "Body", null, null, now.plusDays(1), now, 1L, false);
         assertThat(a.getScheduledStartAt()).isNull();
     }
 
@@ -50,7 +50,7 @@ class SystemAnnouncementDataTest {
     void maintenanceRequiresSchedule() {
         assertThatThrownBy(() -> SystemAnnouncementData.create(
             AnnouncementType.MAINTENANCE_NOTICE, AnnouncementSeverity.WARN,
-            "점검", "M", "안내", "N", null, null, null, now, 1L))
+            "점검", "M", "안내", "N", null, null, null, now, 1L, false))
             .isInstanceOf(BadRequestException.class)
             .hasFieldOrPropertyWithValue("errorCode", "ANN-003");
     }
@@ -61,7 +61,7 @@ class SystemAnnouncementDataTest {
         LocalDateTime s = now.plusHours(1);
         assertThatThrownBy(() -> SystemAnnouncementData.create(
             AnnouncementType.MAINTENANCE_NOTICE, AnnouncementSeverity.WARN,
-            "점검", "M", "안내", "N", s, s, null, now, 1L))
+            "점검", "M", "안내", "N", s, s, null, now, 1L, false))
             .isInstanceOf(BadRequestException.class)
             .hasFieldOrPropertyWithValue("errorCode", "ANN-004");
     }
@@ -72,7 +72,7 @@ class SystemAnnouncementDataTest {
         LocalDateTime s = now.plusHours(1), e = s.plusHours(1);
         assertThatThrownBy(() -> SystemAnnouncementData.create(
             AnnouncementType.MAINTENANCE_NOTICE, AnnouncementSeverity.WARN,
-            "점검", "M", "안내", "N", s, e, now.plusDays(1), now, 1L))
+            "점검", "M", "안내", "N", s, e, now.plusDays(1), now, 1L, false))
             .isInstanceOf(BadRequestException.class)
             .hasFieldOrPropertyWithValue("errorCode", "ANN-003");
     }
@@ -82,7 +82,7 @@ class SystemAnnouncementDataTest {
     void markStartedTypeGuard() {
         SystemAnnouncementData event = SystemAnnouncementData.create(
             AnnouncementType.EVENT, AnnouncementSeverity.INFO,
-            "이벤트", "E", "본문", "B", null, null, null, now, 1L);
+            "이벤트", "E", "본문", "B", null, null, null, now, 1L, false);
         assertThatThrownBy(() -> event.markMaintenanceStarted(fixedClock))
             .isInstanceOf(IllegalStateException.class);
     }
@@ -92,7 +92,7 @@ class SystemAnnouncementDataTest {
     void cancelIdempotent() {
         SystemAnnouncementData a = SystemAnnouncementData.create(
             AnnouncementType.EVENT, AnnouncementSeverity.INFO,
-            "이벤트", "E", "본문", "B", null, null, null, now, 1L);
+            "이벤트", "E", "본문", "B", null, null, null, now, 1L, false);
         a.cancel(2L, fixedClock);
         assertThatThrownBy(() -> a.cancel(3L, fixedClock))
             .isInstanceOf(ConflictException.class)
@@ -105,7 +105,7 @@ class SystemAnnouncementDataTest {
         LocalDateTime s = now.plusHours(1), e = s.plusHours(1);
         SystemAnnouncementData a = SystemAnnouncementData.create(
             AnnouncementType.MAINTENANCE_NOTICE, AnnouncementSeverity.WARN,
-            "점검", "M", "안내", "N", s, e, null, now, 1L);
+            "점검", "M", "안내", "N", s, e, null, now, 1L, false);
         assertThat(a.isMaintenancePhaseActive()).isFalse();
         a.markMaintenanceStarted(fixedClock);
         assertThat(a.isMaintenancePhaseActive()).isTrue();
@@ -147,7 +147,7 @@ class SystemAnnouncementDataTest {
                 AnnouncementType.MAINTENANCE_NOTICE, AnnouncementSeverity.WARN,
                 "점검", "m", "b", "b",
                 LocalDateTime.of(2026, 5, 4, 3, 0), LocalDateTime.of(2026, 5, 4, 4, 0),
-                null, LocalDateTime.of(2026, 5, 4, 2, 0), 1L);
+                null, LocalDateTime.of(2026, 5, 4, 2, 0), 1L, false);
 
         assertThatThrownBy(() -> e.markCompleted(clockAt(LocalDateTime.of(2026, 5, 4, 2, 30))))
                 .isInstanceOf(ConflictException.class)
@@ -186,7 +186,7 @@ class SystemAnnouncementDataTest {
                 AnnouncementType.MAINTENANCE_NOTICE, AnnouncementSeverity.WARN,
                 "점검", "m", "b", "b",
                 LocalDateTime.of(2026, 5, 4, 3, 0), LocalDateTime.of(2026, 5, 4, 4, 0),
-                null, LocalDateTime.of(2026, 5, 4, 2, 0), 1L);
+                null, LocalDateTime.of(2026, 5, 4, 2, 0), 1L, false);
 
         assertThatThrownBy(() -> e.adjustScheduledEndTime(
                 LocalDateTime.of(2026, 5, 4, 5, 0), clockAt(LocalDateTime.of(2026, 5, 4, 2, 30))))
