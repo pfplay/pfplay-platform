@@ -17,6 +17,7 @@ import java.time.ZoneId;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -73,6 +74,45 @@ class PushSubscriptionServiceTest {
         assertThat(existing.getAuth()).isEqualTo("new-auth"); // auth updated
         assertThat(existing.getP256dh()).isEqualTo("new-p256dh");
         verify(repository, never()).save(any());            // NOT a new row
+    }
+
+    @Test
+    @DisplayName("subscribe — 폐기된 타인 row 재구독은 기기 hand-off로 허용(새 소유자로 부활)")
+    void subscribeRevivesRevokedRowOfDifferentUserAsHandoff() {
+        // given: 이전 소유자(otherUser)가 로그아웃하며 해지한 endpoint를 새 회원(user)이 재점유
+        initService();
+        Long otherUser = 2002L;
+        PushSubscriptionData existing = PushSubscriptionData.create(otherUser, "ep-1", "old-p256dh", "old-auth", "EN");
+        ReflectionTestUtils.setField(existing, "id", 7L);
+        existing.revoke(LocalDateTime.now(clock));
+        when(repository.findByEndpoint("ep-1")).thenReturn(Optional.of(existing));
+
+        // when
+        Long id = service.subscribe(user, "ep-1", "new-p256dh", "new-auth", "KO");
+
+        // then
+        assertThat(id).isEqualTo(7L);
+        assertThat(existing.isActive()).isTrue();
+        assertThat(existing.getUserId()).isEqualTo(user);   // 새 소유자로 reassign
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("subscribe — 활성 + 타인 소유 endpoint 점유는 거부(IDOR 방어)")
+    void subscribeRejectsActiveForeignEndpoint() {
+        // given: 다른 회원이 활성으로 소유 중인 endpoint
+        initService();
+        Long otherUser = 2002L;
+        PushSubscriptionData existing = PushSubscriptionData.create(otherUser, "ep-1", "p256dh", "auth", "EN");
+        ReflectionTestUtils.setField(existing, "id", 7L);
+        assertThat(existing.isActive()).isTrue();
+        when(repository.findByEndpoint("ep-1")).thenReturn(Optional.of(existing));
+
+        // when / then
+        assertThatThrownBy(() -> service.subscribe(user, "ep-1", "x", "y", "KO"))
+                .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+        assertThat(existing.getUserId()).isEqualTo(otherUser); // 변조 안 됨
+        verify(repository, never()).save(any());
     }
 
     @Test
