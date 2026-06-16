@@ -207,6 +207,13 @@ app:
       base-url-prefix: https://storage.googleapis.com
       max-file-size-bytes: 2097152   # 2 MiB
 
+  # Web Push (VAPID, RFC 8291). fail-closed: enabled 기본 false. 키는 배포 시 env 주입.
+  web-push:
+    enabled: ${WEB_PUSH_ENABLED:false}
+    public-key: ${WEB_PUSH_VAPID_PUBLIC_KEY:}
+    private-key: ${WEB_PUSH_VAPID_PRIVATE_KEY:}
+    subject: ${WEB_PUSH_SUBJECT:mailto:admin@pfplay.io}
+
 ---
 
 # 🟡 개발 환경
