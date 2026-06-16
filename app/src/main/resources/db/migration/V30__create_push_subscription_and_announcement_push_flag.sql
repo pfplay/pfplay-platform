@@ -5,7 +5,9 @@
 CREATE TABLE push_subscription (
     id          BIGINT       NOT NULL AUTO_INCREMENT,
     user_id     BIGINT       NOT NULL,
-    endpoint    VARCHAR(512) NOT NULL,
+    -- endpoint 는 ASCII push-service URL. CHARACTER SET ascii 로 1 byte/char →
+    -- UNIQUE 인덱스가 InnoDB 3072 byte 한계 안(1024 byte)에 들고, utf8mb4(512=2048byte) 대비 길이 여유 확보.
+    endpoint    VARCHAR(1024) CHARACTER SET ascii NOT NULL,
     p256dh      VARCHAR(255) NOT NULL,
     auth        VARCHAR(255) NOT NULL,
     lang        VARCHAR(8)   NOT NULL DEFAULT 'EN',

@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -40,13 +41,23 @@ public class PushFanoutService {
     @Transactional
     public void fanout(SystemAnnouncementData a) {
         if (!a.isPushEnabled()) return;
-        for (PushSubscriptionData s : repository.findAllActive()) {
+        // 휴면 기능 첫 활성화 관측용 — fan-out 규모·결과를 남긴다.
+        List<PushSubscriptionData> active = repository.findAllActive();
+        int sent = 0, gone = 0, failed = 0;
+        for (PushSubscriptionData s : active) {
             String payload = buildPayload(a, s.getLang());
             WebPushSender.Result r = sender.send(s.getEndpoint(), s.getP256dh(), s.getAuth(), payload);
             if (r == WebPushSender.Result.GONE) {
                 s.revoke(LocalDateTime.now(clock));
+                gone++;
+            } else if (r == WebPushSender.Result.OK) {
+                sent++;
+            } else {
+                failed++;
             }
         }
+        log.info("[web-push] announcement {} fan-out: subs={} ok={} gone(pruned)={} failed={}",
+                a.getId(), active.size(), sent, gone, failed);
     }
 
     private String buildPayload(SystemAnnouncementData a, String lang) {

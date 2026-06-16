@@ -15,7 +15,7 @@ import java.time.LocalDateTime;
 public class PushSubscriptionData extends BaseEntity {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY) private Long id;
     @Column(name = "user_id", nullable = false) private Long userId;
-    @Column(nullable = false, length = 512) private String endpoint;
+    @Column(nullable = false, length = 1024) private String endpoint;
     @Column(nullable = false, length = 255) private String p256dh;
     @Column(nullable = false, length = 255) private String auth;
     @Column(nullable = false, length = 8) private String lang;
