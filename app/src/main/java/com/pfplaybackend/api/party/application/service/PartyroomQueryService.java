@@ -175,8 +175,16 @@ public class PartyroomQueryService {
     }
 
     @Transactional(readOnly = true)
+    /**
+     * 룸-스코프 커맨드용 "현재 활성 크루" 조회. 행이 없거나 {@code is_active=false}(소프트 재연결
+     * stale 멤버십 등)이면 absent 와 동일하게 {@code NOT_FOUND_ACTIVE_ROOM}(CRW-001) 으로 거부한다.
+     * <p>예외 이름이 약속하는 "active" 계약을 구현이 지키도록 정렬 — 비활성 크루의 enqueueDj 가
+     * 회전 유령 dj orphan 을 만들던 결함 차단(#304, web#402 백엔드 방어선). 호출 패밀리 전체
+     * (enqueue·dequeue·changePlaylist·grade·penalty·skip)가 active 크루를 전제로 한다.
+     */
     public CrewData getCrewOrThrow(PartyroomId partyroomId, UserId userId) {
         return aggregatePort.findCrew(partyroomId, userId)
+                .filter(CrewData::isActive)
                 .orElseThrow(() -> ExceptionCreator.create(CrewException.NOT_FOUND_ACTIVE_ROOM));
     }
 
