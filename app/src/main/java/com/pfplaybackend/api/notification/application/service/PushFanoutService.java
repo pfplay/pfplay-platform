@@ -8,11 +8,12 @@ import com.pfplaybackend.api.notification.application.port.WebPushSender;
 import com.pfplaybackend.api.notification.domain.entity.data.PushSubscriptionData;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -20,10 +21,13 @@ import java.util.Map;
 /**
  * 공지 발행 → 전체 활성 구독자 Web Push fan-out.
  *
- * <p>{@code @Async} 디스패치 리스너({@code AnnouncementPushNotifier})가 호출하는 별도 bean —
- * 비동기 thread에서 독립 TX를 열어, GONE(404/410) 구독을 revoke 한 dirty-update가
- * 트랜잭션 커밋 시점에 flush 되도록 보장한다. (리스너에 직접 @Transactional 을 붙이면
- * @Async + @TransactionalEventListener 와 충돌하므로 책임을 분리한다.)
+ * <p>{@code @Async} 디스패치 리스너({@code AnnouncementPushNotifier})가 호출하는 별도 bean.
+ *
+ * <p><b>오케스트레이터는 의도적으로 @Transactional 이 아니다</b>(web#404 B fast-follow): HTTP push I/O 를
+ * write TX 안에서 돌리면 느린 네트워크 동안 DB 커넥션을 점유한다. 따라서
+ * (1) 활성 구독을 <b>keyset 페이지네이션</b>으로 배치 로드(무제한 findAll 회피),
+ * (2) HTTP 발송은 <b>TX 밖</b>에서 수행,
+ * (3) GONE(404/410)은 id 를 모아 <b>단일 짧은 bulk revoke TX</b>로 정리(per-row dirty update 회피).
  *
  * <p>{@link WebPushSender}는 fail-soft(예외 미발생)이므로 한 구독 실패가 fan-out 전체를
  * 중단하지 않는다.
@@ -38,26 +42,42 @@ public class PushFanoutService {
     private final ObjectMapper objectMapper;
     private final Clock clock;
 
-    @Transactional
+    /** fan-out 배치 크기. (테스트에서 override.) */
+    int pageSize = 500;
+
     public void fanout(SystemAnnouncementData a) {
         if (!a.isPushEnabled()) return;
-        // 휴면 기능 첫 활성화 관측용 — fan-out 규모·결과를 남긴다.
-        List<PushSubscriptionData> active = repository.findAllActive();
         int sent = 0, gone = 0, failed = 0;
-        for (PushSubscriptionData s : active) {
-            String payload = buildPayload(a, s.getLang());
-            WebPushSender.Result r = sender.send(s.getEndpoint(), s.getP256dh(), s.getAuth(), payload);
-            if (r == WebPushSender.Result.GONE) {
-                s.revoke(LocalDateTime.now(clock));
-                gone++;
-            } else if (r == WebPushSender.Result.OK) {
-                sent++;
-            } else {
-                failed++;
+        long lastId = 0L;
+        List<Long> goneIds = new ArrayList<>();
+
+        while (true) {
+            List<PushSubscriptionData> page =
+                    repository.findByRevokedAtIsNullAndIdGreaterThanOrderByIdAsc(lastId, PageRequest.ofSize(pageSize));
+            if (page.isEmpty()) break;
+            for (PushSubscriptionData s : page) {
+                // ⚠️ HTTP 는 write TX 밖에서 — 커넥션 장기 점유 방지.
+                String payload = buildPayload(a, s.getLang());
+                WebPushSender.Result r = sender.send(s.getEndpoint(), s.getP256dh(), s.getAuth(), payload);
+                if (r == WebPushSender.Result.GONE) {
+                    goneIds.add(s.getId());
+                    gone++;
+                } else if (r == WebPushSender.Result.OK) {
+                    sent++;
+                } else {
+                    failed++;
+                }
             }
+            lastId = page.get(page.size() - 1).getId();
+            if (page.size() < pageSize) break;
         }
-        log.info("[web-push] announcement {} fan-out: subs={} ok={} gone(pruned)={} failed={}",
-                a.getId(), active.size(), sent, gone, failed);
+
+        if (!goneIds.isEmpty()) {
+            repository.revokeByIds(goneIds, LocalDateTime.now(clock));  // 단일 짧은 bulk revoke TX
+        }
+        // 휴면 기능 첫 활성화 관측용 — fan-out 결과를 남긴다.
+        log.info("[web-push] announcement {} fan-out: ok={} gone(pruned)={} failed={}",
+                a.getId(), sent, gone, failed);
     }
 
     private String buildPayload(SystemAnnouncementData a, String lang) {

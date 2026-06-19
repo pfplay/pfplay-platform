@@ -45,8 +45,8 @@ import static org.mockito.Mockito.when;
  *   <li>{@code @TransactionalEventListener(AFTER_COMMIT) @Async(webPushExecutor)}
  *       리스너({@code AnnouncementPushNotifier})가 별도 thread 에서 발사,</li>
  *   <li>{@link com.pfplaybackend.api.notification.application.service.PushFanoutService#fanout}
- *       의 {@code @Transactional} 이 비동기 thread 에서 독립 TX 를 열어,
- *       GONE 으로 보고된 구독의 {@code revoke()} dirty-update 가 실제로 DB 에 flush/commit 된다.</li>
+ *       이 비동기 thread 에서 keyset 페이지네이션으로 활성 구독을 배치 로드하고(HTTP 는 write TX 밖),
+ *       GONE 으로 보고된 구독 id 를 모아 {@code revokeByIds} 단일 bulk revoke TX 로 실제 DB 에 영속한다.</li>
  * </ol>
  *
  * <p>⚠️ AFTER_COMMIT 리스너는 publish TX 가 COMMIT 되어야만 발사되므로, publish 를
