@@ -176,6 +176,18 @@ public class PartyroomAggregateAdapter implements PartyroomAggregatePort, Partyr
         djQueueRepository.save(djQueue);
     }
 
+    // ===== Reconcile cron (#308) =====
+
+    @Override
+    public List<PartyroomId> findPartyroomIdsWithInactiveCrewDj() {
+        return djRepository.findPartyroomIdsWithInactiveCrewDj();
+    }
+
+    @Override
+    public List<PartyroomId> findStuckActivatedPartyroomIds(long threshold) {
+        return partyroomPlaybackRepository.findStuckActivatedPartyroomIds(threshold);
+    }
+
     // ===== Query Port (DTO-returning QueryDSL methods) =====
 
     @Override
