@@ -32,6 +32,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -80,7 +81,7 @@ class PartyroomQueryServiceTest {
 
         PartyroomWithCrewDto dto = new PartyroomWithCrewDto(
                 1L, StageType.GENERAL, new UserId(100L), "Test Room", "Hello",
-                false, false, 6L, null,
+                false, false, 6L, LocalDateTime.now(), null,
                 List.of(host, communityManager, moderator, moderator2, clubber, listener)
         );
         when(queryPort.getCrewDataByPartyroomId()).thenReturn(List.of(dto));
@@ -93,6 +94,33 @@ class PartyroomQueryServiceTest {
         List<CrewDto> filteredCrews = result.get(0).crews();
         assertThat(filteredCrews).hasSize(3)
                 .allMatch(c -> c.gradeType().isEqualOrHigherThan(GradeType.MODERATOR));
+    }
+
+    @Test
+    @DisplayName("getAllPartyrooms — 활성 크루 수 내림차순, 동률이면 최신 생성순 정렬 (#310)")
+    void getAllPartyroomsOrdersByCrewCountDescThenCreatedAtDesc() {
+        // given — 입력 순서는 무작위(정렬 비반영), 기대=크루수 DESC, 동률(5) 시 createdAt DESC
+        LocalDateTime older = LocalDateTime.of(2026, 6, 1, 0, 0);
+        LocalDateTime newer = LocalDateTime.of(2026, 6, 18, 0, 0);
+        PartyroomWithCrewDto roomA = roomWith(1L, 3L, older);      // crew 3
+        PartyroomWithCrewDto roomB_old = roomWith(2L, 5L, older);  // crew 5, 오래된
+        PartyroomWithCrewDto roomB_new = roomWith(3L, 5L, newer);  // crew 5, 최신
+        PartyroomWithCrewDto roomC = roomWith(4L, 9L, older);      // crew 9 (최다)
+        when(queryPort.getCrewDataByPartyroomId())
+                .thenReturn(List.of(roomA, roomB_old, roomB_new, roomC));
+
+        // when
+        List<PartyroomWithCrewDto> result = partyroomQueryService.getAllPartyrooms();
+
+        // then — 9 / 5(최신) / 5(오래된) / 3
+        assertThat(result).extracting(PartyroomWithCrewDto::partyroomId)
+                .containsExactly(4L, 3L, 2L, 1L);
+    }
+
+    private PartyroomWithCrewDto roomWith(long id, long crewCount, LocalDateTime createdAt) {
+        return new PartyroomWithCrewDto(
+                id, StageType.GENERAL, new UserId(100L), "room" + id, "intro",
+                false, false, crewCount, createdAt, null, List.of());
     }
 
     @Test
@@ -357,7 +385,7 @@ class PartyroomQueryServiceTest {
 
         PartyroomWithCrewDto dto = new PartyroomWithCrewDto(
                 1L, StageType.GENERAL, user1, "Room", "Intro",
-                false, false, 2L, null, List.of(crew1, crew2));
+                false, false, 2L, LocalDateTime.now(), null, List.of(crew1, crew2));
 
         ProfileSettingDto setting1 = new ProfileSettingDto(
                 "Nick1", AvatarCompositionType.BODY_WITH_FACE, "body1.png", "face1.png", "icon1.png",
