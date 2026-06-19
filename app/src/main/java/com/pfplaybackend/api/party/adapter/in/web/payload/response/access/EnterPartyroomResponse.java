@@ -13,8 +13,10 @@ import lombok.Getter;
 public class EnterPartyroomResponse {
     private long crewId;
     private GradeType gradeType;
+    /** WS 재연결 resync 신호: 멤버십이 inactive→active 로 재활성됐는지 (web#402). */
+    private boolean reactivated;
 
-    public static EnterPartyroomResponse from(CrewData crew) {
-        return new EnterPartyroomResponse(crew.getId(), crew.getGradeType());
+    public static EnterPartyroomResponse from(CrewData crew, boolean reactivated) {
+        return new EnterPartyroomResponse(crew.getId(), crew.getGradeType(), reactivated);
     }
 }
