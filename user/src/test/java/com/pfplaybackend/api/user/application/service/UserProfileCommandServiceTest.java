@@ -115,15 +115,32 @@ class UserProfileCommandServiceTest {
     }
 
     @Test
-    @DisplayName("createProfileDataForMember — 멤버 프로필이 생성된다")
-    void createProfileDataForMemberCreatesMinimalProfile() {
-        // given
+    @DisplayName("createProfileDataForMember — 멤버 프로필이 기본 아바타로 생성된다(닉네임은 온보딩에서 별도 설정)")
+    void createProfileDataForMemberCreatesWithDefaultAvatar() {
+        // given: 게스트/슈퍼어드민과 동일한 디폴트 아바타 시드.
+        // #393 모바일 온보딩 설계가 전제한 '서버 자동 셋팅'을 회원 경로에서도 충족해야 한다.
         UserId userId = new UserId(1L);
+        AvatarBodyDto defaultBody = AvatarBodyDto.builder()
+                .id(1L).name("default").resourceUri(DEFAULT_BODY)
+                .obtainableType(ObtainmentType.BASIC).obtainableScore(0)
+                .combinable(true).defaultSetting(true)
+                .combinePositionX(50).combinePositionY(100)
+                .build();
+        when(userAvatarQueryService.getDefaultAvatarBody()).thenReturn(defaultBody);
+        when(userAvatarQueryService.getDefaultAvatarBodyUri()).thenReturn(new AvatarBodyUri(DEFAULT_BODY));
+        when(userAvatarQueryService.getDefaultAvatarFaceUri()).thenReturn(new AvatarFaceUri("default-face"));
+        when(userAvatarQueryService.getDefaultAvatarIconUri()).thenReturn(new AvatarIconUri("default-icon"));
 
         // when
         ProfileData profile = userProfileCommandService.createProfileDataForMember(userId);
 
-        // then
+        // then: 아바타 3종이 비어있지 않고 디폴트로 채워진다 (크루 목록 렌더 가능).
         assertThat(profile.getUserId()).isEqualTo(userId);
+        assertThat(profile.getAvatarSetting().getAvatarBodyUri().getValue()).isEqualTo(DEFAULT_BODY);
+        assertThat(profile.getAvatarSetting().getAvatarFaceUri().getValue()).isEqualTo("default-face");
+        assertThat(profile.getAvatarSetting().getAvatarIconUri().getValue()).isEqualTo("default-icon");
+        assertThat(profile.getAvatarSetting().getAvatarCompositionType()).isEqualTo(AvatarCompositionType.BODY_WITH_FACE);
+        // 닉네임은 회원 온보딩(updateProfileBio)에서 설정 — 생성 시점엔 비어있다.
+        assertThat(profile.getNicknameValue()).isNull();
     }
 }
