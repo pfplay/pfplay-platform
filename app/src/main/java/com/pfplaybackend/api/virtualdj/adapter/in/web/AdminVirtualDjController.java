@@ -253,15 +253,6 @@ public class AdminVirtualDjController {
         return ResponseEntity.noContent().build();
     }
 
-    @Operation(summary = "룸 가상 DJ 동결(freeze)", description = "현재 봇 수 유지, 신규 조정 금지")
-    @SecurityRequirement(name = "cookieAuth")
-    @PreAuthorize("@adminAuth.canManageVirtualDj()")
-    @PostMapping("/partyrooms/{partyroomId}/virtual-dj/freeze")
-    public ResponseEntity<Void> freeze(@PathVariable("partyroomId") Long partyroomId) {
-        adminService.freeze(new PartyroomId(partyroomId));
-        return ResponseEntity.noContent().build();
-    }
-
     @Operation(summary = "룸 가상 DJ live 상태 조회")
     @SecurityRequirement(name = "cookieAuth")
     @PreAuthorize("@adminAuth.canManageVirtualDj()")

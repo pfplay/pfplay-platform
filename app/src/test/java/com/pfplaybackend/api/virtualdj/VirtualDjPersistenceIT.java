@@ -58,8 +58,6 @@ class VirtualDjPersistenceIT extends AbstractIntegrationTest {
         flushAndClear();
         assertThat(partyroomVirtualDjConfigRepository.findByPartyroomId(1L)).isPresent();
 
-        cfg.freeze();
-        assertThat(cfg.getStatus()).isEqualTo(VirtualDjStatus.FROZEN);
         cfg.turnOff();
         assertThat(cfg.getStatus()).isEqualTo(VirtualDjStatus.OFF);
     }

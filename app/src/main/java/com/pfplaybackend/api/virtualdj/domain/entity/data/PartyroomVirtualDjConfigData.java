@@ -20,7 +20,7 @@ public class PartyroomVirtualDjConfigData extends BaseEntity {
     @Column(name = "partyroom_id", columnDefinition = "bigint unsigned")
     private Long partyroomId;
 
-    @Comment("OFF/MANAGED/FROZEN")
+    @Comment("OFF/MANAGED")
     @Column(name = "status", nullable = false, length = 16)
     @Enumerated(EnumType.STRING)
     private VirtualDjStatus status;
@@ -79,13 +79,6 @@ public class PartyroomVirtualDjConfigData extends BaseEntity {
         this.targetCount = targetCount;
         this.companionFloor = companionFloor;
         this.songPackId = songPackId;
-    }
-
-    /**
-     * 가상 DJ 동결 — 현재 봇 수 유지, 신규 조정 금지.
-     */
-    public void freeze() {
-        this.status = VirtualDjStatus.FROZEN;
     }
 
     /**

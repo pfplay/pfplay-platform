@@ -278,14 +278,6 @@ class AdminVirtualDjControllerTest {
 
     @Test
     @WithMockUser(roles = "ADMIN")
-    void freeze_admin_returns204() throws Exception {
-        mockMvc.perform(post("/api/v1/admin/partyrooms/7/virtual-dj/freeze").with(csrf()))
-                .andExpect(status().isNoContent());
-        verify(adminService).freeze(new PartyroomId(7L));
-    }
-
-    @Test
-    @WithMockUser(roles = "ADMIN")
     void liveStatus_admin_returns200() throws Exception {
         given(adminService.liveStatus(new PartyroomId(7L)))
                 .willReturn(new VirtualDjAdminService.LiveStatus(VirtualDjStatus.MANAGED, 2, 1, 5L, 2));

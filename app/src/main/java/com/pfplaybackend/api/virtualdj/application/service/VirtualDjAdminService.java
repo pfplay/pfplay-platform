@@ -21,9 +21,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 어드민 가상 DJ 운영 서비스 — config 적용/freeze/drain + 단건/일괄 reconcile + live status 조회.
+ * 어드민 가상 DJ 운영 서비스 — config 적용/drain + 단건/일괄 reconcile + live status 조회.
  *
- * <p>config 전환은 도메인 메서드({@link PartyroomVirtualDjConfigData#applyManaged}/{@code freeze}/{@code turnOff})를
+ * <p>config 전환은 도메인 메서드({@link PartyroomVirtualDjConfigData#applyManaged}/{@code turnOff})를
  * 통해서만 수행하고, 봇 투입/제거는 모두 {@link VirtualDjOrchestrator}(봇 신원 path A)에 위임한다.
  * 이 서비스는 도메인 crew/dj/playback persistence 를 직접 건드리지 않는다.
  *
@@ -101,15 +101,6 @@ public class VirtualDjAdminService {
         log.info("[VirtualDjAdmin.drain] partyroomId={}", partyroomId.getId());
     }
 
-    /** 동결 — 현재 봇 수 유지, 신규 조정 금지. reconcile/drain 트리거 없음. */
-    @Transactional
-    public void freeze(PartyroomId partyroomId) {
-        PartyroomVirtualDjConfigData cfg = loadOrCreate(partyroomId);
-        cfg.freeze();
-        configRepository.save(cfg);
-        log.info("[VirtualDjAdmin.freeze] partyroomId={}", partyroomId.getId());
-    }
-
     // ── bulk ──
 
     /**
@@ -164,7 +155,6 @@ public class VirtualDjAdminService {
                 }
                 cfg.applyManaged(targetCount, companionFloor, songPackId);
             }
-            case FROZEN -> cfg.freeze();
             case OFF -> cfg.turnOff();
         }
     }
@@ -172,7 +162,7 @@ public class VirtualDjAdminService {
     /**
      * 룸의 가상 DJ live 상태.
      *
-     * @param status            현재 config 상태(OFF/MANAGED/FROZEN)
+     * @param status            현재 config 상태(OFF/MANAGED)
      * @param targetCount       목표 봇 수
      * @param companionFloor    동반 진입 하한선
      * @param songPackId        적용 송 팩 id (nullable)

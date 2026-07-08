@@ -149,23 +149,6 @@ class VirtualDjOrchestratorIT extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("FROZEN방 — reconcile 무변경 (no-op)")
-    void FROZEN방_무변경() {
-        long roomId = seedRoom(5);
-        PartyroomVirtualDjConfigData cfg = PartyroomVirtualDjConfigData.builder()
-                .partyroomId(roomId).status(VirtualDjStatus.FROZEN)
-                .targetCount(2).companionFloor(1).songPackId(seedSongPack()).build();
-        configRepository.save(cfg);
-        poolService.provision(3);
-        flushAndClear();
-
-        orchestrator.reconcileRoom(new PartyroomId(roomId));
-        flushAndClear();
-
-        assertThat(activeBotDjCount(roomId)).isZero();
-    }
-
-    @Test
     @DisplayName("MANAGED_송팩없음 — 봇 추가 없음 (SKIP_NO_SONG_PACK)")
     void MANAGED_송팩없음_무변경() {
         long roomId = seedRoom(5);

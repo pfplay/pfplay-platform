@@ -43,7 +43,7 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 
 /**
- * 어드민 가상 DJ 서비스 통합 테스트 — config 적용→MANAGED+reconcile, drain 봇 제거, bulk 다중 룸, freeze.
+ * 어드민 가상 DJ 서비스 통합 테스트 — config 적용→MANAGED+reconcile, drain 봇 제거, bulk 다중 룸.
  *
  * <p>fixture 패턴은 {@link VirtualDjOrchestratorIT} 와 동일 — {@link UserProfileQueryPort} mock 으로
  * assertHasProfile 게이트만 통과시키고 나머지는 실 빈/실 DB(Testcontainers).
@@ -127,26 +127,6 @@ class VirtualDjAdminServiceIT extends AbstractIntegrationTest {
         assertThat(activeBotDjCount(roomId)).isZero();
         assertThat(configRepository.findByPartyroomId(roomId).orElseThrow().getStatus())
                 .isEqualTo(VirtualDjStatus.OFF);
-    }
-
-    @Test
-    @DisplayName("freeze — status FROZEN 전환, 봇 수 불변")
-    void freeze_setsFrozen() {
-        long roomId = seedRoom(5);
-        Long packId = seedSongPack();
-        poolService.provision(3);
-        flushAndClear();
-
-        adminService.applyConfig(new PartyroomId(roomId), VirtualDjStatus.MANAGED, 2, 1, packId);
-        flushAndClear();
-        long botsBefore = activeBotDjCount(roomId);
-
-        adminService.freeze(new PartyroomId(roomId));
-        flushAndClear();
-
-        assertThat(configRepository.findByPartyroomId(roomId).orElseThrow().getStatus())
-                .isEqualTo(VirtualDjStatus.FROZEN);
-        assertThat(activeBotDjCount(roomId)).isEqualTo(botsBefore);
     }
 
     @Test

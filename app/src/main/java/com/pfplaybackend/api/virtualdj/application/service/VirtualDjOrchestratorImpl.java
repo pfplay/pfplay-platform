@@ -94,7 +94,7 @@ public class VirtualDjOrchestratorImpl implements VirtualDjOrchestrator {
         Optional<PartyroomVirtualDjConfigData> optConfig =
                 configRepository.findByPartyroomId(partyroomId.getId());
         if (optConfig.isEmpty() || optConfig.get().getStatus() != VirtualDjStatus.MANAGED) {
-            // OFF / FROZEN / 미설정 → 아무 것도 하지 않는다.
+            // MANAGED 아니면 아무 것도 하지 않는다.
             log.debug("[reconcile] SKIP - partyroomId={}, status={}", partyroomId.getId(),
                     optConfig.map(c -> c.getStatus().name()).orElse("ABSENT"));
             return;
