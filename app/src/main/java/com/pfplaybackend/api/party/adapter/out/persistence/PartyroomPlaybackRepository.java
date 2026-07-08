@@ -17,7 +17,7 @@ public interface PartyroomPlaybackRepository extends JpaRepository<PartyroomPlay
      */
     @Query("SELECT pp.partyroomId FROM PartyroomPlaybackData pp, PartyroomData pr " +
            "LEFT JOIN PlaybackData p ON p.id = pp.currentPlaybackId.id " +
-           "WHERE pr.partyroomId.id = pp.partyroomId.id " +
+           "WHERE pr.id = pp.partyroomId.id " +
            "AND pr.status = com.pfplaybackend.api.party.domain.enums.PartyroomStatus.ACTIVE " +
            "AND pp.isActivated = true AND (p IS NULL OR p.endTime < :threshold)")
     List<PartyroomId> findStuckActivatedPartyroomIds(@Param("threshold") long threshold);

@@ -21,7 +21,7 @@ public interface DjRepository extends JpaRepository<DjData, Long> {
      */
     @Query("SELECT DISTINCT d.partyroomId FROM DjData d, CrewData c, PartyroomData pr " +
            "WHERE c.id = d.crewId.id AND c.isActive = false " +
-           "AND pr.partyroomId.id = d.partyroomId.id " +
+           "AND pr.id = d.partyroomId.id " +
            "AND pr.status = com.pfplaybackend.api.party.domain.enums.PartyroomStatus.ACTIVE")
     List<PartyroomId> findPartyroomIdsWithInactiveCrewDj();
 }
