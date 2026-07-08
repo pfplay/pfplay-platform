@@ -31,12 +31,13 @@ public class SystemAnnouncementData extends BaseEntity {
     @Column(name = "cancelled_at") private LocalDateTime cancelledAt;
     @Column(name = "cancelled_by_administrator_id") private Long cancelledByAdministratorId;
     @Column(name = "completed_at") private LocalDateTime completedAt;
+    @Column(name = "push_enabled", nullable = false) private boolean pushEnabled;
 
     public static SystemAnnouncementData create(
             AnnouncementType type, AnnouncementSeverity severity,
             String titleKo, String titleEn, String messageKo, String messageEn,
             LocalDateTime scheduledStartAt, LocalDateTime scheduledEndAt, LocalDateTime expiresAt,
-            LocalDateTime sentAt, Long sentByAdministratorId) {
+            LocalDateTime sentAt, Long sentByAdministratorId, boolean pushEnabled) {
         if (type == AnnouncementType.MAINTENANCE_NOTICE) {
             if (scheduledStartAt == null || scheduledEndAt == null || expiresAt != null)
                 throw ExceptionCreator.create(AnnouncementException.INVALID_SCHEDULE_FOR_TYPE);
@@ -51,6 +52,7 @@ public class SystemAnnouncementData extends BaseEntity {
         e.titleKo = titleKo; e.titleEn = titleEn; e.messageKo = messageKo; e.messageEn = messageEn;
         e.scheduledStartAt = scheduledStartAt; e.scheduledEndAt = scheduledEndAt; e.expiresAt = expiresAt;
         e.sentAt = sentAt; e.sentByAdministratorId = sentByAdministratorId;
+        e.pushEnabled = pushEnabled;
         return e;
     }
 

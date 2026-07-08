@@ -73,6 +73,6 @@ class VercelEdgeConfigAdapterTest {
         LocalDateTime s = LocalDateTime.parse("2026-05-04T03:00:00");
         return SystemAnnouncementData.create(
             AnnouncementType.MAINTENANCE_NOTICE, AnnouncementSeverity.WARN,
-            "점검", "M", "안내", "N", s, s.plusHours(1), null, s.minusDays(1), 1L);
+            "점검", "M", "안내", "N", s, s.plusHours(1), null, s.minusDays(1), 1L, false);
     }
 }
