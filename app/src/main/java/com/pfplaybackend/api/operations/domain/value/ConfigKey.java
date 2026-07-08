@@ -46,6 +46,11 @@ public record ConfigKey(String value) {
 
     // 가상 DJ P3 채팅 (Chunk 3). max.inflight 키 없음 — 동시성은 후속 chunk 의 단일 게이트 키 TTL 로 처리.
     public static final ConfigKey VDJ_CHAT_ENABLED = new ConfigKey("vdj.chat.enabled");
+
+    // 가상 DJ 봇 반응(좋아요) — 방 생동감 (Chunk 6). 기본 off(dormant/fail-closed).
+    public static final ConfigKey VDJ_REACTION_ENABLED = new ConfigKey("vdj.reaction.enabled");
+    public static final ConfigKey VDJ_REACTION_PROBABILITY_PERCENT = new ConfigKey("vdj.reaction.probability_percent");
+
     public static final ConfigKey VDJ_CHAT_TRIGGER_PROBABILITY = new ConfigKey("vdj.chat.trigger.probability");
     public static final ConfigKey VDJ_CHAT_ROOM_COOLDOWN_SECONDS = new ConfigKey("vdj.chat.room.cooldown.seconds");
     public static final ConfigKey VDJ_CHAT_CONTEXT_SIZE = new ConfigKey("vdj.chat.context.size");
