@@ -11,6 +11,7 @@ import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.exception.ExceptionCreator;
 import com.pfplaybackend.api.party.application.service.PartyroomAccessCommandService;
 import com.pfplaybackend.api.party.application.service.PlaybackQueryService;
+import com.pfplaybackend.api.party.application.service.PlaybackReactionSimulationService;
 import com.pfplaybackend.api.party.domain.entity.data.*;
 import com.pfplaybackend.api.party.domain.enums.GradeType;
 import com.pfplaybackend.api.party.domain.enums.ReactionType;
@@ -48,7 +49,7 @@ public class AdminPartyroomService {
     private final PartyroomAccessCommandService partyroomAccessCommandService;
     private final AdminUserService adminUserService;
     private final PlaybackQueryService playbackQueryService;
-    private final ReactionSimulationService reactionSimulationService;
+    private final PlaybackReactionSimulationService playbackReactionSimulationService;
     private final Clock clock;
     private final ExecutorService reactionSimulationExecutor;
 
@@ -237,13 +238,18 @@ public class AdminPartyroomService {
                     Thread.currentThread().interrupt();
                     log.warn("Reaction simulation interrupted", e);
                 }
-                return reactionSimulationService.simulateReaction(
+                playbackReactionSimulationService.apply(
                         crew.getUserId(),
                         new CrewId(crew.getId()),
                         playbackId,
                         new PartyroomId(partyroomId),
                         ReactionType.LIKE,
                         delayMs
+                );
+                return new SimulateReactionsResult.SimulatedReaction(
+                        crew.getUserId().getUid().toString(),
+                        ReactionType.LIKE.name(),
+                        true
                 );
             }, reactionSimulationExecutor);
             reactionFutures.add(future);
@@ -258,13 +264,18 @@ public class AdminPartyroomService {
                     Thread.currentThread().interrupt();
                     log.warn("Reaction simulation interrupted", e);
                 }
-                return reactionSimulationService.simulateReaction(
+                playbackReactionSimulationService.apply(
                         crew.getUserId(),
                         new CrewId(crew.getId()),
                         playbackId,
                         new PartyroomId(partyroomId),
                         ReactionType.GRAB,
                         delayMs
+                );
+                return new SimulateReactionsResult.SimulatedReaction(
+                        crew.getUserId().getUid().toString(),
+                        ReactionType.GRAB.name(),
+                        true
                 );
             }, reactionSimulationExecutor);
             reactionFutures.add(future);
