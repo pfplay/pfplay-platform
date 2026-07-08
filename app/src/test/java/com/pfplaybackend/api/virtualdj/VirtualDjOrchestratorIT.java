@@ -119,7 +119,7 @@ class VirtualDjOrchestratorIT extends AbstractIntegrationTest {
     @DisplayName("사람0명_MANAGED — 봇이 T(=2)까지 채워진다")
     void 사람0명_MANAGED_봇이_T까지_채워진다() {
         long roomId = seedRoom(5);
-        seedManagedConfig(roomId, /*target*/2, /*djCount*/2, seedSongPack());
+        seedManagedConfig(roomId, /*target*/2, /*djBotCount*/2, seedSongPack());
         poolService.provision(3); // ≥ 2 idle bots
         flushAndClear();
 
@@ -204,7 +204,7 @@ class VirtualDjOrchestratorIT extends AbstractIntegrationTest {
     private void seedManagedConfig(long roomId, int target, int floor, Long songPackId) {
         PartyroomVirtualDjConfigData cfg = PartyroomVirtualDjConfigData.builder()
                 .partyroomId(roomId).status(VirtualDjStatus.MANAGED)
-                .targetCount(target).djCount(floor).songPackId(songPackId).build();
+                .targetCount(target).djBotCount(floor).songPackId(songPackId).build();
         configRepository.save(cfg);
     }
 

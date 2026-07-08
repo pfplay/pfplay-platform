@@ -77,14 +77,14 @@ public class VirtualDjAdminService {
     /** 단일 룸 config 적용 후 MANAGED 면 reconcile, OFF 면 drain 을 같은 트랜잭션에서 트리거. */
     @Transactional
     public void applyConfig(PartyroomId partyroomId, VirtualDjStatus status, Integer targetCount,
-                            Integer djCount, Long songPackId) {
+                            Integer djBotCount, Long songPackId) {
         PartyroomVirtualDjConfigData cfg = loadOrCreate(partyroomId);
-        applyStatus(cfg, status, targetCount, djCount, songPackId);
+        applyStatus(cfg, status, targetCount, djBotCount, songPackId);
         // saveAndFlush: reconcile/drain 의 봇 명령 경로가 영속성 컨텍스트를 clear 할 수 있어,
         // config 변경을 즉시 DB 에 확정한 뒤 reconcile(자기 config 재조회)/drain 을 트리거한다.
         configRepository.saveAndFlush(cfg);
-        log.info("[VirtualDjAdmin.applyConfig] partyroomId={} status={} target={} djCount={} songPackId={}",
-                partyroomId.getId(), status, targetCount, djCount, songPackId);
+        log.info("[VirtualDjAdmin.applyConfig] partyroomId={} status={} target={} djBotCount={} songPackId={}",
+                partyroomId.getId(), status, targetCount, djBotCount, songPackId);
 
         if (status == VirtualDjStatus.MANAGED) {
             orchestrator.reconcileRoom(partyroomId);
@@ -115,11 +115,11 @@ public class VirtualDjAdminService {
      * config 저장을 롤백하지 않도록, 각 룸의 실패를 try/catch 로 격리하고 배치를 계속 진행한다.
      */
     public void applyBulk(List<Long> partyroomIds, VirtualDjStatus status, Integer targetCount,
-                          Integer djCount, Long songPackId) {
+                          Integer djBotCount, Long songPackId) {
         List<Long> failedIds = new ArrayList<>();
         for (Long id : partyroomIds) {
             try {
-                self.applyConfig(new PartyroomId(id), status, targetCount, djCount, songPackId);
+                self.applyConfig(new PartyroomId(id), status, targetCount, djBotCount, songPackId);
             } catch (Exception e) {
                 log.warn("[VirtualDjAdmin.applyBulk] ROOM_FAILED - partyroomId={}, reason={}",
                         id, e.getMessage());
@@ -139,7 +139,7 @@ public class VirtualDjAdminService {
         PartyroomVirtualDjConfigData cfg = configRepository.findByPartyroomId(partyroomId.getId())
                 .orElseThrow(() -> ExceptionCreator.create(VirtualDjException.CONFIG_NOT_FOUND));
         int currentBotDjCount = activeDjSnapshotService.snapshot(partyroomId).botCount();
-        return new LiveStatus(cfg.getStatus(), cfg.getTargetCount(), cfg.getDjCount(),
+        return new LiveStatus(cfg.getStatus(), cfg.getTargetCount(), cfg.getDjBotCount(),
                 cfg.getSongPackId(), currentBotDjCount);
     }
 
@@ -151,28 +151,28 @@ public class VirtualDjAdminService {
     }
 
     private void applyStatus(PartyroomVirtualDjConfigData cfg, VirtualDjStatus status,
-                             Integer targetCount, Integer djCount, Long songPackId) {
+                             Integer targetCount, Integer djBotCount, Long songPackId) {
         switch (status) {
             case MANAGED -> {
-                if (targetCount == null || djCount == null) {
+                if (targetCount == null || djBotCount == null) {
                     throw ExceptionCreator.create(VirtualDjException.INVALID_CONFIG);
                 }
-                // djCount 는 목표 봇 수(targetCount) 를 넘을 수 없다.
-                if (djCount > targetCount) {
+                // djBotCount 는 목표 봇 수(targetCount) 를 넘을 수 없다.
+                if (djBotCount > targetCount) {
                     throw ExceptionCreator.create(VirtualDjException.INVALID_CONFIG);
                 }
-                // 송 팩이 지정되면, 각 봇에 분배될 트랙(룸 시간제한 통과분)이 djCount 이상이어야 한다.
+                // 송 팩이 지정되면, 각 봇에 분배될 트랙(룸 시간제한 통과분)이 djBotCount 이상이어야 한다.
                 // countPlayableTracks 는 SongPackApplier.applyToBot 과 동일한 필터를 재사용한다.
                 if (songPackId != null) {
                     PartyroomData room = partyroomQueryService.getPartyroomById(
                             new PartyroomId(cfg.getPartyroomId()));
                     int timeLimitMinutes = room.getPlaybackTimeLimit().getMinutes();
                     int playableTrackCount = songPackApplier.countPlayableTracks(songPackId, timeLimitMinutes);
-                    if (djCount > playableTrackCount) {
+                    if (djBotCount > playableTrackCount) {
                         throw ExceptionCreator.create(VirtualDjException.DJ_COUNT_EXCEEDS_TRACKS);
                     }
                 }
-                cfg.applyManaged(targetCount, djCount, songPackId);
+                cfg.applyManaged(targetCount, djBotCount, songPackId);
             }
             case OFF -> cfg.turnOff();
         }
@@ -183,11 +183,11 @@ public class VirtualDjAdminService {
      *
      * @param status            현재 config 상태(OFF/MANAGED)
      * @param targetCount       목표 봇 수
-     * @param djCount           크루(DJ) 봇 수
+     * @param djBotCount           크루(DJ) 봇 수
      * @param songPackId        적용 송 팩 id (nullable)
      * @param currentBotDjCount 현재 활성 봇 DJ 수
      */
-    public record LiveStatus(VirtualDjStatus status, Integer targetCount, Integer djCount,
+    public record LiveStatus(VirtualDjStatus status, Integer targetCount, Integer djBotCount,
                              Long songPackId, int currentBotDjCount) {}
 
     /**

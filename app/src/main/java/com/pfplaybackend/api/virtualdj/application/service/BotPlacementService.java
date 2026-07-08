@@ -31,8 +31,8 @@ import java.util.Set;
  * <ul>
  *   <li><b>크루(DJ) 봇</b> — 입장 + DJ 등록. 각자 {@code [0, effectiveDjTarget)} slot 을 점유하고
  *       그 slot 의 트랙 파티션만 재생한다. 목표 =
- *       {@code effectiveDjTarget = min(djCount, filteredTrackCount)}.</li>
- *   <li><b>리스너 봇</b> — 입장만(DJ 미등록, slot·송팩 없음). 목표 = {@code targetCount − djCount}.</li>
+ *       {@code effectiveDjTarget = min(djBotCount, filteredTrackCount)}.</li>
+ *   <li><b>리스너 봇</b> — 입장만(DJ 미등록, slot·송팩 없음). 목표 = {@code targetCount − djBotCount}.</li>
  * </ul>
  * 두 목표 모두 방 안 사람 수와 무관한 고정값이다({@link ActiveDjSnapshot#humanCount()} 는 읽지 않는다).
  *
@@ -67,9 +67,9 @@ public class BotPlacementService {
      * <p>알고리즘:
      * <ol>
      *   <li>config 로드 — MANAGED 아니거나 songPackId 없으면 skip.</li>
-     *   <li>{@code effectiveDjTarget = min(djCount, filteredTrackCount)} 계산(트랙 부족 시 clamp).</li>
+     *   <li>{@code effectiveDjTarget = min(djBotCount, filteredTrackCount)} 계산(트랙 부족 시 clamp).</li>
      *   <li>DJ 봇을 {@code effectiveDjTarget} 로 수렴(slot 배정 + 송팩 조각 복사 + 입장 + DJ 등록).</li>
-     *   <li>리스너 봇을 {@code targetCount − djCount} 로 수렴(입장만).</li>
+     *   <li>리스너 봇을 {@code targetCount − djBotCount} 로 수렴(입장만).</li>
      * </ol>
      */
     public void placeToTarget(PartyroomId partyroomId) {
@@ -88,7 +88,7 @@ public class BotPlacementService {
         }
 
         Long songPackId = cfg.getSongPackId();
-        int djCount = cfg.getDjCount();
+        int djBotCount = cfg.getDjBotCount();
         int targetCount = cfg.getTargetCount();
 
         PartyroomData room = partyroomQueryService.getPartyroomById(partyroomId);
@@ -96,25 +96,25 @@ public class BotPlacementService {
 
         // 2) 트랙 수에 clamp 된 실제 DJ 목표
         int filtered = songPackApplier.countPlayableTracks(songPackId, timeLimitMinutes);
-        int effectiveDjTarget = TrackDistribution.effectiveDjTarget(djCount, filtered);
-        if (effectiveDjTarget < djCount) {
-            log.warn("[placeToTarget] DJ_COUNT_CLAMPED_BY_TRACKS - partyroomId={}, djCount={}, filteredTracks={}, effectiveDjTarget={}",
-                    partyroomId.getId(), djCount, filtered, effectiveDjTarget);
+        int effectiveDjTarget = TrackDistribution.effectiveDjTarget(djBotCount, filtered);
+        if (effectiveDjTarget < djBotCount) {
+            log.warn("[placeToTarget] DJ_COUNT_CLAMPED_BY_TRACKS - partyroomId={}, djBotCount={}, filteredTracks={}, effectiveDjTarget={}",
+                    partyroomId.getId(), djBotCount, filtered, effectiveDjTarget);
         }
 
         // step 3 이전 스냅샷 — 현재 DJ 봇(가장 최근 합류 먼저).
         ActiveDjSnapshotService.ActiveDjSnapshot snapshot = activeDjSnapshotService.snapshot(partyroomId);
         List<UserId> djBotsBefore = snapshot.botUserIdsByJoinedDesc();
 
-        log.info("[placeToTarget] partyroomId={}, human={}(무시), djBotsBefore={}, targetCount={}, djCount={}, effectiveDjTarget={}",
-                partyroomId.getId(), snapshot.humanCount(), djBotsBefore.size(), targetCount, djCount, effectiveDjTarget);
+        log.info("[placeToTarget] partyroomId={}, human={}(무시), djBotsBefore={}, targetCount={}, djBotCount={}, effectiveDjTarget={}",
+                partyroomId.getId(), snapshot.humanCount(), djBotsBefore.size(), targetCount, djBotCount, effectiveDjTarget);
 
         // 3) DJ 봇 수렴 → 배치 후의 실제 live DJ 봇 목록을 돌려받는다(step 4 에서 리스너 식별에 사용).
         List<UserId> djBotsAfter = convergeDjBots(partyroomId, songPackId, timeLimitMinutes,
                 effectiveDjTarget, djBotsBefore);
 
-        // 4) 리스너 봇 수렴 — 목표는 raw djCount 기준(트랙 clamp 가 would-be DJ 를 리스너로 바꾸지 않는다).
-        int listenerTarget = Math.max(0, targetCount - djCount);
+        // 4) 리스너 봇 수렴 — 목표는 raw djBotCount 기준(트랙 clamp 가 would-be DJ 를 리스너로 바꾸지 않는다).
+        int listenerTarget = Math.max(0, targetCount - djBotCount);
         convergeListenerBots(partyroomId, listenerTarget, djBotsAfter);
     }
 
@@ -149,7 +149,7 @@ public class BotPlacementService {
      * DJ 봇을 {@code effectiveDjTarget} 로 수렴시키고, 수렴 후의 live DJ 봇 목록을 반환한다.
      *
      * <p>부족 시 idle 봇을 claim 해 slot 배정({@code [0, effectiveDjTarget)}) → 송팩 조각 복사 →
-     * 입장 + DJ 등록. 초과 시 가장 최근 합류한 DJ 봇부터 exit. slot/chunk 의 djCount 인자는 반드시
+     * 입장 + DJ 등록. 초과 시 가장 최근 합류한 DJ 봇부터 exit. slot/chunk 의 djBotCount 인자는 반드시
      * {@code effectiveDjTarget} 를 쓴다(slot 범위·트랙 파티션이 실제 DJ 수와 일치하도록).
      *
      * @return 수렴 후 실제 live DJ 봇 UserId 목록(성공적으로 추가/유지된 것만)

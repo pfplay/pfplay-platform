@@ -91,12 +91,12 @@ class BotPlacementServiceTest {
         given(poolService.playlistIdOf(any(UserId.class))).willReturn(100L);
     }
 
-    private void stubConfig(int targetCount, int djCount, Long songPackId) {
+    private void stubConfig(int targetCount, int djBotCount, Long songPackId) {
         PartyroomVirtualDjConfigData cfg = PartyroomVirtualDjConfigData.builder()
                 .partyroomId(ROOM.getId())
                 .status(VirtualDjStatus.MANAGED)
                 .targetCount(targetCount)
-                .djCount(djCount)
+                .djBotCount(djBotCount)
                 .songPackId(songPackId)
                 .build();
         given(configRepository.findByPartyroomId(ROOM.getId())).willReturn(Optional.of(cfg));
@@ -108,7 +108,7 @@ class BotPlacementServiceTest {
     }
 
     @Test
-    @DisplayName("(a) DJ 부족 — 현재 DJ 1, djCount 3, 트랙 10 → 2봇 추가(slot 배정+chunk+입장+DJ등록)")
+    @DisplayName("(a) DJ 부족 — 현재 DJ 1, djBotCount 3, 트랙 10 → 2봇 추가(slot 배정+chunk+입장+DJ등록)")
     void djShortfall() {
         stubConfig(3, 3, 10L);
         given(songPackApplier.countPlayableTracks(10L, TIME_LIMIT)).willReturn(10); // effective=3
@@ -124,7 +124,7 @@ class BotPlacementServiceTest {
 
         service.placeToTarget(ROOM);
 
-        // 신규 2봇: slot 배정(effectiveDjTarget=3) + chunk 복사(djCount=3) + 입장 + DJ 등록
+        // 신규 2봇: slot 배정(effectiveDjTarget=3) + chunk 복사(djBotCount=3) + 입장 + DJ 등록
         verify(botSlotAssigner, times(2))
                 .reclaimAndAssign(eq(ROOM), liveIdsCaptor.capture(), any(Long.class), eq(3));
         verify(songPackApplier, times(2)).applyChunkToBot(any(UserId.class), eq(10L), eq(TIME_LIMIT), anyInt(), eq(3));
@@ -140,7 +140,7 @@ class BotPlacementServiceTest {
     }
 
     @Test
-    @DisplayName("(b) 트랙 clamp — djCount 5 인데 트랙 2 → effective=2, DJ 2봇만(slot/chunk djCount=2)")
+    @DisplayName("(b) 트랙 clamp — djBotCount 5 인데 트랙 2 → effective=2, DJ 2봇만(slot/chunk djBotCount=2)")
     void trackClamp() {
         stubConfig(5, 5, 20L);
         given(songPackApplier.countPlayableTracks(20L, TIME_LIMIT)).willReturn(2); // effective=2
@@ -152,7 +152,7 @@ class BotPlacementServiceTest {
 
         service.placeToTarget(ROOM);
 
-        // 최대 2봇만, slot/chunk djCount 인자는 effective=2 (raw 5 아님)
+        // 최대 2봇만, slot/chunk djBotCount 인자는 effective=2 (raw 5 아님)
         verify(poolService).findIdleBots(2); // effective(2) - current(0) = 2 (5 아님)
         verify(botSlotAssigner, times(2)).reclaimAndAssign(eq(ROOM), anyList(), any(Long.class), eq(2));
         verify(botSlotAssigner, never()).reclaimAndAssign(eq(ROOM), anyList(), any(Long.class), eq(5));
@@ -307,7 +307,7 @@ class BotPlacementServiceTest {
         PartyroomVirtualDjConfigData off = PartyroomVirtualDjConfigData.builder()
                 .partyroomId(ROOM.getId())
                 .status(VirtualDjStatus.OFF)
-                .targetCount(2).djCount(1).songPackId(10L)
+                .targetCount(2).djBotCount(1).songPackId(10L)
                 .build();
         given(configRepository.findByPartyroomId(ROOM.getId())).willReturn(Optional.of(off));
 

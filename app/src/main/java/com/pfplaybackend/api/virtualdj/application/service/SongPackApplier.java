@@ -58,14 +58,14 @@ public class SongPackApplier {
      * @param botUserId                     봇 사용자 id
      * @param songPackId                    적용할 송 팩 id
      * @param roomPlaybackTimeLimitMinutes  룸의 재생 시간 제한 (분). 0 이하 = unlimited.
-     * @param slotIndex                     이 봇의 slot 인덱스 ({@code [0, djCount)})
-     * @param djCount                       조각 수(= 실제 DJ 목표)
+     * @param slotIndex                     이 봇의 slot 인덱스 ({@code [0, djBotCount)})
+     * @param djBotCount                       조각 수(= 실제 DJ 목표)
      */
     @Transactional
     public void applyChunkToBot(UserId botUserId, Long songPackId, int roomPlaybackTimeLimitMinutes,
-                                int slotIndex, int djCount) {
+                                int slotIndex, int djBotCount) {
         List<VirtualSongPackTrackData> playable = playableTracks(songPackId, roomPlaybackTimeLimitMinutes);
-        copyTracksToBot(botUserId, songPackId, TrackDistribution.chunkFor(playable, djCount, slotIndex));
+        copyTracksToBot(botUserId, songPackId, TrackDistribution.chunkFor(playable, djBotCount, slotIndex));
     }
 
     /**
@@ -108,7 +108,7 @@ public class SongPackApplier {
     /**
      * 송 팩 트랙 중 룸 시간제한을 통과하는(= 봇 playlist 에 실제로 복사될) 트랙 수.
      *
-     * <p>MANAGED 전환 검증에서 djCount 상한으로 쓴다 — {@link #applyToBot} 이 동일 필터로 복사하므로
+     * <p>MANAGED 전환 검증에서 djBotCount 상한으로 쓴다 — {@link #applyToBot} 이 동일 필터로 복사하므로
      * 이 카운트가 곧 각 봇이 재생할 수 있는 트랙 수다. 필터 로직은 {@link #playableTracks} 로 단일화한다.
      */
     @Transactional(readOnly = true)

@@ -1,7 +1,7 @@
--- V32: 가상 DJ 봇 모델 개편 — dj_count 추가, companion_floor 제거, FROZEN 제거, 봇 slot 테이블
+-- V32: 가상 DJ 봇 모델 개편 — dj_bot_count 추가, companion_floor 제거, FROZEN 제거, 봇 slot 테이블
 ALTER TABLE partyroom_virtual_dj_config
-    ADD COLUMN dj_count INT UNSIGNED NOT NULL DEFAULT 1 COMMENT '크루(DJ) 봇 수' AFTER target_count;
-UPDATE partyroom_virtual_dj_config SET dj_count = target_count;
+    ADD COLUMN dj_bot_count INT UNSIGNED NOT NULL DEFAULT 1 COMMENT '크루(DJ) 봇 수' AFTER target_count;
+UPDATE partyroom_virtual_dj_config SET dj_bot_count = target_count;
 ALTER TABLE partyroom_virtual_dj_config DROP COLUMN companion_floor;
 UPDATE partyroom_virtual_dj_config SET status = 'MANAGED' WHERE status = 'FROZEN';
 ALTER TABLE partyroom_virtual_dj_config

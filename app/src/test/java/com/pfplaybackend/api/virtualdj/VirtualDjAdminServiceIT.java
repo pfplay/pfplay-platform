@@ -171,14 +171,14 @@ class VirtualDjAdminServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("applyConfig MANAGED — djCount > targetCount 이면 INVALID_CONFIG(VDJ-007)")
-    void applyConfig_djCountExceedsTarget_throwsInvalidConfig() {
+    @DisplayName("applyConfig MANAGED — djBotCount > targetCount 이면 INVALID_CONFIG(VDJ-007)")
+    void applyConfig_djBotCountExceedsTarget_throwsInvalidConfig() {
         long roomId = seedRoom(5);
         Long packId = seedSongPack();
         flushAndClear();
 
         assertThatThrownBy(() -> adminService.applyConfig(
-                new PartyroomId(roomId), VirtualDjStatus.MANAGED, /*target*/2, /*djCount*/3, packId))
+                new PartyroomId(roomId), VirtualDjStatus.MANAGED, /*target*/2, /*djBotCount*/3, packId))
                 .isInstanceOf(BadRequestException.class)
                 .hasFieldOrPropertyWithValue("errorCode", "VDJ-007");
 
@@ -187,15 +187,15 @@ class VirtualDjAdminServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("applyConfig MANAGED — djCount 가 필터 통과 트랙 수를 초과하면 DJ_COUNT_EXCEEDS_TRACKS(VDJ-014)")
-    void applyConfig_djCountExceedsFilteredTracks_throwsDjCountExceedsTracks() {
+    @DisplayName("applyConfig MANAGED — djBotCount 가 필터 통과 트랙 수를 초과하면 DJ_COUNT_EXCEEDS_TRACKS(VDJ-014)")
+    void applyConfig_djBotCountExceedsFilteredTracks_throwsDjCountExceedsTracks() {
         // seedRoom(5): 5분 제한 → seedSongPack 의 2트랙(2:00, 3:00) 모두 통과 → filteredTrackCount = 2
         long roomId = seedRoom(5);
         Long packId = seedSongPack();
         flushAndClear();
 
         assertThatThrownBy(() -> adminService.applyConfig(
-                new PartyroomId(roomId), VirtualDjStatus.MANAGED, /*target*/5, /*djCount*/5, packId))
+                new PartyroomId(roomId), VirtualDjStatus.MANAGED, /*target*/5, /*djBotCount*/5, packId))
                 .isInstanceOf(BadRequestException.class)
                 .hasFieldOrPropertyWithValue("errorCode", "VDJ-014");
 

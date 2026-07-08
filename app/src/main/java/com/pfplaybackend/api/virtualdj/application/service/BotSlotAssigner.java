@@ -14,13 +14,13 @@ import java.util.Set;
 /**
  * 봇 slot 재확보(reclaim) + 배정(assign).
  *
- * <p>방 안에서 각 DJ 봇은 {@code [0, djCount)} 범위의 안정적인 slot index 를 점유하고, 트랙은
+ * <p>방 안에서 각 DJ 봇은 {@code [0, djBotCount)} 범위의 안정적인 slot index 를 점유하고, 트랙은
  * {@code TrackDistribution} 파티션으로 그 slot 에 매핑된다. 새 봇을 투입할 때:
  * <ol>
  *   <li>방의 저장된 slot 을 전부 로드한다.</li>
  *   <li>더 이상 live 하지 않은(=크루에서 빠진) 봇의 slot 은 정리(delete)한다 — §6 cleanup.</li>
  *   <li>여전히 live 한 봇들이 점유한 slot 집합을 계산한다.</li>
- *   <li>{@code [0, djCount)} 중 점유되지 않은 <b>최소</b> index 를 골라 새 봇에 배정·저장하고 반환한다.</li>
+ *   <li>{@code [0, djBotCount)} 중 점유되지 않은 <b>최소</b> index 를 골라 새 봇에 배정·저장하고 반환한다.</li>
  * </ol>
  *
  * <p>slot row 는 배정 시 insert, 회수 시 delete 되는 불변 레코드다(index 를 in-place mutate 하지 않는다).
@@ -40,14 +40,14 @@ public class BotSlotAssigner {
      * @param room             파티룸
      * @param liveDjBotUserIds 여전히 크루(DJ)로 살아있는 봇 user id 목록
      * @param newBotUserId     새로 slot 을 배정받을 봇 user id
-     * @param djCount          방의 DJ 봇 목표 수(= slot 공간 크기)
+     * @param djBotCount          방의 DJ 봇 목표 수(= slot 공간 크기)
      * @return 새 봇에 배정된 slot index
      */
     @Transactional
     public int reclaimAndAssign(PartyroomId room,
                                 List<Long> liveDjBotUserIds,
                                 Long newBotUserId,
-                                int djCount) {
+                                int djBotCount) {
         Long roomId = room.getId();
         List<PartyroomBotSlotData> stored = slots.findByPartyroomId(roomId);
 
@@ -68,14 +68,14 @@ public class BotSlotAssigner {
             }
         }
 
-        // 4) [0, djCount) 중 최소 free index 선택
+        // 4) [0, djBotCount) 중 최소 free index 선택
         int chosen = 0;
-        while (chosen < djCount && occupied.contains(chosen)) {
+        while (chosen < djBotCount && occupied.contains(chosen)) {
             chosen++;
         }
-        if (chosen >= djCount) {
+        if (chosen >= djBotCount) {
             throw new IllegalStateException(
-                    "no free bot slot in [0,%d) for room=%d (occupied=%s)".formatted(djCount, roomId, occupied));
+                    "no free bot slot in [0,%d) for room=%d (occupied=%s)".formatted(djBotCount, roomId, occupied));
         }
 
         slots.save(PartyroomBotSlotData.create(roomId, newBotUserId, chosen));

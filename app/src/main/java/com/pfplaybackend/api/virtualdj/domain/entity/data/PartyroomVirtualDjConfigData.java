@@ -30,8 +30,8 @@ public class PartyroomVirtualDjConfigData extends BaseEntity {
     private Integer targetCount;
 
     @Comment("크루(DJ) 봇 수")
-    @Column(name = "dj_count", nullable = false, columnDefinition = "int unsigned")
-    private Integer djCount;
+    @Column(name = "dj_bot_count", nullable = false, columnDefinition = "int unsigned")
+    private Integer djBotCount;
 
     @Comment("이 룸에 사용할 송 팩 id")
     @Column(name = "song_pack_id", columnDefinition = "bigint unsigned")
@@ -46,26 +46,26 @@ public class PartyroomVirtualDjConfigData extends BaseEntity {
 
     @Builder
     public PartyroomVirtualDjConfigData(Long partyroomId, VirtualDjStatus status,
-                                         Integer targetCount, Integer djCount,
+                                         Integer targetCount, Integer djBotCount,
                                          Long songPackId) {
         this.partyroomId = partyroomId;
         this.status = status;
         this.targetCount = targetCount;
-        this.djCount = djCount;
+        this.djBotCount = djBotCount;
         this.songPackId = songPackId;
     }
 
     // ── Factory ──
 
     /**
-     * 새 룸용 기본 config: status=OFF, target_count=2, dj_count=1.
+     * 새 룸용 기본 config: status=OFF, target_count=2, dj_bot_count=1.
      */
     public static PartyroomVirtualDjConfigData create(Long partyroomId) {
         return PartyroomVirtualDjConfigData.builder()
                 .partyroomId(partyroomId)
                 .status(VirtualDjStatus.OFF)
                 .targetCount(2)
-                .djCount(1)
+                .djBotCount(1)
                 .build();
     }
 
@@ -74,10 +74,10 @@ public class PartyroomVirtualDjConfigData extends BaseEntity {
     /**
      * 가상 DJ 관리 모드 전환.
      */
-    public void applyManaged(int targetCount, int djCount, Long songPackId) {
+    public void applyManaged(int targetCount, int djBotCount, Long songPackId) {
         this.status = VirtualDjStatus.MANAGED;
         this.targetCount = targetCount;
-        this.djCount = djCount;
+        this.djBotCount = djBotCount;
         this.songPackId = songPackId;
     }
 

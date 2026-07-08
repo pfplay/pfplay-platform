@@ -240,7 +240,7 @@ public class AdminVirtualDjController {
     public ResponseEntity<Void> applyConfig(@PathVariable("partyroomId") Long partyroomId,
                                             @Valid @RequestBody ApplyVirtualDjConfigRequest req) {
         adminService.applyConfig(new PartyroomId(partyroomId), req.status(),
-                req.targetCount(), req.djCount(), req.songPackId());
+                req.targetCount(), req.djBotCount(), req.songPackId());
         return ResponseEntity.noContent().build();
     }
 
@@ -271,7 +271,7 @@ public class AdminVirtualDjController {
     @PutMapping("/virtual-dj/bulk")
     public ResponseEntity<Void> applyBulk(@Valid @RequestBody BulkApplyVirtualDjConfigRequest req) {
         adminService.applyBulk(req.partyroomIds(), req.status(),
-                req.targetCount(), req.djCount(), req.songPackId());
+                req.targetCount(), req.djBotCount(), req.songPackId());
         return ResponseEntity.noContent().build();
     }
 

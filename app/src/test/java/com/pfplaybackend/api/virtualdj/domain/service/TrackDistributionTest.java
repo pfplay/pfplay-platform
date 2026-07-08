@@ -29,7 +29,7 @@ class TrackDistributionTest {
     }
 
     @Test
-    @DisplayName("effectiveDjTarget = min(djCount, trackCount)")
+    @DisplayName("effectiveDjTarget = min(djBotCount, trackCount)")
     void effective_clamped() {
         assertThat(TrackDistribution.effectiveDjTarget(5, 2)).isEqualTo(2);
         assertThat(TrackDistribution.effectiveDjTarget(3, 10)).isEqualTo(3);
@@ -39,10 +39,10 @@ class TrackDistributionTest {
     @DisplayName("effective 범위 안에서 조각 합 = 전체 트랙(누락·중복 없음)")
     void chunks_partition_all_tracks() {
         List<Integer> tracks = IntStream.rangeClosed(1, 7).boxed().toList();
-        int djCount = 3; // effective=min(3,7)=3
-        List<Integer> reassembled = IntStream.range(0, djCount)
+        int djBotCount = 3; // effective=min(3,7)=3
+        List<Integer> reassembled = IntStream.range(0, djBotCount)
                 .boxed()
-                .flatMap(slot -> TrackDistribution.chunkFor(tracks, djCount, slot).stream())
+                .flatMap(slot -> TrackDistribution.chunkFor(tracks, djBotCount, slot).stream())
                 .toList();
         assertThat(reassembled).containsExactlyElementsOf(tracks); // [3,2,2] 조각이 순서대로 전체 복원
     }

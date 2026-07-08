@@ -37,7 +37,7 @@ class BotSlotAssignerTest {
         when(slots.findByPartyroomId(1L)).thenReturn(List.of(slot(10L, 0), slot(11L, 1)));
         List<Long> liveDjBots = List.of(10L);            // bot11 left
 
-        int assigned = assigner.reclaimAndAssign(room, liveDjBots, 12L, /*djCount*/3);
+        int assigned = assigner.reclaimAndAssign(room, liveDjBots, 12L, /*djBotCount*/3);
 
         verify(slots).deleteByPartyroomIdAndBotUserId(1L, 11L);  // non-live pruned
         assertThat(assigned).isEqualTo(1);               // slot0 occupied (live), lowest free = 1
@@ -49,7 +49,7 @@ class BotSlotAssignerTest {
         when(slots.findByPartyroomId(1L)).thenReturn(List.of(slot(10L, 0), slot(11L, 1)));
         List<Long> liveDjBots = List.of(10L, 11L);       // 둘 다 live
 
-        int assigned = assigner.reclaimAndAssign(room, liveDjBots, 12L, /*djCount*/3);
+        int assigned = assigner.reclaimAndAssign(room, liveDjBots, 12L, /*djBotCount*/3);
 
         verify(slots, never()).deleteByPartyroomIdAndBotUserId(org.mockito.ArgumentMatchers.eq(1L),
                 org.mockito.ArgumentMatchers.anyLong());   // 정리 대상 없음
@@ -61,7 +61,7 @@ class BotSlotAssignerTest {
     void assigns_slot0_on_empty_room_and_saves() {
         when(slots.findByPartyroomId(1L)).thenReturn(List.of());
 
-        int assigned = assigner.reclaimAndAssign(room, List.of(), 20L, /*djCount*/3);
+        int assigned = assigner.reclaimAndAssign(room, List.of(), 20L, /*djBotCount*/3);
 
         assertThat(assigned).isEqualTo(0);
         ArgumentCaptor<PartyroomBotSlotData> saved = ArgumentCaptor.forClass(PartyroomBotSlotData.class);
@@ -72,12 +72,12 @@ class BotSlotAssignerTest {
     }
 
     @Test
-    @DisplayName("[0,djCount) 가 전부 live 점유면 free slot 없음 → IllegalStateException")
+    @DisplayName("[0,djBotCount) 가 전부 live 점유면 free slot 없음 → IllegalStateException")
     void throws_when_all_slots_live_occupied() {
         when(slots.findByPartyroomId(1L)).thenReturn(List.of(slot(0L, 0), slot(1L, 1)));
-        List<Long> liveDjBots = List.of(0L, 1L);         // djCount 만큼 전부 live 점유
+        List<Long> liveDjBots = List.of(0L, 1L);         // djBotCount 만큼 전부 live 점유
 
-        assertThatThrownBy(() -> assigner.reclaimAndAssign(room, liveDjBots, 2L, /*djCount*/2))
+        assertThatThrownBy(() -> assigner.reclaimAndAssign(room, liveDjBots, 2L, /*djBotCount*/2))
                 .isInstanceOf(IllegalStateException.class);
         verify(slots, never()).save(org.mockito.ArgumentMatchers.any());
     }

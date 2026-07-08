@@ -9,12 +9,12 @@ import com.pfplaybackend.api.virtualdj.domain.enums.VirtualDjStatus;
 public record VirtualDjLiveStatusResponse(
         VirtualDjStatus status,
         Integer targetCount,
-        Integer djCount,
+        Integer djBotCount,
         Long songPackId,
         int currentBotDjCount
 ) {
     public static VirtualDjLiveStatusResponse from(VirtualDjAdminService.LiveStatus s) {
         return new VirtualDjLiveStatusResponse(
-                s.status(), s.targetCount(), s.djCount(), s.songPackId(), s.currentBotDjCount());
+                s.status(), s.targetCount(), s.djBotCount(), s.songPackId(), s.currentBotDjCount());
     }
 }

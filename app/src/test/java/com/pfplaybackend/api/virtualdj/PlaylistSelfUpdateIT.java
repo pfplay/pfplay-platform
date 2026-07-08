@@ -286,7 +286,7 @@ class PlaylistSelfUpdateIT extends AbstractIntegrationTest {
                         track("vidF4", "Filler 4", "3:00"),
                         track(LINK_LOW, "Low Song", "3:00")));
 
-        seedManagedConfig(roomId, /*target*/1, /*djCount*/1, packA);
+        seedManagedConfig(roomId, /*target*/1, /*djBotCount*/1, packA);
         poolService.provision(1);
         flushAndClear();
 
@@ -360,7 +360,7 @@ class PlaylistSelfUpdateIT extends AbstractIntegrationTest {
         configRepository.save(PartyroomVirtualDjConfigData.builder()
                 .partyroomId(roomId)
                 .status(com.pfplaybackend.api.virtualdj.domain.enums.VirtualDjStatus.MANAGED)
-                .targetCount(target).djCount(floor).songPackId(songPackId).build());
+                .targetCount(target).djBotCount(floor).songPackId(songPackId).build());
     }
 
     private record SeedTrack(String linkId, String name, String duration) {}

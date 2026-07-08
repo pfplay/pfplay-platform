@@ -152,7 +152,7 @@ class SongPackApplierIT extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("applyChunkToBot — 6트랙/djCount=3/slot=1 → 중간 조각(3·4번째)만 복사된다")
+    @DisplayName("applyChunkToBot — 6트랙/djBotCount=3/slot=1 → 중간 조각(3·4번째)만 복사된다")
     void applyChunkToBot_중간_조각만_복사() {
         List<UserId> bots = poolService.provision(1);
         UserId botUserId = bots.get(0);
@@ -165,7 +165,7 @@ class SongPackApplierIT extends AbstractIntegrationTest {
         }
         flushAndClear();
 
-        // 6트랙 / djCount 3 → base=2, rem=0 → slot0=[0,1] slot1=[2,3] slot2=[4,5] (0-based)
+        // 6트랙 / djBotCount 3 → base=2, rem=0 → slot0=[0,1] slot1=[2,3] slot2=[4,5] (0-based)
         // slot1 = 3·4번째 트랙 = vid3, vid4
         applier.applyChunkToBot(botUserId, pack.getId(), 5, 1, 3);
         flushAndClear();
@@ -189,7 +189,7 @@ class SongPackApplierIT extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("applyChunkToBot — 6트랙/djCount=3/slot=0 → 첫 조각(1·2번째)만 복사된다")
+    @DisplayName("applyChunkToBot — 6트랙/djBotCount=3/slot=0 → 첫 조각(1·2번째)만 복사된다")
     void applyChunkToBot_첫_조각만_복사() {
         List<UserId> bots = poolService.provision(1);
         UserId botUserId = bots.get(0);
@@ -216,13 +216,13 @@ class SongPackApplierIT extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("applyChunkToBot — 7트랙/djCount=3/slot=0 → 나머지 앞쪽 배치로 3트랙(1·2·3번째)")
+    @DisplayName("applyChunkToBot — 7트랙/djBotCount=3/slot=0 → 나머지 앞쪽 배치로 3트랙(1·2·3번째)")
     void applyChunkToBot_나머지_앞쪽_배치() {
         List<UserId> bots = poolService.provision(1);
         UserId botUserId = bots.get(0);
         flushAndClear();
 
-        // 7 트랙 / djCount 3 → base=2, rem=1 → slot0=[0,1,2](3개) slot1=[3,4] slot2=[5,6]
+        // 7 트랙 / djBotCount 3 → base=2, rem=1 → slot0=[0,1,2](3개) slot1=[3,4] slot2=[5,6]
         VirtualSongPackData pack = packRepository.save(VirtualSongPackData.create("Chunk Pack 7", "홀수 분배 테스트"));
         for (int i = 1; i <= 7; i++) {
             trackRepository.save(VirtualSongPackTrackData.create(pack.getId(), i, "vid" + i, "Song " + i, "2:00", null));
