@@ -233,10 +233,10 @@ class AdminVirtualDjControllerTest {
         mockMvc.perform(put("/api/v1/admin/partyrooms/7/virtual-dj")
                         .with(csrf()).contentType(APPLICATION_JSON)
                         .content("""
-                                {"status":"MANAGED","targetCount":2,"djCount":1,"songPackId":5}
+                                {"status":"MANAGED","targetCount":3,"djCount":2,"songPackId":5}
                                 """))
                 .andExpect(status().isNoContent());
-        verify(adminService).applyConfig(new PartyroomId(7L), VirtualDjStatus.MANAGED, 2, 1, 5L);
+        verify(adminService).applyConfig(new PartyroomId(7L), VirtualDjStatus.MANAGED, 3, 2, 5L);
     }
 
     @Test
@@ -294,10 +294,10 @@ class AdminVirtualDjControllerTest {
         mockMvc.perform(put("/api/v1/admin/virtual-dj/bulk")
                         .with(csrf()).contentType(APPLICATION_JSON)
                         .content("""
-                                {"partyroomIds":[1,2,3],"status":"MANAGED","targetCount":2,"djCount":1,"songPackId":5}
+                                {"partyroomIds":[1,2,3],"status":"MANAGED","targetCount":3,"djCount":2,"songPackId":5}
                                 """))
                 .andExpect(status().isNoContent());
-        verify(adminService).applyBulk(List.of(1L, 2L, 3L), VirtualDjStatus.MANAGED, 2, 1, 5L);
+        verify(adminService).applyBulk(List.of(1L, 2L, 3L), VirtualDjStatus.MANAGED, 3, 2, 5L);
     }
 
     @Test

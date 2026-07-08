@@ -54,23 +54,16 @@ public class SongPackApplier {
         trackRepository.deleteAllByPlaylistIdValue(playlistId);
 
         // 3. 송 팩 트랙 (정렬됨) 필터 후 복사
-        List<VirtualSongPackTrackData> packTracks =
-                songPackTrackRepository.findBySongPackIdOrderByOrderNumberAsc(songPackId);
-
-        PlaybackTimeLimit timeLimit = PlaybackTimeLimit.ofMinutes(roomPlaybackTimeLimitMinutes);
+        List<VirtualSongPackTrackData> playable = playableTracks(songPackId, roomPlaybackTimeLimitMinutes);
 
         List<TrackData> toSave = new ArrayList<>();
         int orderCounter = 1;
-        for (VirtualSongPackTrackData packTrack : packTracks) {
-            Duration duration = Duration.fromString(packTrack.getDuration());
-            if (timeLimit.exceedsDuration(duration)) {
-                continue; // 초과 트랙 제외
-            }
+        for (VirtualSongPackTrackData packTrack : playable) {
             toSave.add(TrackData.builder()
                     .playlistId(new PlaylistId(playlistId))
                     .name(packTrack.getName())
                     .linkId(packTrack.getLinkId())
-                    .duration(duration)
+                    .duration(Duration.fromString(packTrack.getDuration()))
                     .orderNumber(orderCounter++)
                     .thumbnailImage(packTrack.getThumbnailImage())
                     .build());
@@ -80,5 +73,26 @@ public class SongPackApplier {
         // 4. playlist 에 sourceSongPackId 바인딩
         playlist.bindSongPackSource(songPackId);
         playlistRepository.save(playlist);
+    }
+
+    /**
+     * 송 팩 트랙 중 룸 시간제한을 통과하는(= 봇 playlist 에 실제로 복사될) 트랙 수.
+     *
+     * <p>MANAGED 전환 검증에서 djCount 상한으로 쓴다 — {@link #applyToBot} 이 동일 필터로 복사하므로
+     * 이 카운트가 곧 각 봇이 재생할 수 있는 트랙 수다. 필터 로직은 {@link #playableTracks} 로 단일화한다.
+     */
+    @Transactional(readOnly = true)
+    public int countPlayableTracks(Long songPackId, int roomPlaybackTimeLimitMinutes) {
+        return playableTracks(songPackId, roomPlaybackTimeLimitMinutes).size();
+    }
+
+    /** 송 팩 트랙(정렬됨) 중 룸 시간제한 이하인 트랙만 — {@code applyToBot} 복사 필터와 단일 소스. */
+    private List<VirtualSongPackTrackData> playableTracks(Long songPackId, int roomPlaybackTimeLimitMinutes) {
+        List<VirtualSongPackTrackData> packTracks =
+                songPackTrackRepository.findBySongPackIdOrderByOrderNumberAsc(songPackId);
+        PlaybackTimeLimit timeLimit = PlaybackTimeLimit.ofMinutes(roomPlaybackTimeLimitMinutes);
+        return packTracks.stream()
+                .filter(t -> !timeLimit.exceedsDuration(Duration.fromString(t.getDuration())))
+                .toList();
     }
 }

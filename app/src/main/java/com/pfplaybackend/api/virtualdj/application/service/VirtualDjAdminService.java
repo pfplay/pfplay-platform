@@ -1,6 +1,8 @@
 package com.pfplaybackend.api.virtualdj.application.service;
 
 import com.pfplaybackend.api.common.exception.ExceptionCreator;
+import com.pfplaybackend.api.party.application.service.PartyroomQueryService;
+import com.pfplaybackend.api.party.domain.entity.data.PartyroomData;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import com.pfplaybackend.api.virtualdj.adapter.out.persistence.BotPoolQueryRepository;
 import com.pfplaybackend.api.virtualdj.adapter.out.persistence.PartyroomVirtualDjConfigRepository;
@@ -42,6 +44,8 @@ public class VirtualDjAdminService {
     private final ActiveDjSnapshotService activeDjSnapshotService;
     private final VirtualUserPoolService poolService;
     private final BotPoolQueryRepository botPoolQueryRepository;
+    private final PartyroomQueryService partyroomQueryService;
+    private final SongPackApplier songPackApplier;
 
     /**
      * applyBulk 의 per-room 격리를 위한 self-proxy 참조.
@@ -152,6 +156,21 @@ public class VirtualDjAdminService {
             case MANAGED -> {
                 if (targetCount == null || djCount == null) {
                     throw ExceptionCreator.create(VirtualDjException.INVALID_CONFIG);
+                }
+                // djCount 는 목표 봇 수(targetCount) 를 넘을 수 없다.
+                if (djCount > targetCount) {
+                    throw ExceptionCreator.create(VirtualDjException.INVALID_CONFIG);
+                }
+                // 송 팩이 지정되면, 각 봇에 분배될 트랙(룸 시간제한 통과분)이 djCount 이상이어야 한다.
+                // countPlayableTracks 는 SongPackApplier.applyToBot 과 동일한 필터를 재사용한다.
+                if (songPackId != null) {
+                    PartyroomData room = partyroomQueryService.getPartyroomById(
+                            new PartyroomId(cfg.getPartyroomId()));
+                    int timeLimitMinutes = room.getPlaybackTimeLimit().getMinutes();
+                    int playableTrackCount = songPackApplier.countPlayableTracks(songPackId, timeLimitMinutes);
+                    if (djCount > playableTrackCount) {
+                        throw ExceptionCreator.create(VirtualDjException.DJ_COUNT_EXCEEDS_TRACKS);
+                    }
                 }
                 cfg.applyManaged(targetCount, djCount, songPackId);
             }

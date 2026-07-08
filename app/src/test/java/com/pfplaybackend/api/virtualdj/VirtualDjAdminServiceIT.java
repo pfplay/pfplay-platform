@@ -37,7 +37,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import com.pfplaybackend.api.common.exception.http.BadRequestException;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
@@ -165,6 +168,38 @@ class VirtualDjAdminServiceIT extends AbstractIntegrationTest {
         assertThat(status.targetCount()).isEqualTo(2);
         assertThat(status.songPackId()).isEqualTo(packId);
         assertThat(status.currentBotDjCount()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("applyConfig MANAGED — djCount > targetCount 이면 INVALID_CONFIG(VDJ-007)")
+    void applyConfig_djCountExceedsTarget_throwsInvalidConfig() {
+        long roomId = seedRoom(5);
+        Long packId = seedSongPack();
+        flushAndClear();
+
+        assertThatThrownBy(() -> adminService.applyConfig(
+                new PartyroomId(roomId), VirtualDjStatus.MANAGED, /*target*/2, /*djCount*/3, packId))
+                .isInstanceOf(BadRequestException.class)
+                .hasFieldOrPropertyWithValue("errorCode", "VDJ-007");
+
+        // config 는 변경/생성되지 않아야 한다(검증이 applyManaged 전에 던진다).
+        assertThat(configRepository.findByPartyroomId(roomId)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("applyConfig MANAGED — djCount 가 필터 통과 트랙 수를 초과하면 DJ_COUNT_EXCEEDS_TRACKS(VDJ-014)")
+    void applyConfig_djCountExceedsFilteredTracks_throwsDjCountExceedsTracks() {
+        // seedRoom(5): 5분 제한 → seedSongPack 의 2트랙(2:00, 3:00) 모두 통과 → filteredTrackCount = 2
+        long roomId = seedRoom(5);
+        Long packId = seedSongPack();
+        flushAndClear();
+
+        assertThatThrownBy(() -> adminService.applyConfig(
+                new PartyroomId(roomId), VirtualDjStatus.MANAGED, /*target*/5, /*djCount*/5, packId))
+                .isInstanceOf(BadRequestException.class)
+                .hasFieldOrPropertyWithValue("errorCode", "VDJ-014");
+
+        assertThat(configRepository.findByPartyroomId(roomId)).isEmpty();
     }
 
     // ── fixtures (mirror VirtualDjOrchestratorIT) ──
