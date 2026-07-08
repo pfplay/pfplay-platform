@@ -6,6 +6,7 @@ import com.pfplaybackend.api.virtualdj.application.port.VirtualDjOrchestrator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * {@link VirtualDjOrchestrator} 구현 — 룸 단위 분산락으로 봇 배치 명령을 직렬화하는 얇은 파사드다.
@@ -29,7 +30,15 @@ public class VirtualDjOrchestratorImpl implements VirtualDjOrchestrator {
     private final DistributedLockExecutor lock;
     private final BotPlacementService botPlacementService;
 
+    /**
+     * <p><b>트랜잭션 경계:</b> per-call(룸 단위) {@code @Transactional(REQUIRED)}. 이벤트/부팅 경로
+     * (이벤트 리스너 AFTER_COMMIT · 부팅 리바이버 — 주변 트랜잭션 없음)에서 호출되면 이 메서드가
+     * 자체 트랜잭션을 시작해 하위 {@code placeToTarget} 의 쓰기(crew enter/DJ enqueue/slot delete)가
+     * 확정된다. 어드민 경로({@link VirtualDjAdminService})처럼 주변 트랜잭션이 있으면 join 한다(동작 불변).
+     * 트랜잭션이 락 획득을 감싸는 순서는 어드민 경로 기존 순서와 동일하다.
+     */
     @Override
+    @Transactional
     public void reconcileRoom(PartyroomId partyroomId) {
         lock.performTaskWithLock("virtualdj:" + partyroomId.getId(), () -> {
             botPlacementService.placeToTarget(partyroomId);
@@ -37,7 +46,9 @@ public class VirtualDjOrchestratorImpl implements VirtualDjOrchestrator {
         });
     }
 
+    /** {@link #reconcileRoom} 과 동일한 per-call(룸 단위) {@code @Transactional} 경계 — 이벤트/부팅 경로의 drain 쓰기 확정. */
     @Override
+    @Transactional
     public void drainRoom(PartyroomId partyroomId) {
         lock.performTaskWithLock("virtualdj:" + partyroomId.getId(), () -> {
             botPlacementService.drainResources(partyroomId);

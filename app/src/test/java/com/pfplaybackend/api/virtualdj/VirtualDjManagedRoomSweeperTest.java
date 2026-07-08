@@ -34,6 +34,9 @@ class VirtualDjManagedRoomSweeperTest {
         orchestrator = mock(VirtualDjOrchestrator.class);
         maintenanceGate = mock(MaintenanceGate.class);
         sweeper = new VirtualDjManagedRoomSweeper(configRepository, orchestrator, maintenanceGate);
+        // 프로덕션에선 @Lazy self 프록시가 룸별 REQUIRES_NEW 경계를 제공한다. 단위 테스트에는 프록시가
+        // 없으므로 self 를 자기 자신으로 주입한다 — runRoomOpInNewTransaction 이 그대로 action 을 위임한다.
+        sweeper.setSelf(sweeper);
     }
 
     private PartyroomVirtualDjConfigData managedConfig(long partyroomId) {
