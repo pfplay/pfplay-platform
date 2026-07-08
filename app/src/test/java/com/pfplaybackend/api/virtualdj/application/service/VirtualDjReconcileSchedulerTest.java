@@ -2,7 +2,6 @@ package com.pfplaybackend.api.virtualdj.application.service;
 
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import com.pfplaybackend.api.virtualdj.adapter.out.persistence.PartyroomVirtualDjConfigRepository;
-import com.pfplaybackend.api.virtualdj.application.port.VirtualDjOrchestrator;
 import com.pfplaybackend.api.virtualdj.domain.entity.data.PartyroomVirtualDjConfigData;
 import com.pfplaybackend.api.virtualdj.domain.enums.VirtualDjStatus;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,12 +17,11 @@ import static org.mockito.Mockito.*;
 /**
  * {@link VirtualDjReconcileScheduler} 단위 테스트.
  *
- * <p>협력자 4개 모두 mock — 스케줄러 로직만 검증한다.
+ * <p>협력자 모두 mock — 스케줄러 self-update 루프 로직만 검증한다.
  */
 class VirtualDjReconcileSchedulerTest {
 
     private PartyroomVirtualDjConfigRepository configRepository;
-    private VirtualDjOrchestrator orchestrator;
     private SelfUpdateConfig selfUpdateConfig;
     private PlaylistSelfUpdateService playlistSelfUpdateService;
 
@@ -32,12 +30,11 @@ class VirtualDjReconcileSchedulerTest {
     @BeforeEach
     void setUp() {
         configRepository = mock(PartyroomVirtualDjConfigRepository.class);
-        orchestrator = mock(VirtualDjOrchestrator.class);
         selfUpdateConfig = mock(SelfUpdateConfig.class);
         playlistSelfUpdateService = mock(PlaylistSelfUpdateService.class);
 
         scheduler = new VirtualDjReconcileScheduler(
-                configRepository, orchestrator, selfUpdateConfig, playlistSelfUpdateService);
+                configRepository, selfUpdateConfig, playlistSelfUpdateService);
     }
 
     // ── 헬퍼 ───────────────────────────────────────────────────────────────────────────
@@ -51,7 +48,7 @@ class VirtualDjReconcileSchedulerTest {
     // ── 테스트 케이스 ─────────────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("enabled=false → 자가갱신 패스 전체 건너뜀, reconcile 은 정상 실행")
+    @DisplayName("enabled=false → 자가갱신 패스 전체 건너뜀")
     void disabled_selfUpdateNeverCalled() {
         // given
         PartyroomVirtualDjConfigData cfg1 = mockCfg(1L);
@@ -62,8 +59,6 @@ class VirtualDjReconcileSchedulerTest {
         // when
         scheduler.reconcileManagedRooms();
 
-        // then — reconcile 은 2회 실행
-        verify(orchestrator, times(2)).reconcileRoom(any());
         // then — 자가갱신 호출 없음
         verify(playlistSelfUpdateService, never()).tryUpdateRoom(any());
     }
@@ -103,7 +98,7 @@ class VirtualDjReconcileSchedulerTest {
     }
 
     @Test
-    @DisplayName("MANAGED 룸 없음 → early return, orchestrator 와 self-update 모두 미호출")
+    @DisplayName("MANAGED 룸 없음 → early return, self-update 미호출")
     void emptyManagedList_earlyReturn() {
         // given
         when(configRepository.findByStatus(VirtualDjStatus.MANAGED)).thenReturn(List.of());
@@ -112,7 +107,6 @@ class VirtualDjReconcileSchedulerTest {
         scheduler.reconcileManagedRooms();
 
         // then
-        verify(orchestrator, never()).reconcileRoom(any());
         verify(playlistSelfUpdateService, never()).tryUpdateRoom(any());
         // early return 이므로 isEnabled 체크조차 발생하지 않음
         verify(selfUpdateConfig, never()).isEnabled();

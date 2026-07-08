@@ -14,16 +14,11 @@ import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
 import com.pfplaybackend.api.party.adapter.out.persistence.CrewRepository;
 import com.pfplaybackend.api.party.adapter.out.persistence.PartyroomRepository;
 import com.pfplaybackend.api.party.application.port.out.UserProfileQueryPort;
-import com.pfplaybackend.api.party.application.service.DjCommandService;
-import com.pfplaybackend.api.party.application.service.PartyroomAccessCommandService;
 import com.pfplaybackend.api.party.domain.entity.data.DjQueueData;
 import com.pfplaybackend.api.party.domain.entity.data.PartyroomData;
 import com.pfplaybackend.api.party.domain.entity.data.PartyroomPlaybackData;
-import com.pfplaybackend.api.party.domain.enums.AccessType;
 import com.pfplaybackend.api.party.domain.enums.StageType;
-import com.pfplaybackend.api.party.domain.event.CrewAccessedEvent;
 import com.pfplaybackend.api.party.domain.event.PartyroomTerminatedEvent;
-import com.pfplaybackend.api.party.domain.value.CrewId;
 import com.pfplaybackend.api.party.domain.value.LinkDomain;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import com.pfplaybackend.api.party.domain.value.PlaybackTimeLimit;
@@ -43,7 +38,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -56,8 +50,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
 
 /**
  * Chunk 5 이벤트 반응 통합 테스트 — 실 AFTER_COMMIT 경로로 listener → reconcile wiring 을 검증한다.
@@ -67,9 +59,8 @@ import static org.mockito.Mockito.verify;
  * 비-{@code @Transactional} 로 두고 {@link TransactionTemplate} 안에서 도메인 이벤트를 publish 하여
  * 실제 커밋 → listener 발화 경로를 그대로 탄다. 정리는 명시적으로 한다(UserActivityLogListener*IT 패턴).
  *
- * <p><b>무한루프/churn 가드 검증:</b> {@link DjCommandService} 를 {@link SpyBean} 으로 감싸
- * 재트리거 시 {@code enqueueDj} 가 추가로 호출되지 않음(멱등 수렴)을 {@code verify(..., times(n))} 로
- * 증명한다 — 최종 봇 수가 안정적이라는 것만이 아니라 churn 자체가 없음을 보인다.
+ * <p>고정 2역할 모델에서 크루 입퇴장·DJ 큐 변경에 의한 런타임 재등록 리스너는 제거됐으므로, 남은
+ * 리스너는 {@code onTerminated}(룸 종료 시 config OFF) 뿐이며 이 IT 도 그 경로만 검증한다.
  */
 class VirtualDjEventListenerIT extends AbstractIntegrationTest {
 
@@ -87,8 +78,6 @@ class VirtualDjEventListenerIT extends AbstractIntegrationTest {
     @Autowired private AvatarBodyResourceRepository avatarBodyResourceRepository;
     @Autowired private AdministratorRepository administratorRepository;
     @Autowired private UserAccountRepository userAccountRepository;
-
-    @SpyBean private DjCommandService djCommandService;
 
     @MockBean private UserProfileQueryPort userProfileQueryPort;
 
@@ -157,27 +146,6 @@ class VirtualDjEventListenerIT extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("CrewAccessedEvent(AFTER_COMMIT) → reconcile 봇 T(=2)까지 채움 + 재트리거는 churn 없음")
-    void crewAccessed_triggers_reconcile_and_converges_without_churn() {
-        // 1) 실제 커밋 후 listener 발화 → reconcile 봇 2명 투입.
-        publishCrewEnterCommitted();
-
-        Awaitility.await().atMost(Duration.ofSeconds(10)).pollInterval(Duration.ofMillis(200))
-                .untilAsserted(() -> assertThat(activeBotDjCount(roomId)).isEqualTo(2));
-
-        // 봇 2명 투입 = enqueueDj 2회.
-        verify(djCommandService, times(2)).enqueueDj(any(PartyroomId.class), any(PlaylistId.class));
-
-        // 2) 재트리거 — 멱등 수렴 상태이므로 enqueueDj 가 한 번도 더 일어나면 안 된다(churn 없음).
-        publishCrewEnterCommitted();
-
-        // 약간 대기 후에도 카운트 불변 + enqueue 누적 불변.
-        Awaitility.await().during(Duration.ofSeconds(1)).atMost(Duration.ofSeconds(3))
-                .untilAsserted(() -> assertThat(activeBotDjCount(roomId)).isEqualTo(2));
-        verify(djCommandService, times(2)).enqueueDj(any(PartyroomId.class), any(PlaylistId.class));
-    }
-
-    @Test
     @DisplayName("PartyroomTerminatedEvent(AFTER_COMMIT) → config OFF 전환, reconcile 안 함")
     void terminated_turns_config_off_and_skips_reconcile() {
         transactionTemplate.executeWithoutResult(status ->
@@ -194,12 +162,6 @@ class VirtualDjEventListenerIT extends AbstractIntegrationTest {
     }
 
     // ── helpers ──
-
-    private void publishCrewEnterCommitted() {
-        transactionTemplate.executeWithoutResult(status ->
-                eventPublisher.publishEvent(new CrewAccessedEvent(
-                        new PartyroomId(roomId), new CrewId(1L), new UserId(8500L), AccessType.ENTER)));
-    }
 
     private Long seedSongPack() {
         VirtualSongPackData pack = packRepository.save(VirtualSongPackData.create("Pack", "IT"));
