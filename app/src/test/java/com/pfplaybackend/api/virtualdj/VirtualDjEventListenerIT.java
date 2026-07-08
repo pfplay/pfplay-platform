@@ -31,7 +31,6 @@ import com.pfplaybackend.api.user.application.dto.shared.ProfileSettingDto;
 import com.pfplaybackend.api.virtualdj.adapter.out.persistence.PartyroomVirtualDjConfigRepository;
 import com.pfplaybackend.api.virtualdj.adapter.out.persistence.VirtualSongPackRepository;
 import com.pfplaybackend.api.virtualdj.adapter.out.persistence.VirtualSongPackTrackRepository;
-import com.pfplaybackend.api.virtualdj.application.service.FlapGuard;
 import com.pfplaybackend.api.virtualdj.application.service.VirtualUserPoolService;
 import com.pfplaybackend.api.virtualdj.domain.entity.data.PartyroomVirtualDjConfigData;
 import com.pfplaybackend.api.virtualdj.domain.entity.data.VirtualSongPackData;
@@ -90,7 +89,6 @@ class VirtualDjEventListenerIT extends AbstractIntegrationTest {
     @Autowired private UserAccountRepository userAccountRepository;
 
     @SpyBean private DjCommandService djCommandService;
-    @SpyBean private FlapGuard flapGuard;
 
     @MockBean private UserProfileQueryPort userProfileQueryPort;
 
@@ -193,8 +191,6 @@ class VirtualDjEventListenerIT extends AbstractIntegrationTest {
                 });
         // 종료 룸은 reconcile 하지 않으므로 봇이 추가되지 않는다.
         assertThat(activeBotDjCount(roomId)).isZero();
-        // 종료 경로가 FlapGuard removal-intent 를 정리한다.
-        verify(flapGuard).clearRemovalIntent(new PartyroomId(roomId));
     }
 
     // ── helpers ──

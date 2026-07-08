@@ -277,6 +277,31 @@ class BotPlacementServiceTest {
     }
 
     @Test
+    @DisplayName("(h) drainResources — 모든 활성 봇 crew(DJ+리스너) exit + slot 비우기, config 는 미변경")
+    void drainResources() {
+        UserId djBot1 = new UserId(1L);
+        UserId djBot2 = new UserId(2L);
+        UserId listener1 = new UserId(11L);
+        given(botPoolQueryRepository.findActiveBotCrewUserIdsByJoinedDesc(ROOM))
+                .willReturn(List.of(djBot1, djBot2, listener1)); // 2 DJ + 1 리스너
+
+        service.drainResources(ROOM);
+
+        // 전체 3봇이 봇 신원으로 exit.
+        verify(botIdentity, times(3)).runAs(any(UserId.class), any(Runnable.class));
+        verify(accessCommandService, times(3)).exit(ROOM);
+        // slot row 정리 1회.
+        verify(botSlotAssigner).clearRoom(ROOM);
+        // config 는 건드리지 않는다(로드도, 저장도 없음 — MANAGED 유지).
+        verify(configRepository, never()).findByPartyroomId(anyLong());
+        verify(configRepository, never()).save(any());
+        // 추가 경로는 전혀 타지 않는다.
+        verify(accessCommandService, never()).tryEnter(any(), any());
+        verify(djCommandService, never()).enqueueDj(any(), any());
+        verify(botSlotAssigner, never()).reclaimAndAssign(any(), anyList(), anyLong(), anyInt());
+    }
+
+    @Test
     @DisplayName("게이트 — MANAGED 아니면 아무 것도 하지 않는다")
     void skipWhenNotManaged() {
         PartyroomVirtualDjConfigData off = PartyroomVirtualDjConfigData.builder()

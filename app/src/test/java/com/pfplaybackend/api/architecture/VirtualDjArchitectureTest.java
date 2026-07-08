@@ -34,7 +34,7 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
  * 으로 실유저와 동일한 application 명령/query 서비스를 호출하는 경로(path A)만 사용해야 한다.
  * 허용 협력자: command/query application service, {@code BotIdentityExecutor},
  * {@code VirtualUserPoolService}, {@code SongPackApplier}, {@code ActiveDjSnapshotService},
- * {@code DistributedLockExecutor}, {@code FlapGuard}, {@code BotPlacementService}, 그리고 자기
+ * {@code DistributedLockExecutor}, {@code BotPlacementService}, 그리고 자기
  * feature 의 config repo({@code PartyroomVirtualDjConfigRepository}, 단일 row 설정 읽기 — 허용).
  */
 @DisplayName("가상 DJ 아키텍처 의존성 가드 (Chunk 6 ArchUnit)")

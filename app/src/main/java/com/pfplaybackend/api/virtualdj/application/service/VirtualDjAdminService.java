@@ -93,7 +93,7 @@ public class VirtualDjAdminService {
         }
     }
 
-    /** 룸 비우기 — config OFF + 모든 봇 제거(drain, path A) + FlapGuard 정리. */
+    /** 룸 비우기 — config OFF + 모든 봇 제거(drain, path A). */
     @Transactional
     public void drain(PartyroomId partyroomId) {
         PartyroomVirtualDjConfigData cfg = loadOrCreate(partyroomId);

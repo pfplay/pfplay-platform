@@ -5,7 +5,6 @@ import com.pfplaybackend.api.party.domain.event.DjQueueChangedEvent;
 import com.pfplaybackend.api.party.domain.event.PartyroomTerminatedEvent;
 import com.pfplaybackend.api.virtualdj.adapter.out.persistence.PartyroomVirtualDjConfigRepository;
 import com.pfplaybackend.api.virtualdj.application.port.VirtualDjOrchestrator;
-import com.pfplaybackend.api.virtualdj.application.service.FlapGuard;
 import com.pfplaybackend.api.virtualdj.domain.entity.data.PartyroomVirtualDjConfigData;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -38,7 +37,6 @@ public class VirtualDjEventListener {
 
     private final VirtualDjOrchestrator orchestrator;
     private final PartyroomVirtualDjConfigRepository configRepository;
-    private final FlapGuard flapGuard;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
@@ -63,8 +61,6 @@ public class VirtualDjEventListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onTerminated(PartyroomTerminatedEvent event) {
         Long partyroomId = event.getPartyroomId().getId();
-        // config 존재 여부와 무관하게 removal-intent 누수를 방지한다(clearRemovalIntent 는 멱등).
-        flapGuard.clearRemovalIntent(event.getPartyroomId());
         Optional<PartyroomVirtualDjConfigData> optConfig = configRepository.findByPartyroomId(partyroomId);
         if (optConfig.isEmpty()) {
             return;

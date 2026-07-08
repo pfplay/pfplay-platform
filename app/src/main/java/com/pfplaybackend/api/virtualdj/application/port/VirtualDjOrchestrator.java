@@ -22,7 +22,7 @@ public interface VirtualDjOrchestrator {
      *
      * <p>reconcile 과 달리 anti-flap dwell/​debounce 를 건너뛰는 어드민 의도적 액션이지만, 제거 자체는
      * 봇 신원으로 동일한 {@code exit} 명령 경로(path A)를 거치므로 도메인 가드/캐스케이드는 우회하지 않는다.
-     * config 상태 전환(OFF)은 호출자(어드민 서비스)가 담당하고, 본 메서드는 봇 제거 + FlapGuard 상태 정리만 한다.
+     * config 상태 전환(OFF)은 호출자(어드민 서비스)가 담당하고, 본 메서드는 봇 제거만 한다.
      * 분산 락으로 reconcile 과 직렬화된다.
      */
     void drainRoom(PartyroomId partyroomId);

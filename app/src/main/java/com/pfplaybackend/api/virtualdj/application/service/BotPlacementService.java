@@ -37,7 +37,7 @@ import java.util.Set;
  * 두 목표 모두 방 안 사람 수와 무관한 고정값이다({@link ActiveDjSnapshot#humanCount()} 는 읽지 않는다).
  *
  * <p><b>락:</b> {@link #placeToTarget} 은 언락 프리미티브다 — 호출자(오케스트레이터)가 룸 단위 분산락
- * 안에서 부른다. FlapGuard/dwell/debounce 는 사용하지 않는다(고정 목표라 플래핑 원인이 없다).
+ * 안에서 부른다. dwell/debounce 안티플래핑 로직은 없다(고정 목표라 플래핑 원인이 없다).
  *
  * <p><b>멱등·수렴:</b> 현재 수와 목표의 차이만큼만 투입/제거하므로 목표 상태에서 재호출하면 no-op.
  *
@@ -116,6 +116,33 @@ public class BotPlacementService {
         // 4) 리스너 봇 수렴 — 목표는 raw djCount 기준(트랙 clamp 가 would-be DJ 를 리스너로 바꾸지 않는다).
         int listenerTarget = Math.max(0, targetCount - djCount);
         convergeListenerBots(partyroomId, listenerTarget, djBotsAfter);
+    }
+
+    /**
+     * 룸의 <b>모든</b> 활성 봇 crew(DJ + 리스너)를 즉시 제거하고 slot row 를 비운다. 언락 프리미티브
+     * (호출자가 락으로 감싼다). <b>config 는 건드리지 않는다</b> — MANAGED 를 그대로 유지하며, 어드민
+     * 리소스 드레인(점검 등)에서 봇만 걷어내는 용도다(OFF 전환은 호출자 책임).
+     *
+     * <p>각 봇 exit 는 봇 신원으로 실유저와 동일한 exit 명령 경로(path A)를 거쳐 도메인 가드/캐스케이드를
+     * 우회하지 않으며, 단건 실패가 나머지 봇 제거를 막지 않도록 개별 봇을 try/catch 로 격리한다
+     * (best-effort — {@link #placeToTarget} 의 per-bot 격리와 동일).
+     */
+    public void drainResources(PartyroomId partyroomId) {
+        List<UserId> bots = botPoolQueryRepository.findActiveBotCrewUserIdsByJoinedDesc(partyroomId);
+        log.info("[drainResources] partyroomId={}, botsToRemove={}", partyroomId.getId(), bots.size());
+
+        for (UserId bot : bots) {
+            try {
+                botIdentity.runAs(bot, () -> accessCommandService.exit(partyroomId));
+                log.info("[drainResources] BOT_REMOVED - partyroomId={}, botUserId={}",
+                        partyroomId.getId(), bot.getUid());
+            } catch (Exception e) {
+                log.warn("[drainResources] BOT_REMOVE_FAILED - partyroomId={}, botUserId={}, reason={}",
+                        partyroomId.getId(), bot.getUid(), e.getMessage());
+            }
+        }
+        // slot row 정리 — config(MANAGED)는 그대로 둔다.
+        botSlotAssigner.clearRoom(partyroomId);
     }
 
     /**

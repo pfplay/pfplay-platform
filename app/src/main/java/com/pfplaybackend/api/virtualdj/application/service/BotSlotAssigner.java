@@ -81,4 +81,14 @@ public class BotSlotAssigner {
         slots.save(PartyroomBotSlotData.create(roomId, newBotUserId, chosen));
         return chosen;
     }
+
+    /**
+     * 방의 모든 봇 slot row 를 삭제한다(drain 등 전체 비우기 경로에서 사용).
+     *
+     * @param room 파티룸
+     */
+    @Transactional
+    public void clearRoom(PartyroomId room) {
+        slots.deleteByPartyroomId(room.getId());
+    }
 }
