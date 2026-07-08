@@ -25,7 +25,7 @@ class SystemAnnouncementRepositoryTest extends AbstractIntegrationTest {
     private SystemAnnouncementData maintenance(LocalDateTime start, LocalDateTime end) {
         return SystemAnnouncementData.create(
                 AnnouncementType.MAINTENANCE_NOTICE, AnnouncementSeverity.WARN,
-                "점검", "m", "b", "b", start, end, null, start.minusHours(1), 1L);
+                "점검", "m", "b", "b", start, end, null, start.minusHours(1), 1L, false);
     }
 
     @Test

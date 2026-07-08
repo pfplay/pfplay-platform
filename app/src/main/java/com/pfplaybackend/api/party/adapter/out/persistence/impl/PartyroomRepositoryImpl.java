@@ -98,7 +98,8 @@ public class PartyroomRepositoryImpl implements PartyroomRepositoryCustom {
                         playbackDto,
                         qCrewData.id,
                         qCrewData.userId,
-                        qCrewData.gradeType
+                        qCrewData.gradeType,
+                        qPartyroomData.createdAt
                 )
                 .from(qPartyroomData)
                 .join(qPlayback).on(qPlayback.partyroomId.id.eq(qPartyroomData.id))
@@ -145,6 +146,7 @@ public class PartyroomRepositoryImpl implements PartyroomRepositoryCustom {
                                 Boolean.TRUE.equals(tuple.get(qPlayback.isActivated)),
                                 Boolean.TRUE.equals(tuple.get(qDjQueue.isClosed)),
                                 tuple.get(crewCountSubquery),
+                                tuple.get(qPartyroomData.createdAt),
                                 tuple.get(8, PlaybackDto.class),
                                 crewsByPartyroomId.getOrDefault(tuple.get(qPartyroomData.id), List.of())
                         ),

@@ -126,10 +126,12 @@ class PartyroomAccessCommandServiceTest {
         when(partyroomQueryService.getMyActivePartyroom(userId)).thenReturn(Optional.of(activeRoomInfo));
 
         // when
-        partyroomAccessCommandService.tryEnter(partyroomId, null);
+        var result = partyroomAccessCommandService.tryEnter(partyroomId, null);
 
         // then — spec §7.2: 같은 룸 재진입 시 ENTER 이벤트 발행 금지 (counter inflate 방지)
         verifyNoInteractions(eventPublisher);
+        // 멤버십 유지(이미 active) → reactivated=false (#402)
+        assertThat(result.reactivated()).isFalse();
     }
 
     @Test
@@ -190,10 +192,12 @@ class PartyroomAccessCommandServiceTest {
         when(aggregatePort.saveCrew(any(CrewData.class))).thenReturn(newRoomCrew);
 
         // when — 예외 없이 정상 실행되어야 함
-        partyroomAccessCommandService.tryEnter(newRoomId, null);
+        var result = partyroomAccessCommandService.tryEnter(newRoomId, null);
 
         // then — EXIT event (from old room exit) + ENTER event (new room) = exactly 2 publish calls
         verify(eventPublisher, times(2)).publishEvent(any(Object.class));
+        // inactive→active 재활성(transitioned) → reactivated=true (#402)
+        assertThat(result.reactivated()).isTrue();
     }
 
     @Test
@@ -301,7 +305,7 @@ class PartyroomAccessCommandServiceTest {
             ReflectionTestUtils.invokeMethod(partyroomAccessCommandService, "initTxTemplates");
 
             // when
-            CrewData result = partyroomAccessCommandService.tryEnter(racePartyroomId, CountryCode.of("KR"));
+            CrewData result = partyroomAccessCommandService.tryEnter(racePartyroomId, CountryCode.of("KR")).crew();
 
             // then: returned crew is the winner row found in the REQUIRES_NEW transaction
             assertThat(result).isSameAs(winnerCrew);
@@ -341,7 +345,7 @@ class PartyroomAccessCommandServiceTest {
                 });
 
         // when
-        CrewData result = partyroomAccessCommandService.tryEnter(partyroomId, null);
+        CrewData result = partyroomAccessCommandService.tryEnter(partyroomId, null).crew();
 
         // then
         assertThat(result.getGradeType()).isEqualTo(GradeType.LISTENER);
@@ -375,7 +379,7 @@ class PartyroomAccessCommandServiceTest {
         when(aggregatePort.saveCrew(any(CrewData.class))).thenAnswer(inv -> inv.getArgument(0));
 
         // when
-        CrewData result = partyroomAccessCommandService.tryEnter(partyroomId, null);
+        CrewData result = partyroomAccessCommandService.tryEnter(partyroomId, null).crew();
 
         // then
         assertThat(result.getGradeType()).isEqualTo(GradeType.LISTENER);
@@ -406,7 +410,7 @@ class PartyroomAccessCommandServiceTest {
                 });
 
         // when
-        CrewData result = partyroomAccessCommandService.tryEnter(partyroomId, null);
+        CrewData result = partyroomAccessCommandService.tryEnter(partyroomId, null).crew();
 
         // then
         assertThat(result.getGradeType()).isEqualTo(GradeType.HOST);
@@ -438,7 +442,7 @@ class PartyroomAccessCommandServiceTest {
         when(aggregatePort.saveCrew(any(CrewData.class))).thenAnswer(inv -> inv.getArgument(0));
 
         // when
-        CrewData result = partyroomAccessCommandService.tryEnter(partyroomId, null);
+        CrewData result = partyroomAccessCommandService.tryEnter(partyroomId, null).crew();
 
         // then
         assertThat(result.getGradeType()).isEqualTo(GradeType.HOST);
@@ -505,7 +509,7 @@ class PartyroomAccessCommandServiceTest {
         when(partyroomQueryService.getMyActivePartyroom(userId)).thenReturn(Optional.of(activeRoomInfo));
 
         // when
-        CrewData result = partyroomAccessCommandService.tryEnter(partyroomId, null);
+        CrewData result = partyroomAccessCommandService.tryEnter(partyroomId, null).crew();
 
         // then
         assertThat(result.getGradeType()).isEqualTo(GradeType.HOST);
@@ -712,7 +716,7 @@ class PartyroomAccessCommandServiceTest {
             ReflectionTestUtils.invokeMethod(partyroomAccessCommandService, "initTxTemplates");
 
             // when
-            CrewData result = partyroomAccessCommandService.tryEnter(racePartyroomId, null);
+            CrewData result = partyroomAccessCommandService.tryEnter(racePartyroomId, null).crew();
 
             // then — guard prevents the helper from invoking updateGrade or extra saveCrew
             assertThat(result).isSameAs(winnerCrew);

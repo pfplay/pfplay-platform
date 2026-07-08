@@ -80,7 +80,7 @@ public class AdminAnnouncementController {
                 req.type(), req.severity(),
                 req.titleKo(), req.titleEn(), req.messageKo(), req.messageEn(),
                 req.scheduledStartAt(), req.scheduledEndAt(), req.expiresAt(),
-                administratorId);
+                administratorId, req.sendPush());
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiCommonResponse.success(Map.of("announcementId", id)));
     }

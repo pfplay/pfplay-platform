@@ -32,7 +32,7 @@ class AnnouncementBroadcasterTest {
                 AnnouncementType.MAINTENANCE_NOTICE, AnnouncementSeverity.WARN,
                 "점검","m","b","b",
                 LocalDateTime.of(2026,5,4,3,0), LocalDateTime.of(2026,5,4,4,0),
-                null, LocalDateTime.of(2026,5,4,2,0), 1L);
+                null, LocalDateTime.of(2026,5,4,2,0), 1L, false);
         e.markMaintenanceStarted(clock);
         e.markCompleted(Clock.fixed(LocalDateTime.of(2026,5,4,4,0).atZone(z).toInstant(), z));
 

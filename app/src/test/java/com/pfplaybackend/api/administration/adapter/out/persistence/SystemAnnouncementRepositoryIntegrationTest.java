@@ -76,7 +76,7 @@ class SystemAnnouncementRepositoryIntegrationTest extends AbstractIntegrationTes
                                                 LocalDateTime started, LocalDateTime cancelled) {
         SystemAnnouncementData d = SystemAnnouncementData.create(
                 AnnouncementType.MAINTENANCE_NOTICE, AnnouncementSeverity.WARN,
-                "k", "e", "ko", "en", s, e, null, now, 1L);
+                "k", "e", "ko", "en", s, e, null, now, 1L, false);
         if (started != null) ReflectionTestUtils.setField(d, "maintenanceStartedAt", started);
         if (cancelled != null) {
             ReflectionTestUtils.setField(d, "cancelledAt", cancelled);
@@ -87,12 +87,12 @@ class SystemAnnouncementRepositoryIntegrationTest extends AbstractIntegrationTes
 
     private SystemAnnouncementData event() {
         return SystemAnnouncementData.create(AnnouncementType.EVENT, AnnouncementSeverity.INFO,
-                "k", "e", "ko", "en", null, null, null, now, 1L);
+                "k", "e", "ko", "en", null, null, null, now, 1L, false);
     }
 
     private SystemAnnouncementData eventWithExpiry(LocalDateTime exp) {
         return SystemAnnouncementData.create(AnnouncementType.EVENT, AnnouncementSeverity.INFO,
-                "k", "e", "ko", "en", null, null, exp, now, 1L);
+                "k", "e", "ko", "en", null, null, exp, now, 1L, false);
     }
 
     private SystemAnnouncementData eventCancelled() {

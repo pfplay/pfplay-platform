@@ -103,7 +103,7 @@ class AnnouncementBroadcasterIT extends AbstractIntegrationTest {
                         AnnouncementType.EVENT, AnnouncementSeverity.INFO,
                         "공지 제목", "Title EN", "본문", "Body EN",
                         null, null, null,
-                        administratorId));
+                        administratorId, false));
 
         assertThat(announcementId).isNotNull();
 
@@ -136,7 +136,7 @@ class AnnouncementBroadcasterIT extends AbstractIntegrationTest {
                         AnnouncementType.EVENT, AnnouncementSeverity.INFO,
                         "Snap KO", "Snap EN", "M-KO", "M-EN",
                         null, null, null,
-                        administratorId));
+                        administratorId, false));
 
         Awaitility.await().atMost(Duration.ofSeconds(2)).untilAsserted(() ->
                 verify(messagingTemplate, atLeastOnce()).convertAndSend(eq(TOPIC), any(Object.class))
