@@ -171,6 +171,20 @@ class PartyroomQueryServiceTest {
     }
 
     @Test
+    @DisplayName("getCrewOrThrow — 크루 행이 있어도 비활성이면 NOT_FOUND_ACTIVE_ROOM (WS 재연결 stale 멤버십 방어, #304)")
+    void getCrewOrThrowInactiveCrewThrows() {
+        // given: 크루 행은 존재하나 is_active=false (소프트 재연결 stale 윈도우)
+        CrewData inactiveCrew = CrewData.builder()
+                .id(1L).partyroomId(partyroomId).userId(userId)
+                .gradeType(GradeType.CLUBBER).isActive(false).build();
+        when(aggregatePort.findCrew(partyroomId, userId)).thenReturn(Optional.of(inactiveCrew));
+
+        // when & then: absent 와 동일하게 CRW-001 로 거부 (회전 유령 dj orphan 차단)
+        assertThatThrownBy(() -> partyroomQueryService.getCrewOrThrow(partyroomId, userId))
+                .isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
     @DisplayName("getSummaryInfo — 재생 비활성 시 DJ 정보가 null이다")
     void getSummaryInfoPlaybackInactiveDjIsNull() {
         // given
@@ -531,11 +545,11 @@ class PartyroomQueryServiceTest {
     // ── getCrewOrThrow — 성공 케이스 ──
 
     @Test
-    @DisplayName("getCrewOrThrow — 크루가 존재하면 반환한다")
+    @DisplayName("getCrewOrThrow — 활성 크루가 존재하면 반환한다")
     void getCrewOrThrowFoundReturns() {
         // given
         CrewData crew = CrewData.builder()
-                .id(1L).partyroomId(partyroomId).userId(userId).gradeType(GradeType.CLUBBER).build();
+                .id(1L).partyroomId(partyroomId).userId(userId).gradeType(GradeType.CLUBBER).isActive(true).build();
         when(aggregatePort.findCrew(partyroomId, userId)).thenReturn(Optional.of(crew));
 
         // when
