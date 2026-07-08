@@ -1,5 +1,6 @@
 package com.pfplaybackend.api.party.adapter.in.web;
 
+import com.pfplaybackend.api.party.application.service.PartyroomAccessCommandService;
 import com.pfplaybackend.api.party.domain.entity.data.CrewData;
 import com.pfplaybackend.api.party.domain.enums.GradeType;
 import org.junit.jupiter.api.DisplayName;
@@ -24,7 +25,8 @@ class PartyroomAccessCommandControllerTest extends AbstractPartyCommandWebMvcTes
         CrewData crew = mock(CrewData.class);
         when(crew.getId()).thenReturn(1L);
         when(crew.getGradeType()).thenReturn(GradeType.CLUBBER);
-        when(partyroomAccessCommandService.tryEnter(any(), any())).thenReturn(crew);
+        when(partyroomAccessCommandService.tryEnter(any(), any()))
+                .thenReturn(new PartyroomAccessCommandService.TryEnterResult(crew, false));
 
         // when & then
         mockMvc.perform(post("/api/v1/partyrooms/1/crews")
@@ -42,7 +44,8 @@ class PartyroomAccessCommandControllerTest extends AbstractPartyCommandWebMvcTes
         CrewData crew = mock(CrewData.class);
         when(crew.getId()).thenReturn(1L);
         when(crew.getGradeType()).thenReturn(GradeType.CLUBBER);
-        when(partyroomAccessCommandService.tryEnter(any(), any())).thenReturn(crew);
+        when(partyroomAccessCommandService.tryEnter(any(), any()))
+                .thenReturn(new PartyroomAccessCommandService.TryEnterResult(crew, false));
 
         // when & then
         mockMvc.perform(post("/api/v1/partyrooms/1/crews")
@@ -60,7 +63,8 @@ class PartyroomAccessCommandControllerTest extends AbstractPartyCommandWebMvcTes
         CrewData crew = mock(CrewData.class);
         when(crew.getId()).thenReturn(1L);
         when(crew.getGradeType()).thenReturn(GradeType.CLUBBER);
-        when(partyroomAccessCommandService.tryEnter(any(), any())).thenReturn(crew);
+        when(partyroomAccessCommandService.tryEnter(any(), any()))
+                .thenReturn(new PartyroomAccessCommandService.TryEnterResult(crew, false));
 
         // when & then — no .content(), no .contentType()
         mockMvc.perform(post("/api/v1/partyrooms/1/crews")
@@ -76,7 +80,8 @@ class PartyroomAccessCommandControllerTest extends AbstractPartyCommandWebMvcTes
         CrewData crew = mock(CrewData.class);
         when(crew.getId()).thenReturn(1L);
         when(crew.getGradeType()).thenReturn(GradeType.CLUBBER);
-        when(partyroomAccessCommandService.tryEnter(any(), any())).thenReturn(crew);
+        when(partyroomAccessCommandService.tryEnter(any(), any()))
+                .thenReturn(new PartyroomAccessCommandService.TryEnterResult(crew, false));
 
         // when & then — empty JSON object
         mockMvc.perform(post("/api/v1/partyrooms/1/crews")
