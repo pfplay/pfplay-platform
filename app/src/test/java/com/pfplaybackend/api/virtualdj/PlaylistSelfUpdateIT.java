@@ -286,7 +286,7 @@ class PlaylistSelfUpdateIT extends AbstractIntegrationTest {
                         track("vidF4", "Filler 4", "3:00"),
                         track(LINK_LOW, "Low Song", "3:00")));
 
-        seedManagedConfig(roomId, /*target*/1, /*floor*/0, packA);
+        seedManagedConfig(roomId, /*target*/1, /*djCount*/1, packA);
         poolService.provision(1);
         flushAndClear();
 

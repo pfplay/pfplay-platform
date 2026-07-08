@@ -119,7 +119,7 @@ class VirtualDjOrchestratorIT extends AbstractIntegrationTest {
     @DisplayName("사람0명_MANAGED — 봇이 T(=2)까지 채워진다")
     void 사람0명_MANAGED_봇이_T까지_채워진다() {
         long roomId = seedRoom(5);
-        seedManagedConfig(roomId, /*target*/2, /*floor*/1, seedSongPack());
+        seedManagedConfig(roomId, /*target*/2, /*djCount*/2, seedSongPack());
         poolService.provision(3); // ≥ 2 idle bots
         flushAndClear();
 
@@ -168,7 +168,7 @@ class VirtualDjOrchestratorIT extends AbstractIntegrationTest {
     @DisplayName("idempotent — T 충족 후 재호출해도 봇 수 불변·추가 churn 없음")
     void idempotent_재호출_무변경() {
         long roomId = seedRoom(5);
-        seedManagedConfig(roomId, 2, 1, seedSongPack());
+        seedManagedConfig(roomId, 2, 2, seedSongPack());
         poolService.provision(3);
         flushAndClear();
 

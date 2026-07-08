@@ -103,7 +103,7 @@ class VirtualDjAdminServiceIT extends AbstractIntegrationTest {
         poolService.provision(3);
         flushAndClear();
 
-        adminService.applyConfig(new PartyroomId(roomId), VirtualDjStatus.MANAGED, 2, 1, packId);
+        adminService.applyConfig(new PartyroomId(roomId), VirtualDjStatus.MANAGED, 2, 2, packId);
         flushAndClear();
 
         PartyroomVirtualDjConfigData cfg = configRepository.findByPartyroomId(roomId).orElseThrow();
@@ -120,7 +120,7 @@ class VirtualDjAdminServiceIT extends AbstractIntegrationTest {
         poolService.provision(3);
         flushAndClear();
 
-        adminService.applyConfig(new PartyroomId(roomId), VirtualDjStatus.MANAGED, 2, 1, packId);
+        adminService.applyConfig(new PartyroomId(roomId), VirtualDjStatus.MANAGED, 2, 2, packId);
         flushAndClear();
         assertThat(activeBotDjCount(roomId)).isEqualTo(2);
 
@@ -141,7 +141,7 @@ class VirtualDjAdminServiceIT extends AbstractIntegrationTest {
         poolService.provision(6);
         flushAndClear();
 
-        adminService.applyBulk(List.of(roomA, roomB), VirtualDjStatus.MANAGED, 2, 1, packId);
+        adminService.applyBulk(List.of(roomA, roomB), VirtualDjStatus.MANAGED, 2, 2, packId);
         flushAndClear();
 
         assertThat(configRepository.findByPartyroomId(roomA).orElseThrow().getStatus())
@@ -160,7 +160,7 @@ class VirtualDjAdminServiceIT extends AbstractIntegrationTest {
         poolService.provision(3);
         flushAndClear();
 
-        adminService.applyConfig(new PartyroomId(roomId), VirtualDjStatus.MANAGED, 2, 1, packId);
+        adminService.applyConfig(new PartyroomId(roomId), VirtualDjStatus.MANAGED, 2, 2, packId);
         flushAndClear();
 
         VirtualDjAdminService.LiveStatus status = adminService.liveStatus(new PartyroomId(roomId));
