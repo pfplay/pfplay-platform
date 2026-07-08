@@ -204,7 +204,7 @@ class VirtualDjOrchestratorIT extends AbstractIntegrationTest {
     private void seedManagedConfig(long roomId, int target, int floor, Long songPackId) {
         PartyroomVirtualDjConfigData cfg = PartyroomVirtualDjConfigData.builder()
                 .partyroomId(roomId).status(VirtualDjStatus.MANAGED)
-                .targetCount(target).companionFloor(floor).songPackId(songPackId).build();
+                .targetCount(target).djCount(floor).songPackId(songPackId).build();
         configRepository.save(cfg);
     }
 

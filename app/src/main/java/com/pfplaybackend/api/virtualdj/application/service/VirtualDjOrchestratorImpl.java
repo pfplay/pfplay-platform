@@ -109,10 +109,10 @@ public class VirtualDjOrchestratorImpl implements VirtualDjOrchestrator {
         ActiveDjSnapshotService.ActiveDjSnapshot snapshot = activeDjSnapshotService.snapshot(partyroomId);
         int humanCount = snapshot.humanCount();
         int botCount = snapshot.botCount();
-        int desired = DesiredBotCalculator.desiredBot(humanCount, cfg.getTargetCount(), cfg.getCompanionFloor());
+        int desired = DesiredBotCalculator.desiredBot(humanCount, cfg.getTargetCount(), cfg.getDjCount());
 
         log.info("[reconcile] partyroomId={}, human={}, bot={}, target={}, floor={}, desired={}",
-                partyroomId.getId(), humanCount, botCount, cfg.getTargetCount(), cfg.getCompanionFloor(), desired);
+                partyroomId.getId(), humanCount, botCount, cfg.getTargetCount(), cfg.getDjCount(), desired);
 
         if (botCount < desired) {
             // 추가는 즉시 — 음악 연속성 우선(anti-flap 게이팅 없음).

@@ -29,9 +29,9 @@ public class PartyroomVirtualDjConfigData extends BaseEntity {
     @Column(name = "target_count", nullable = false, columnDefinition = "int unsigned")
     private Integer targetCount;
 
-    @Comment("동반 진입 하한선 (사람 DJ 수가 이 값 미만이면 봇 진입 보류)")
-    @Column(name = "companion_floor", nullable = false, columnDefinition = "int unsigned")
-    private Integer companionFloor;
+    @Comment("크루(DJ) 봇 수")
+    @Column(name = "dj_count", nullable = false, columnDefinition = "int unsigned")
+    private Integer djCount;
 
     @Comment("이 룸에 사용할 송 팩 id")
     @Column(name = "song_pack_id", columnDefinition = "bigint unsigned")
@@ -46,26 +46,26 @@ public class PartyroomVirtualDjConfigData extends BaseEntity {
 
     @Builder
     public PartyroomVirtualDjConfigData(Long partyroomId, VirtualDjStatus status,
-                                         Integer targetCount, Integer companionFloor,
+                                         Integer targetCount, Integer djCount,
                                          Long songPackId) {
         this.partyroomId = partyroomId;
         this.status = status;
         this.targetCount = targetCount;
-        this.companionFloor = companionFloor;
+        this.djCount = djCount;
         this.songPackId = songPackId;
     }
 
     // ── Factory ──
 
     /**
-     * 새 룸용 기본 config: status=OFF, target_count=2, companion_floor=1.
+     * 새 룸용 기본 config: status=OFF, target_count=2, dj_count=1.
      */
     public static PartyroomVirtualDjConfigData create(Long partyroomId) {
         return PartyroomVirtualDjConfigData.builder()
                 .partyroomId(partyroomId)
                 .status(VirtualDjStatus.OFF)
                 .targetCount(2)
-                .companionFloor(1)
+                .djCount(1)
                 .build();
     }
 
@@ -74,10 +74,10 @@ public class PartyroomVirtualDjConfigData extends BaseEntity {
     /**
      * 가상 DJ 관리 모드 전환.
      */
-    public void applyManaged(int targetCount, int companionFloor, Long songPackId) {
+    public void applyManaged(int targetCount, int djCount, Long songPackId) {
         this.status = VirtualDjStatus.MANAGED;
         this.targetCount = targetCount;
-        this.companionFloor = companionFloor;
+        this.djCount = djCount;
         this.songPackId = songPackId;
     }
 

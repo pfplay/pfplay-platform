@@ -15,6 +15,6 @@ public record BulkApplyVirtualDjConfigRequest(
         @NotEmpty @Size(min = 1, max = 100) List<Long> partyroomIds,
         @NotNull VirtualDjStatus status,
         @Min(1) Integer targetCount,
-        @Min(0) Integer companionFloor,
+        @Min(0) Integer djCount,
         Long songPackId
 ) {}

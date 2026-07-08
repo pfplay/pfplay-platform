@@ -137,7 +137,7 @@ class VirtualDjEventListenerIT extends AbstractIntegrationTest {
             Long songPackId = seedSongPack();
             configRepository.save(PartyroomVirtualDjConfigData.builder()
                     .partyroomId(id).status(VirtualDjStatus.MANAGED)
-                    .targetCount(2).companionFloor(1).songPackId(songPackId).build());
+                    .targetCount(2).djCount(1).songPackId(songPackId).build());
             this.roomId = id;
         });
 

@@ -360,7 +360,7 @@ class PlaylistSelfUpdateIT extends AbstractIntegrationTest {
         configRepository.save(PartyroomVirtualDjConfigData.builder()
                 .partyroomId(roomId)
                 .status(com.pfplaybackend.api.virtualdj.domain.enums.VirtualDjStatus.MANAGED)
-                .targetCount(target).companionFloor(floor).songPackId(songPackId).build());
+                .targetCount(target).djCount(floor).songPackId(songPackId).build());
     }
 
     private record SeedTrack(String linkId, String name, String duration) {}

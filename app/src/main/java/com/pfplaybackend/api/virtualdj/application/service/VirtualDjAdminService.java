@@ -73,14 +73,14 @@ public class VirtualDjAdminService {
     /** 단일 룸 config 적용 후 MANAGED 면 reconcile, OFF 면 drain 을 같은 트랜잭션에서 트리거. */
     @Transactional
     public void applyConfig(PartyroomId partyroomId, VirtualDjStatus status, Integer targetCount,
-                            Integer companionFloor, Long songPackId) {
+                            Integer djCount, Long songPackId) {
         PartyroomVirtualDjConfigData cfg = loadOrCreate(partyroomId);
-        applyStatus(cfg, status, targetCount, companionFloor, songPackId);
+        applyStatus(cfg, status, targetCount, djCount, songPackId);
         // saveAndFlush: reconcile/drain 의 봇 명령 경로가 영속성 컨텍스트를 clear 할 수 있어,
         // config 변경을 즉시 DB 에 확정한 뒤 reconcile(자기 config 재조회)/drain 을 트리거한다.
         configRepository.saveAndFlush(cfg);
-        log.info("[VirtualDjAdmin.applyConfig] partyroomId={} status={} target={} floor={} songPackId={}",
-                partyroomId.getId(), status, targetCount, companionFloor, songPackId);
+        log.info("[VirtualDjAdmin.applyConfig] partyroomId={} status={} target={} djCount={} songPackId={}",
+                partyroomId.getId(), status, targetCount, djCount, songPackId);
 
         if (status == VirtualDjStatus.MANAGED) {
             orchestrator.reconcileRoom(partyroomId);
@@ -111,11 +111,11 @@ public class VirtualDjAdminService {
      * config 저장을 롤백하지 않도록, 각 룸의 실패를 try/catch 로 격리하고 배치를 계속 진행한다.
      */
     public void applyBulk(List<Long> partyroomIds, VirtualDjStatus status, Integer targetCount,
-                          Integer companionFloor, Long songPackId) {
+                          Integer djCount, Long songPackId) {
         List<Long> failedIds = new ArrayList<>();
         for (Long id : partyroomIds) {
             try {
-                self.applyConfig(new PartyroomId(id), status, targetCount, companionFloor, songPackId);
+                self.applyConfig(new PartyroomId(id), status, targetCount, djCount, songPackId);
             } catch (Exception e) {
                 log.warn("[VirtualDjAdmin.applyBulk] ROOM_FAILED - partyroomId={}, reason={}",
                         id, e.getMessage());
@@ -135,7 +135,7 @@ public class VirtualDjAdminService {
         PartyroomVirtualDjConfigData cfg = configRepository.findByPartyroomId(partyroomId.getId())
                 .orElseThrow(() -> ExceptionCreator.create(VirtualDjException.CONFIG_NOT_FOUND));
         int currentBotDjCount = activeDjSnapshotService.snapshot(partyroomId).botCount();
-        return new LiveStatus(cfg.getStatus(), cfg.getTargetCount(), cfg.getCompanionFloor(),
+        return new LiveStatus(cfg.getStatus(), cfg.getTargetCount(), cfg.getDjCount(),
                 cfg.getSongPackId(), currentBotDjCount);
     }
 
@@ -147,13 +147,13 @@ public class VirtualDjAdminService {
     }
 
     private void applyStatus(PartyroomVirtualDjConfigData cfg, VirtualDjStatus status,
-                             Integer targetCount, Integer companionFloor, Long songPackId) {
+                             Integer targetCount, Integer djCount, Long songPackId) {
         switch (status) {
             case MANAGED -> {
-                if (targetCount == null || companionFloor == null) {
+                if (targetCount == null || djCount == null) {
                     throw ExceptionCreator.create(VirtualDjException.INVALID_CONFIG);
                 }
-                cfg.applyManaged(targetCount, companionFloor, songPackId);
+                cfg.applyManaged(targetCount, djCount, songPackId);
             }
             case OFF -> cfg.turnOff();
         }
@@ -164,11 +164,11 @@ public class VirtualDjAdminService {
      *
      * @param status            현재 config 상태(OFF/MANAGED)
      * @param targetCount       목표 봇 수
-     * @param companionFloor    동반 진입 하한선
+     * @param djCount           크루(DJ) 봇 수
      * @param songPackId        적용 송 팩 id (nullable)
      * @param currentBotDjCount 현재 활성 봇 DJ 수
      */
-    public record LiveStatus(VirtualDjStatus status, Integer targetCount, Integer companionFloor,
+    public record LiveStatus(VirtualDjStatus status, Integer targetCount, Integer djCount,
                              Long songPackId, int currentBotDjCount) {}
 
     /**
