@@ -1,5 +1,6 @@
 package com.pfplaybackend.api.virtualdj.application.service;
 
+import com.pfplaybackend.api.operations.application.port.out.MaintenanceGate;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import com.pfplaybackend.api.virtualdj.adapter.out.persistence.PartyroomVirtualDjConfigRepository;
 import com.pfplaybackend.api.virtualdj.domain.entity.data.PartyroomVirtualDjConfigData;
@@ -17,13 +18,16 @@ import static org.mockito.Mockito.*;
 /**
  * {@link VirtualDjReconcileScheduler} 단위 테스트.
  *
- * <p>협력자 모두 mock — 스케줄러 self-update 루프 로직만 검증한다.
+ * <p>협력자 모두 mock — 점검 게이트 / self-update 루프 / 반응 루프 로직만 검증한다.
  */
 class VirtualDjReconcileSchedulerTest {
 
     private PartyroomVirtualDjConfigRepository configRepository;
     private SelfUpdateConfig selfUpdateConfig;
     private PlaylistSelfUpdateService playlistSelfUpdateService;
+    private VirtualDjReactionConfig reactionConfig;
+    private BotReactionService botReactionService;
+    private MaintenanceGate maintenanceGate;
 
     private VirtualDjReconcileScheduler scheduler;
 
@@ -32,9 +36,16 @@ class VirtualDjReconcileSchedulerTest {
         configRepository = mock(PartyroomVirtualDjConfigRepository.class);
         selfUpdateConfig = mock(SelfUpdateConfig.class);
         playlistSelfUpdateService = mock(PlaylistSelfUpdateService.class);
+        reactionConfig = mock(VirtualDjReactionConfig.class);
+        botReactionService = mock(BotReactionService.class);
+        maintenanceGate = mock(MaintenanceGate.class);
+
+        // 기본값: 점검 아님(게이트 통과) — 개별 테스트에서 필요 시 override
+        when(maintenanceGate.isUnderMaintenance()).thenReturn(false);
 
         scheduler = new VirtualDjReconcileScheduler(
-                configRepository, selfUpdateConfig, playlistSelfUpdateService);
+                configRepository, selfUpdateConfig, playlistSelfUpdateService,
+                reactionConfig, botReactionService, maintenanceGate);
     }
 
     // ── 헬퍼 ───────────────────────────────────────────────────────────────────────────
@@ -45,7 +56,7 @@ class VirtualDjReconcileSchedulerTest {
         return cfg;
     }
 
-    // ── 테스트 케이스 ─────────────────────────────────────────────────────────────────
+    // ── self-update 테스트 케이스 ───────────────────────────────────────────────────────
 
     @Test
     @DisplayName("enabled=false → 자가갱신 패스 전체 건너뜀")
@@ -110,5 +121,81 @@ class VirtualDjReconcileSchedulerTest {
         verify(playlistSelfUpdateService, never()).tryUpdateRoom(any());
         // early return 이므로 isEnabled 체크조차 발생하지 않음
         verify(selfUpdateConfig, never()).isEnabled();
+    }
+
+    // ── 반응 루프 테스트 케이스 ─────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("reactionConfig ON → MANAGED 룸마다 tryReact 호출")
+    void reactionEnabled_tryReactCalledPerRoom() {
+        // given
+        PartyroomVirtualDjConfigData cfg1 = mockCfg(101L);
+        PartyroomVirtualDjConfigData cfg2 = mockCfg(102L);
+        when(configRepository.findByStatus(VirtualDjStatus.MANAGED)).thenReturn(List.of(cfg1, cfg2));
+        when(selfUpdateConfig.isEnabled()).thenReturn(false);
+        when(reactionConfig.isEnabled()).thenReturn(true);
+
+        // when
+        scheduler.reconcileManagedRooms();
+
+        // then — 룸별로 정확한 PartyroomId 로 호출
+        verify(botReactionService).tryReact(new PartyroomId(101L));
+        verify(botReactionService).tryReact(new PartyroomId(102L));
+        verify(botReactionService, times(2)).tryReact(any(PartyroomId.class));
+    }
+
+    @Test
+    @DisplayName("reactionConfig OFF → tryReact 미호출")
+    void reactionDisabled_tryReactNeverCalled() {
+        // given
+        PartyroomVirtualDjConfigData cfg1 = mockCfg(1L);
+        PartyroomVirtualDjConfigData cfg2 = mockCfg(2L);
+        when(configRepository.findByStatus(VirtualDjStatus.MANAGED)).thenReturn(List.of(cfg1, cfg2));
+        when(selfUpdateConfig.isEnabled()).thenReturn(false);
+        when(reactionConfig.isEnabled()).thenReturn(false);
+
+        // when
+        scheduler.reconcileManagedRooms();
+
+        // then
+        verify(botReactionService, never()).tryReact(any());
+    }
+
+    @Test
+    @DisplayName("첫 번째 룸에서 반응 예외 발생 → 두 번째 룸도 호출됨, 메서드 밖으로 전파 안 됨")
+    void reactionExceptionIsolated() {
+        // given
+        PartyroomVirtualDjConfigData cfg1 = mockCfg(100L);
+        PartyroomVirtualDjConfigData cfg2 = mockCfg(200L);
+        when(configRepository.findByStatus(VirtualDjStatus.MANAGED)).thenReturn(List.of(cfg1, cfg2));
+        when(selfUpdateConfig.isEnabled()).thenReturn(false);
+        when(reactionConfig.isEnabled()).thenReturn(true);
+        doThrow(new RuntimeException("브로드캐스트 실패"))
+                .when(botReactionService).tryReact(new PartyroomId(100L));
+
+        // when — 예외가 바깥으로 나오면 안 됨
+        assertDoesNotThrow(() -> scheduler.reconcileManagedRooms());
+
+        // then — 두 번째 룸도 호출됨
+        verify(botReactionService, times(2)).tryReact(any(PartyroomId.class));
+    }
+
+    // ── 점검 게이트 테스트 케이스 ───────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("점검 중 → self-update·반응 모두 정지, findByStatus 조차 도달 안 함")
+    void underMaintenance_neitherLoopRuns() {
+        // given
+        when(maintenanceGate.isUnderMaintenance()).thenReturn(true);
+        when(selfUpdateConfig.isEnabled()).thenReturn(true);
+        when(reactionConfig.isEnabled()).thenReturn(true);
+
+        // when
+        scheduler.reconcileManagedRooms();
+
+        // then — 게이트 아래로는 아무것도 실행되지 않음
+        verify(configRepository, never()).findByStatus(any());
+        verify(playlistSelfUpdateService, never()).tryUpdateRoom(any());
+        verify(botReactionService, never()).tryReact(any());
     }
 }
