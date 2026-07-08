@@ -29,6 +29,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -45,13 +46,23 @@ public class PartyroomQueryService {
 
     @Transactional(readOnly = true)
     public List<PartyroomWithCrewDto> getAllPartyrooms() {
-        return queryPort.getCrewDataByPartyroomId().stream().map(partyroomWithCrewDto -> {
-            List<CrewDto> filteredCrews = partyroomWithCrewDto.crews().stream()
-                                .filter(crewDto -> crewDto.gradeType().isEqualOrHigherThan(GradeType.MODERATOR))
-                                .limit(3)
-                                .toList();
-            return PartyroomWithCrewDto.from(partyroomWithCrewDto, filteredCrews);
-        }).toList();
+        // 활성 크루 수 내림차순, 동률이면 최신 생성순(createdAt DESC). (#310)
+        // (조회 쿼리는 결과를 HashMap 으로 모아 순서가 비결정적이므로 여기서 결정론적으로 정렬한다.)
+        Comparator<PartyroomWithCrewDto> byCrewCountDesc = Comparator
+                .comparingLong((PartyroomWithCrewDto dto) -> dto.crewCount() == null ? 0L : dto.crewCount())
+                .reversed();
+        Comparator<PartyroomWithCrewDto> byCreatedAtDesc = Comparator
+                .comparing(PartyroomWithCrewDto::createdAt, Comparator.nullsLast(Comparator.reverseOrder()));
+
+        return queryPort.getCrewDataByPartyroomId().stream()
+                .sorted(byCrewCountDesc.thenComparing(byCreatedAtDesc))
+                .map(partyroomWithCrewDto -> {
+                    List<CrewDto> filteredCrews = partyroomWithCrewDto.crews().stream()
+                            .filter(crewDto -> crewDto.gradeType().isEqualOrHigherThan(GradeType.MODERATOR))
+                            .limit(3)
+                            .toList();
+                    return PartyroomWithCrewDto.from(partyroomWithCrewDto, filteredCrews);
+                }).toList();
     }
 
     @Transactional(readOnly = true)
