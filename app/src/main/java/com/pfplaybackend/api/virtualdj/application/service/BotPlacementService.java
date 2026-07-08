@@ -60,6 +60,7 @@ public class BotPlacementService {
     private final BotIdentityExecutor botIdentity;
     private final PartyroomAccessCommandService accessCommandService;
     private final DjCommandService djCommandService;
+    private final BotPersonaAssignmentService botPersonaAssignmentService;
 
     /**
      * 룸의 봇 배치를 고정 2역할 목표로 수렴시킨다. 언락 프리미티브(호출자가 락으로 감싼다), 멱등.
@@ -167,6 +168,8 @@ public class BotPlacementService {
                 log.warn("[placeToTarget] INSUFFICIENT_IDLE_BOTS(dj) - partyroomId={}, requested={}, available={}",
                         partyroomId.getId(), shortfall, idleBots.size());
             }
+            // claim 된 봇이 채팅/좋아요 후보 풀에 들도록 페르소나 보장(best-effort, 배치 수는 불변).
+            botPersonaAssignmentService.ensurePersonasFor(idleBots);
             for (UserId newBot : idleBots) {
                 try {
                     List<Long> liveDjIds = new ArrayList<>();
@@ -234,6 +237,8 @@ public class BotPlacementService {
                 log.warn("[placeToTarget] INSUFFICIENT_IDLE_BOTS(listener) - partyroomId={}, requested={}, available={}",
                         partyroomId.getId(), shortfall, idleBots.size());
             }
+            // claim 된 리스너 봇도 채팅/좋아요 후보 풀에 들도록 페르소나 보장(best-effort, 배치 수는 불변).
+            botPersonaAssignmentService.ensurePersonasFor(idleBots);
             for (UserId newBot : idleBots) {
                 try {
                     // 리스너: 입장만 — enqueueDj/slot/송팩 없음.

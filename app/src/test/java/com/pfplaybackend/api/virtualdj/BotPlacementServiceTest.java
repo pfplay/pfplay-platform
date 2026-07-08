@@ -11,6 +11,7 @@ import com.pfplaybackend.api.virtualdj.adapter.out.persistence.BotPoolQueryRepos
 import com.pfplaybackend.api.virtualdj.adapter.out.persistence.PartyroomVirtualDjConfigRepository;
 import com.pfplaybackend.api.virtualdj.application.identity.BotIdentityExecutor;
 import com.pfplaybackend.api.virtualdj.application.service.ActiveDjSnapshotService;
+import com.pfplaybackend.api.virtualdj.application.service.BotPersonaAssignmentService;
 import com.pfplaybackend.api.virtualdj.application.service.BotPlacementService;
 import com.pfplaybackend.api.virtualdj.application.service.BotSlotAssigner;
 import com.pfplaybackend.api.virtualdj.application.service.SongPackApplier;
@@ -53,6 +54,7 @@ class BotPlacementServiceTest {
     private BotIdentityExecutor botIdentity;
     private PartyroomAccessCommandService accessCommandService;
     private DjCommandService djCommandService;
+    private BotPersonaAssignmentService botPersonaAssignmentService;
 
     private BotPlacementService service;
 
@@ -71,10 +73,11 @@ class BotPlacementServiceTest {
         botIdentity = mock(BotIdentityExecutor.class);
         accessCommandService = mock(PartyroomAccessCommandService.class);
         djCommandService = mock(DjCommandService.class);
+        botPersonaAssignmentService = mock(BotPersonaAssignmentService.class);
 
         service = new BotPlacementService(configRepository, partyroomQueryService, activeDjSnapshotService,
                 botPoolQueryRepository, poolService, songPackApplier, botSlotAssigner, botIdentity,
-                accessCommandService, djCommandService);
+                accessCommandService, djCommandService, botPersonaAssignmentService);
 
         // 룸 시간제한
         PartyroomData room = mock(PartyroomData.class);
@@ -132,6 +135,9 @@ class BotPlacementServiceTest {
         verify(djCommandService, times(2)).enqueueDj(eq(ROOM), any());
         verify(accessCommandService, never()).exit(any());
 
+        // claim 배치에 대해 페르소나 보장 호출(claim 된 유휴 봇 배치를 그대로 전달).
+        verify(botPersonaAssignmentService).ensurePersonasFor(List.of(new UserId(2L), new UserId(3L)));
+
         // anti-collision 스레딩: 2번째 배정의 liveDjIds 는 1번째 신규 봇(uid=2)을 live 로 포함해야 한다.
         // (liveDj.add(newBot) 가 삭제되면 이 단언이 깨진다 — IT 없이 유닛에서 계약 고정.)
         List<List<Long>> captured = liveIdsCaptor.getAllValues();
@@ -179,6 +185,8 @@ class BotPlacementServiceTest {
         verify(poolService).findIdleBots(2);
         verify(accessCommandService, times(2)).tryEnter(eq(ROOM), any());
         verify(accessCommandService, never()).exit(any());
+        // claim 된 리스너 봇에도 페르소나 보장 호출.
+        verify(botPersonaAssignmentService).ensurePersonasFor(List.of(new UserId(3L), new UserId(4L)));
     }
 
     @Test
@@ -217,6 +225,8 @@ class BotPlacementServiceTest {
         verify(djCommandService, never()).enqueueDj(any(), any());
         verify(botSlotAssigner, never()).reclaimAndAssign(any(), anyList(), anyLong(), anyInt());
         verify(songPackApplier, never()).applyChunkToBot(any(), any(), anyInt(), anyInt(), anyInt());
+        // claim 이 없으므로 페르소나 보장도 호출되지 않는다(평형 no-op 계약).
+        verify(botPersonaAssignmentService, never()).ensurePersonasFor(any());
     }
 
     @Test

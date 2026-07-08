@@ -1,5 +1,6 @@
 package com.pfplaybackend.api.virtualdj.application.service;
 
+import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.exception.http.BadRequestException;
 import com.pfplaybackend.api.common.exception.http.NotFoundException;
 import com.pfplaybackend.api.virtualdj.adapter.out.persistence.BotPersonaAssignmentRepository;
@@ -23,6 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -134,6 +136,73 @@ class BotPersonaAssignmentServiceTest {
 
         assertThat(applied).isEqualTo(2);
         verify(assignmentRepository, times(2)).save(any(BotPersonaAssignmentData.class));
+    }
+
+    // ── ensurePersonasFor (배치 시 best-effort 자동배정) ──
+
+    private static VirtualPersonaData personaWithId(long id) {
+        VirtualPersonaData p = mock(VirtualPersonaData.class);
+        when(p.getId()).thenReturn(id);
+        return p;
+    }
+
+    @Test
+    @DisplayName("ensurePersonasFor: 미배정 봇에 활성 페르소나 배정 + 2개 페르소나 라운드로빈 분배")
+    void ensurePersonasFor_미배정봇_라운드로빈배정() {
+        VirtualPersonaData p1 = personaWithId(101L);
+        VirtualPersonaData p2 = personaWithId(102L);
+        when(personaRepository.findByActiveTrue()).thenReturn(List.of(p1, p2));
+        when(assignmentRepository.findByBotUserIdIn(List.of(1L, 2L, 3L)))
+                .thenReturn(List.of()); // 아무도 아직 미배정
+
+        service.ensurePersonasFor(List.of(new UserId(1L), new UserId(2L), new UserId(3L)));
+
+        ArgumentCaptor<BotPersonaAssignmentData> saved = ArgumentCaptor.forClass(BotPersonaAssignmentData.class);
+        verify(assignmentRepository, times(3)).save(saved.capture());
+        // 라운드로빈: 봇1→p1(101), 봇2→p2(102), 봇3→p1(101).
+        assertThat(saved.getAllValues())
+                .extracting(BotPersonaAssignmentData::getBotUserId, BotPersonaAssignmentData::getPersonaId)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(1L, 101L),
+                        org.assertj.core.groups.Tuple.tuple(2L, 102L),
+                        org.assertj.core.groups.Tuple.tuple(3L, 101L));
+    }
+
+    @Test
+    @DisplayName("ensurePersonasFor: 이미 배정된 봇은 건너뛴다(중복 save 없음)")
+    void ensurePersonasFor_이미배정_스킵() {
+        VirtualPersonaData p1 = personaWithId(101L);
+        when(personaRepository.findByActiveTrue()).thenReturn(List.of(p1));
+        // 봇1 은 이미 배정됨 → 봇2 만 신규 save.
+        when(assignmentRepository.findByBotUserIdIn(List.of(1L, 2L)))
+                .thenReturn(List.of(BotPersonaAssignmentData.create(1L, 9L)));
+
+        service.ensurePersonasFor(List.of(new UserId(1L), new UserId(2L)));
+
+        ArgumentCaptor<BotPersonaAssignmentData> saved = ArgumentCaptor.forClass(BotPersonaAssignmentData.class);
+        verify(assignmentRepository, times(1)).save(saved.capture());
+        assertThat(saved.getValue().getBotUserId()).isEqualTo(2L);
+        assertThat(saved.getValue().getPersonaId()).isEqualTo(101L);
+    }
+
+    @Test
+    @DisplayName("ensurePersonasFor: 활성 페르소나 없음 → save 없음(WARN 후 그대로 배치, throw 안 함)")
+    void ensurePersonasFor_활성페르소나없음_noop() {
+        when(personaRepository.findByActiveTrue()).thenReturn(List.of());
+
+        service.ensurePersonasFor(List.of(new UserId(1L), new UserId(2L)));
+
+        verify(assignmentRepository, never()).findByBotUserIdIn(anyList());
+        verify(assignmentRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("ensurePersonasFor: 빈 입력 → no-op(페르소나 조회조차 안 함)")
+    void ensurePersonasFor_빈입력_noop() {
+        service.ensurePersonasFor(List.of());
+
+        verify(personaRepository, never()).findByActiveTrue();
+        verify(assignmentRepository, never()).save(any());
     }
 
     // ── unassign ──

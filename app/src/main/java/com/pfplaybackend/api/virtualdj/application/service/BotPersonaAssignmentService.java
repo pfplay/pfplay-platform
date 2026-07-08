@@ -1,5 +1,6 @@
 package com.pfplaybackend.api.virtualdj.application.service;
 
+import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.exception.ExceptionCreator;
 import com.pfplaybackend.api.virtualdj.adapter.out.persistence.BotPersonaAssignmentRepository;
 import com.pfplaybackend.api.virtualdj.adapter.out.persistence.BotPoolQueryRepository;
@@ -8,11 +9,13 @@ import com.pfplaybackend.api.virtualdj.domain.entity.data.BotPersonaAssignmentDa
 import com.pfplaybackend.api.virtualdj.domain.entity.data.VirtualPersonaData;
 import com.pfplaybackend.api.virtualdj.domain.exception.VirtualDjException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -26,6 +29,7 @@ import java.util.stream.Collectors;
  * 실제 봇만 사전 필터해, 비-봇/미존재 id 를 apply 예외로 잡아 격리할 때 공유 트랜잭션이
  * rollback-only 로 마킹돼 성공분까지 롤백되는 문제를 피한다.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class BotPersonaAssignmentService {
@@ -72,5 +76,48 @@ public class BotPersonaAssignmentService {
         List<Long> botUserIds = botPoolQueryRepository.filterBotUserIds(botIds);
         assignmentRepository.deleteByBotUserIdIn(botUserIds);
         return botUserIds.size();
+    }
+
+    /**
+     * 배치되는 봇들이 페르소나를 갖도록 <b>best-effort</b> 로 보장한다(채팅/좋아요 후보 풀은 페르소나 보유
+     * 봇으로 한정되므로, {@link BotPlacementService#placeToTarget} 이 claim 한 유휴 봇에 페르소나가 없으면
+     * 활성 페르소나를 자동 배정한다).
+     *
+     * <p>프로비저닝은 페르소나를 배정하지 않고(어드민이 별도 배정), 따라서 갓 claim 된 봇은 페르소나가
+     * 없을 수 있다. 이 메서드는:
+     * <ul>
+     *   <li>이미 배정된 봇은 건드리지 않는다(멱등).</li>
+     *   <li>미배정 봇에는 활성 페르소나를 라운드로빈으로 배정해 여러 봇이 같은 페르소나로 쏠리지 않게 한다.</li>
+     *   <li><b>활성 페르소나가 하나도 없으면</b> WARN 만 남기고 그대로 진행한다(throw 안 함) — 방은 채워지되
+     *       어드민이 페르소나를 만들/배정할 때까지 생동감이 저하된다. 배치 수를 절대 줄이지 않는다.</li>
+     * </ul>
+     */
+    @Transactional
+    public void ensurePersonasFor(List<UserId> botUserIds) {
+        if (botUserIds == null || botUserIds.isEmpty()) {
+            return;
+        }
+
+        List<VirtualPersonaData> activePersonas = personaRepository.findByActiveTrue();
+        if (activePersonas.isEmpty()) {
+            log.warn("[vdj-persona] NO_ACTIVE_PERSONA — placing bots without persona, room liveliness degraded until admin assigns");
+            return;
+        }
+
+        List<Long> rawIds = botUserIds.stream().map(UserId::getUid).collect(Collectors.toList());
+        Set<Long> alreadyAssigned = assignmentRepository.findByBotUserIdIn(rawIds).stream()
+                .map(BotPersonaAssignmentData::getBotUserId)
+                .collect(Collectors.toSet());
+
+        int rr = 0; // 미배정 봇 사이의 순번 → 활성 페르소나 라운드로빈 인덱스.
+        for (Long botUserId : rawIds) {
+            if (alreadyAssigned.contains(botUserId)) {
+                continue;
+            }
+            VirtualPersonaData persona = activePersonas.get(rr % activePersonas.size());
+            rr++;
+            assignmentRepository.save(BotPersonaAssignmentData.create(botUserId, persona.getId()));
+            log.info("[vdj-persona] PERSONA_ASSIGNED - botUserId={}, personaId={}", botUserId, persona.getId());
+        }
     }
 }
