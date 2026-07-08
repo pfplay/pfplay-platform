@@ -150,4 +150,97 @@ class SongPackApplierIT extends AbstractIntegrationTest {
 
         assertThat(unlimitedTracks).hasSize(2);
     }
+
+    @Test
+    @DisplayName("applyChunkToBot — 6트랙/djCount=3/slot=1 → 중간 조각(3·4번째)만 복사된다")
+    void applyChunkToBot_중간_조각만_복사() {
+        List<UserId> bots = poolService.provision(1);
+        UserId botUserId = bots.get(0);
+        flushAndClear();
+
+        // 6 트랙 모두 시간제한 이내 (2분)
+        VirtualSongPackData pack = packRepository.save(VirtualSongPackData.create("Chunk Pack", "분배 테스트"));
+        for (int i = 1; i <= 6; i++) {
+            trackRepository.save(VirtualSongPackTrackData.create(pack.getId(), i, "vid" + i, "Song " + i, "2:00", null));
+        }
+        flushAndClear();
+
+        // 6트랙 / djCount 3 → base=2, rem=0 → slot0=[0,1] slot1=[2,3] slot2=[4,5] (0-based)
+        // slot1 = 3·4번째 트랙 = vid3, vid4
+        applier.applyChunkToBot(botUserId, pack.getId(), 5, 1, 3);
+        flushAndClear();
+
+        Long playlistId = poolService.playlistIdOf(botUserId);
+        PlaylistData playlist = playlistRepository.findById(playlistId).orElseThrow();
+        assertThat(playlist.getSourceSongPackId()).isEqualTo(pack.getId());
+
+        List<TrackData> tracks = playlistTrackRepository.findAllByPlaylistId(new PlaylistId(playlistId))
+                .stream()
+                .sorted(Comparator.comparingInt(TrackData::getOrderNumber))
+                .toList();
+
+        assertThat(tracks).hasSize(2);
+        assertThat(tracks.get(0).getName()).isEqualTo("Song 3");
+        assertThat(tracks.get(0).getLinkId()).isEqualTo("vid3");
+        assertThat(tracks.get(0).getOrderNumber()).isEqualTo(1);
+        assertThat(tracks.get(1).getName()).isEqualTo("Song 4");
+        assertThat(tracks.get(1).getLinkId()).isEqualTo("vid4");
+        assertThat(tracks.get(1).getOrderNumber()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("applyChunkToBot — 6트랙/djCount=3/slot=0 → 첫 조각(1·2번째)만 복사된다")
+    void applyChunkToBot_첫_조각만_복사() {
+        List<UserId> bots = poolService.provision(1);
+        UserId botUserId = bots.get(0);
+        flushAndClear();
+
+        VirtualSongPackData pack = packRepository.save(VirtualSongPackData.create("Chunk Pack 0", "분배 테스트"));
+        for (int i = 1; i <= 6; i++) {
+            trackRepository.save(VirtualSongPackTrackData.create(pack.getId(), i, "vid" + i, "Song " + i, "2:00", null));
+        }
+        flushAndClear();
+
+        applier.applyChunkToBot(botUserId, pack.getId(), 5, 0, 3);
+        flushAndClear();
+
+        Long playlistId = poolService.playlistIdOf(botUserId);
+        List<TrackData> tracks = playlistTrackRepository.findAllByPlaylistId(new PlaylistId(playlistId))
+                .stream()
+                .sorted(Comparator.comparingInt(TrackData::getOrderNumber))
+                .toList();
+
+        assertThat(tracks).hasSize(2);
+        assertThat(tracks.get(0).getLinkId()).isEqualTo("vid1");
+        assertThat(tracks.get(1).getLinkId()).isEqualTo("vid2");
+    }
+
+    @Test
+    @DisplayName("applyChunkToBot — 7트랙/djCount=3/slot=0 → 나머지 앞쪽 배치로 3트랙(1·2·3번째)")
+    void applyChunkToBot_나머지_앞쪽_배치() {
+        List<UserId> bots = poolService.provision(1);
+        UserId botUserId = bots.get(0);
+        flushAndClear();
+
+        // 7 트랙 / djCount 3 → base=2, rem=1 → slot0=[0,1,2](3개) slot1=[3,4] slot2=[5,6]
+        VirtualSongPackData pack = packRepository.save(VirtualSongPackData.create("Chunk Pack 7", "홀수 분배 테스트"));
+        for (int i = 1; i <= 7; i++) {
+            trackRepository.save(VirtualSongPackTrackData.create(pack.getId(), i, "vid" + i, "Song " + i, "2:00", null));
+        }
+        flushAndClear();
+
+        applier.applyChunkToBot(botUserId, pack.getId(), 5, 0, 3);
+        flushAndClear();
+
+        Long playlistId = poolService.playlistIdOf(botUserId);
+        List<TrackData> tracks = playlistTrackRepository.findAllByPlaylistId(new PlaylistId(playlistId))
+                .stream()
+                .sorted(Comparator.comparingInt(TrackData::getOrderNumber))
+                .toList();
+
+        assertThat(tracks).hasSize(3);
+        assertThat(tracks.get(0).getLinkId()).isEqualTo("vid1");
+        assertThat(tracks.get(1).getLinkId()).isEqualTo("vid2");
+        assertThat(tracks.get(2).getLinkId()).isEqualTo("vid3");
+    }
 }

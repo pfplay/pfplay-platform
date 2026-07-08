@@ -10,6 +10,7 @@ import com.pfplaybackend.api.playlist.domain.entity.data.PlaylistData;
 import com.pfplaybackend.api.playlist.domain.entity.data.TrackData;
 import com.pfplaybackend.api.virtualdj.adapter.out.persistence.VirtualSongPackTrackRepository;
 import com.pfplaybackend.api.virtualdj.domain.entity.data.VirtualSongPackTrackData;
+import com.pfplaybackend.api.virtualdj.domain.service.TrackDistribution;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -44,6 +45,37 @@ public class SongPackApplier {
      */
     @Transactional
     public void applyToBot(UserId botUserId, Long songPackId, int roomPlaybackTimeLimitMinutes) {
+        copyTracksToBot(botUserId, songPackId, playableTracks(songPackId, roomPlaybackTimeLimitMinutes));
+    }
+
+    /**
+     * 봇의 DJ playlist 에 송 팩 트랙 중 <b>이 봇의 slot 조각만</b> 복사한다.
+     *
+     * <p>필터(시간제한)를 먼저 적용한 뒤 {@link TrackDistribution#chunkFor}로 {@code slotIndex}
+     * 번째 연속 조각만 골라 복사한다 — 각 크루(DJ) 봇이 겹치지 않는 트랙 파티션을 재생하도록.
+     * orderNumber 는 조각 내에서 1..M 로 재부여된다.
+     *
+     * @param botUserId                     봇 사용자 id
+     * @param songPackId                    적용할 송 팩 id
+     * @param roomPlaybackTimeLimitMinutes  룸의 재생 시간 제한 (분). 0 이하 = unlimited.
+     * @param slotIndex                     이 봇의 slot 인덱스 ({@code [0, djCount)})
+     * @param djCount                       조각 수(= 실제 DJ 목표)
+     */
+    @Transactional
+    public void applyChunkToBot(UserId botUserId, Long songPackId, int roomPlaybackTimeLimitMinutes,
+                                int slotIndex, int djCount) {
+        List<VirtualSongPackTrackData> playable = playableTracks(songPackId, roomPlaybackTimeLimitMinutes);
+        copyTracksToBot(botUserId, songPackId, TrackDistribution.chunkFor(playable, djCount, slotIndex));
+    }
+
+    /**
+     * 주어진 송 팩 트랙 리스트를 봇 playlist 에 복사한다(공통 로직).
+     *
+     * <p>(1) 봇 playlist 조회 → (2) 기존 트랙 전체 삭제 → (3) {@code tracks} 를 orderNumber 1..N 로 저장
+     * → (4) sourceSongPackId 바인딩. {@code applyToBot}/{@code applyChunkToBot} 은 복사 대상 트랙만
+     * 다르며 이 절차를 공유한다.
+     */
+    private void copyTracksToBot(UserId botUserId, Long songPackId, List<VirtualSongPackTrackData> tracks) {
         // 1. 봇 playlist id 조회
         Long playlistId = virtualUserPoolService.playlistIdOf(botUserId);
         PlaylistData playlist = playlistRepository.findById(playlistId)
@@ -53,12 +85,10 @@ public class SongPackApplier {
         // 2. 기존 트랙 전체 삭제 (봇 playlist 소속만)
         trackRepository.deleteAllByPlaylistIdValue(playlistId);
 
-        // 3. 송 팩 트랙 (정렬됨) 필터 후 복사
-        List<VirtualSongPackTrackData> playable = playableTracks(songPackId, roomPlaybackTimeLimitMinutes);
-
+        // 3. 대상 트랙 복사 (orderNumber 1..N 재부여)
         List<TrackData> toSave = new ArrayList<>();
         int orderCounter = 1;
-        for (VirtualSongPackTrackData packTrack : playable) {
+        for (VirtualSongPackTrackData packTrack : tracks) {
             toSave.add(TrackData.builder()
                     .playlistId(new PlaylistId(playlistId))
                     .name(packTrack.getName())
