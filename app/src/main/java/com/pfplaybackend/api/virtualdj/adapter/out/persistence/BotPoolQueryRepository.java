@@ -62,4 +62,19 @@ public interface BotPoolQueryRepository {
      * 비봇은 제외된다. 결과는 crewId 오름차순(deterministic).
      */
     List<BotCandidate> findActivePersonaBotsInRoom(PartyroomId partyroomId);
+
+    /**
+     * 주어진 파티룸 안의 활성 봇 crew 수를 반환한다(DJ/리스너 등 역할 무관, 페르소나 비게이트).
+     *
+     * <p>조건: (1) 해당 파티룸의 활성 crew(is_active=true), (2) 봇 계정(is_dummy=true,
+     * withdrawn_at IS NULL). {@link #findActivePersonaBotsInRoom} 와 달리 페르소나 매핑 유무는
+     * 게이트하지 않는다 — 페르소나 미배정 봇도 카운트에 포함된다.
+     */
+    long countActiveBotCrewsInRoom(PartyroomId partyroomId);
+
+    /**
+     * 주어진 파티룸 안의 활성 봇 crew userId 목록을 입장 시각(enteredAt) 내림차순(가장 최근 입장 우선)으로
+     * 반환한다(역할 무관, 페르소나 비게이트). 조건은 {@link #countActiveBotCrewsInRoom} 와 동일하다.
+     */
+    List<UserId> findActiveBotCrewUserIdsByJoinedDesc(PartyroomId partyroomId);
 }

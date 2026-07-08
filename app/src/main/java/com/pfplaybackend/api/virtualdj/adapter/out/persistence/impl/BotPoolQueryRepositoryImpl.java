@@ -206,4 +206,37 @@ public class BotPoolQueryRepositoryImpl implements BotPoolQueryRepository {
                         t.get(botPersonaAssignmentData.personaId)))
                 .toList();
     }
+
+    @Override
+    public long countActiveBotCrewsInRoom(PartyroomId partyroomId) {
+        Long count = queryFactory
+                .select(crewData.count())
+                .from(crewData)
+                .join(userAccountData).on(userAccountData.userId.uid.eq(crewData.userId.uid))
+                .where(
+                        crewData.partyroomId.id.eq(partyroomId.getId()),
+                        crewData.isActive.isTrue(),
+                        userAccountData.isDummy.isTrue(),
+                        userAccountData.withdrawnAt.isNull())
+                .fetchOne();
+        return count == null ? 0L : count;
+    }
+
+    @Override
+    public List<UserId> findActiveBotCrewUserIdsByJoinedDesc(PartyroomId partyroomId) {
+        List<Long> uids = queryFactory
+                .select(crewData.userId.uid)
+                .from(crewData)
+                .join(userAccountData).on(userAccountData.userId.uid.eq(crewData.userId.uid))
+                .where(
+                        crewData.partyroomId.id.eq(partyroomId.getId()),
+                        crewData.isActive.isTrue(),
+                        userAccountData.isDummy.isTrue(),
+                        userAccountData.withdrawnAt.isNull())
+                // 가장 최근 입장한 봇 우선. enteredAt 동률 시 crewId desc 로 결정적 순서 보장.
+                .orderBy(crewData.enteredAt.desc(), crewData.id.desc())
+                .fetch();
+
+        return uids.stream().map(UserId::new).toList();
+    }
 }
