@@ -253,6 +253,24 @@ public class AdminVirtualDjController {
         return ResponseEntity.noContent().build();
     }
 
+    @Operation(summary = "룸 리소스 회수(drain-resources)", description = "봇 제거·config MANAGED 유지")
+    @SecurityRequirement(name = "cookieAuth")
+    @PreAuthorize("@adminAuth.canManageVirtualDj()")
+    @PostMapping("/partyrooms/{partyroomId}/virtual-dj/drain-resources")
+    public ResponseEntity<Void> drainResources(@PathVariable("partyroomId") Long partyroomId) {
+        adminService.drainResources(new PartyroomId(partyroomId));
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "룸 봇 부활(revive)", description = "MANAGED 방 목표 재배치")
+    @SecurityRequirement(name = "cookieAuth")
+    @PreAuthorize("@adminAuth.canManageVirtualDj()")
+    @PostMapping("/partyrooms/{partyroomId}/virtual-dj/revive")
+    public ResponseEntity<Void> revive(@PathVariable("partyroomId") Long partyroomId) {
+        adminService.revive(new PartyroomId(partyroomId));
+        return ResponseEntity.noContent().build();
+    }
+
     @Operation(summary = "룸 가상 DJ live 상태 조회")
     @SecurityRequirement(name = "cookieAuth")
     @PreAuthorize("@adminAuth.canManageVirtualDj()")

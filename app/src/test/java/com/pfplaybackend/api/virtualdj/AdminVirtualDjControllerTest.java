@@ -278,6 +278,50 @@ class AdminVirtualDjControllerTest {
 
     @Test
     @WithMockUser(roles = "ADMIN")
+    void drainResources_admin_returns204() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/partyrooms/7/virtual-dj/drain-resources").with(csrf()))
+                .andExpect(status().isNoContent());
+        verify(adminService).drainResources(new PartyroomId(7L));
+    }
+
+    @Test
+    @WithMockUser(roles = "MEMBER")
+    void drainResources_member_returns403() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/partyrooms/7/virtual-dj/drain-resources").with(csrf()))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void drainResources_missingCsrf_returns403() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/partyrooms/7/virtual-dj/drain-resources"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void revive_admin_returns204() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/partyrooms/7/virtual-dj/revive").with(csrf()))
+                .andExpect(status().isNoContent());
+        verify(adminService).revive(new PartyroomId(7L));
+    }
+
+    @Test
+    @WithMockUser(roles = "MEMBER")
+    void revive_member_returns403() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/partyrooms/7/virtual-dj/revive").with(csrf()))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void revive_missingCsrf_returns403() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/partyrooms/7/virtual-dj/revive"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
     void liveStatus_admin_returns200() throws Exception {
         given(adminService.liveStatus(new PartyroomId(7L)))
                 .willReturn(new VirtualDjAdminService.LiveStatus(VirtualDjStatus.MANAGED, 2, 1, 5L, 2));

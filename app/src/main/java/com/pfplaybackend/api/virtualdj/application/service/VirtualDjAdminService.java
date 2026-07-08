@@ -105,6 +105,23 @@ public class VirtualDjAdminService {
         log.info("[VirtualDjAdmin.drain] partyroomId={}", partyroomId.getId());
     }
 
+    /**
+     * 리소스 회수 — 봇 제거하되 config MANAGED 유지({@code /drain} 과 달리 OFF 전환 안 함).
+     * {@code /revive}·점검종료로 복원 가능.
+     */
+    @Transactional
+    public void drainResources(PartyroomId partyroomId) {
+        orchestrator.drainRoom(partyroomId);
+        log.info("[VirtualDjAdmin.drainResources] partyroomId={}", partyroomId.getId());
+    }
+
+    /** 부활 — MANAGED 방을 목표로 재배치(placeToTarget). config 미변경. */
+    @Transactional
+    public void revive(PartyroomId partyroomId) {
+        orchestrator.reconcileRoom(partyroomId);
+        log.info("[VirtualDjAdmin.revive] partyroomId={}", partyroomId.getId());
+    }
+
     // ── bulk ──
 
     /**

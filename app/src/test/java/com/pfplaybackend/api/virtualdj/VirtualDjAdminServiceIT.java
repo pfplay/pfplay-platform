@@ -133,6 +133,49 @@ class VirtualDjAdminServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("drainResources — 봇 제거하되 config 는 MANAGED 유지")
+    void drainResources_removesAllBots_keepsManaged() {
+        long roomId = seedRoom(5);
+        Long packId = seedSongPack();
+        poolService.provision(3);
+        flushAndClear();
+
+        adminService.applyConfig(new PartyroomId(roomId), VirtualDjStatus.MANAGED, 2, 2, packId);
+        flushAndClear();
+        assertThat(activeBotDjCount(roomId)).isEqualTo(2);
+
+        adminService.drainResources(new PartyroomId(roomId));
+        flushAndClear();
+
+        assertThat(activeBotDjCount(roomId)).isZero();
+        assertThat(configRepository.findByPartyroomId(roomId).orElseThrow().getStatus())
+                .isEqualTo(VirtualDjStatus.MANAGED);
+    }
+
+    @Test
+    @DisplayName("revive — MANAGED 방을 목표로 재배치(placeToTarget), config 미변경")
+    void revive_placesBotsToTarget() {
+        long roomId = seedRoom(5);
+        Long packId = seedSongPack();
+        poolService.provision(3);
+        flushAndClear();
+
+        adminService.applyConfig(new PartyroomId(roomId), VirtualDjStatus.MANAGED, 2, 2, packId);
+        flushAndClear();
+        // 리소스 회수로 봇을 비운 뒤(config MANAGED 유지) revive 로 재배치 검증.
+        adminService.drainResources(new PartyroomId(roomId));
+        flushAndClear();
+        assertThat(activeBotDjCount(roomId)).isZero();
+
+        adminService.revive(new PartyroomId(roomId));
+        flushAndClear();
+
+        assertThat(activeBotDjCount(roomId)).isEqualTo(2);
+        assertThat(configRepository.findByPartyroomId(roomId).orElseThrow().getStatus())
+                .isEqualTo(VirtualDjStatus.MANAGED);
+    }
+
+    @Test
     @DisplayName("applyBulk MANAGED — 여러 룸에 동일 config 적용 + 각 룸 reconcile")
     void applyBulk_appliesToMultipleRooms() {
         long roomA = seedRoom(5);
