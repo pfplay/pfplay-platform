@@ -50,13 +50,29 @@ class VirtualDjArchitectureTest {
     }
 
     @Test
-    @DisplayName("*Orchestrator* 는 admin/administration BC 를 참조하지 않는다")
-    void orchestratorMustNotDependOnAdmin() {
+    @DisplayName("virtualdj 패키지 전체: admin BC 를 참조하지 않는다 (봇 계정 프로비저닝 어댑터만 예외)")
+    void virtualDjPackageMustNotDependOnAdmin() {
+        // admin 역참조 금지를 virtualdj 패키지 전체로 확대(고정 2역할 모델: 봇 로직은 admin BC 를
+        // 알 필요가 없다). 유일한 승인 예외 = adapter/out/provision — 봇 더미 계정 생성은 본질적으로
+        // 계정 관리(admin) 연산이라 AdminUserService 를 경유한다(이 리팩토링 이전부터의 정당한 의존).
+        // 이 경계 밖의 어떤 virtualdj 클래스도 admin 을 import 하면 안 된다.
+        ArchRule rule = noClasses()
+                .that().resideInAPackage("..virtualdj..")
+                .and().resideOutsideOfPackage("..virtualdj.adapter.out.provision..")
+                .should().dependOnClassesThat().resideInAnyPackage(
+                        "com.pfplaybackend.api.admin..");
+        rule.check(allClasses);
+    }
+
+    @Test
+    @DisplayName("*Orchestrator* 는 administration BC 를 참조하지 않는다 (리스너/서비스의 점검 이벤트 구독은 허용)")
+    void orchestratorMustNotDependOnAdministration() {
+        // administration(점검 공지 등) 구독은 orchestrator 가 아닌 리스너/서비스에는 허용된다
+        // (VirtualDjMaintenanceListener 가 MaintenanceStartedEvent 등을 구독). orchestrator 만 금지.
         ArchRule rule = noClasses()
                 .that().resideInAPackage("..virtualdj..")
                 .and().haveSimpleNameContaining("Orchestrator")
                 .should().dependOnClassesThat().resideInAnyPackage(
-                        "com.pfplaybackend.api.admin..",
                         "com.pfplaybackend.api.administration..");
         rule.check(allClasses);
     }
