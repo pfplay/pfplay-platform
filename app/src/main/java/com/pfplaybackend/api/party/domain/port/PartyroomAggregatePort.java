@@ -53,4 +53,8 @@ public interface PartyroomAggregatePort {
     // ===== DJ Queue State: DjQueueData =====
     DjQueueData findDjQueueState(PartyroomId partyroomId);
     void saveDjQueueState(DjQueueData djQueue);
+
+    // ===== Reconcile cron (#308) =====
+    List<PartyroomId> findPartyroomIdsWithInactiveCrewDj();
+    List<PartyroomId> findStuckActivatedPartyroomIds(long threshold);
 }
