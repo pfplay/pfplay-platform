@@ -64,8 +64,10 @@ origin/develop 워크트리에서 `application-test.yml`을 `ddl-auto: validate`
 AFTER_COMMIT + `@Async` 리스너(`UserActivityLogListener` 등)는 커밋 후 별 스레드에서 `user_activity_log` 등에 INSERT한다. async 부작용을 **트리거하지만 await하지 않는** 테스트가 있으면, 그 late INSERT가 **다음 테스트 truncate 이후 착지**해 오염(예: `hasSize(1)`→2)하거나 MDL과 충돌한다.
 - cleaner truncate **직전에 커밋행을 쓰는 async executor를 전부 idle 대기**(activeCount 0 + queue empty 폴링).
   - ⚠️ **executor는 단수가 아니라 최소 3개다**(반드시 전부 대기): `userActivityLogExecutor`·`webPushExecutor`(`AsyncConfig`), `vdjChatExecutor`(`VirtualDjChatAsyncConfig`). UAL 하나만 폴링하면 **webpush(`AnnouncementPushFlowIntegrationTest`)·vdj(`VirtualDjEventListenerIT`) 경로 레이스가 그대로 열린다** — 이 둘은 §2 실패목록에 실재. 구현은 `ThreadPoolTaskExecutor` 빈들을 컨텍스트에서 수집해 모두 quiesce.
+  - **안정성 창(TOCTOU 방어)**: `ThreadPoolTaskExecutor`는 큐 dequeue↔activeCount 증가 사이 미세 창에서 (activeCount 0 ∧ queue empty)가 순간 참일 수 있다. 1회 스냅샷 대신 **연속 N회(예 3회, 짧은 간격) idle 관측**을 idle 조건으로 삼는다.
   - **타임아웃 만료 = fail-loud**(예외로 테스트 실패). 여전히 바쁜데 조용히 truncate 진행하면 C2 재발/침묵오염. 짧은 상한(예 수 초) 후 명시적 실패.
   - 이 quiescence를 pre-transaction 훅(§3.2.1)에 truncate **직전** 배치 → 직전 테스트 async tx의 MDL도 해소됨.
+  - **스케줄러 blind-spot**: `@EnableScheduling` 크론(재생/vdj reconcile)은 `ThreadPoolTaskScheduler`(≠TPTE)에서 돌아 collect-all-TPTE 대상이 아니다(과다대기 회피 이점). 단 스케줄 잡이 스위트 중 커밋행을 쓰면 잔여 flake 벡터 — 발현 시 `test` 프로파일에서 스케줄링 비활성화로 대응.
 - 병행: **커밋형 async 부작용을 내는 IT 목록화**(`UserActivityLog*Listener*IT` 8개 + 파티룸 생성/제재 + push + vdj 트리거) → 필요 시 Awaitility await 보강(`UserActivityLogListenerAdminPenaltyIT` 패턴을 표준으로).
 
 #### 3.2.3 truncate 로직
@@ -106,7 +108,7 @@ truncate 도입 후에도 남는 실패(시드 유니크 충돌·FK·단언)는 
 - 수정: `.github/workflows/ci-test.yml`(integrationTest 스텝; 74 초록 뒤 별 커밋/후속)
 
 ## 5. 검증 (DoD 게이트)
-0a. **cleaner 결정론 마이크로 검증(C1, 재측정 전 선행)**: 전량 실행 전에, cleaner가 롤백 격리를 **깨지 않음**을 결정론적으로 단언하는 전용 테스트를 먼저 통과시킨다 — 롤백형 `@Transactional` IT에서 "메서드가 비보존 테이블에 write → 같은 메서드 내 롤백으로 사라짐"과, 인접 두 메서드가 서로의 커밋 잔재를 **관측하지 않음**(clean 시작)을 명시 단언. **1회 초록은 flake 부재의 증명이 아니므로**(C1 발현형=비결정), 이 마이크로 검증 + 31개 반복/스트레스 실행으로 "격리가 살아있음"을 단언한다.
+0a. **cleaner 결정론 마이크로 검증(C1, 재측정 전 선행)**: 전량 실행 전에, cleaner가 롤백 격리를 **깨지 않음**을 결정론적으로 단언하는 전용 테스트를 먼저 통과시킨다 — **핵심 단언**은 "인접 두 (커밋형) 메서드가 서로의 잔재를 관측하지 않음(clean 시작)" — cleaner가 실제로 하는 일. 부수로 "롤백형 메서드 write가 같은 메서드 롤백으로 소멸"(cleaner가 tx를 안 깬다는 방증)도 단언. **1회 초록은 flake 부재의 증명이 아니므로**(C1 발현형=비결정), 이 마이크로 검증 + 31개 반복/스트레스 실행으로 "격리가 살아있음"을 단언한다.
 0b. **cleaner 적용 후 재측정(S2)**: config 전환 + `DatabaseCleaner`(§3.2 pre-transaction, 별도 커넥션)까지 넣은 상태로 `:app:integrationTest --continue` 재실행 → 실패 **재분류**(자동해소 vs 개별수정). §2의 41/14는 cleaner **이전** 수치라 신뢰 불가 — 이 재측정이 개별수정 범위의 진실원천.
 1. `:app:integrationTest` **전량 초록**(0 fail/0 error) — 로컬 uncontended, 안정성 위해 **연속 2회 이상** 초록.
 2. `:app:test` 회귀 무변(유닛/웹 여전히 초록).
@@ -124,7 +126,7 @@ truncate 도입 후에도 남는 실패(시드 유니크 충돌·FK·단언)는 
 - **성능/CI 시간(S5)**: 매 테스트 40+ 테이블 truncate(FK off) — TRUNCATE 빠름, 테스트당 수십 ms 허용. 별개로 **`@MockBean` 사용 IT는 별도 Spring 컨텍스트 캐시 엔트리**를 만들어 캐시 스래싱→다수 풀부팅 유발(74 IT). CI 소요는 이 컨텍스트 파편화가 지배 → **DoD 재측정(§5.0) 때 실제 벽시계 측정**해 CI 예산 확정(Open Decision #3와 연동). 최적화("변경 테이블만 truncate", 컨텍스트 통합)는 후속.
 - **PRESERVE_SET 누락/과다**: 적게 보존하면 참조 데이터 소실(부팅 실패), 많이 보존하면 오염. §5.0 재측정으로 조정.
 - **CI 러너 Docker**: GitHub-hosted `ubuntu-latest`는 Docker 지원(확인) → Testcontainers 동작. self-hosted면 데몬 확인 필요.
-- **`@BeforeAll` 커밋 픽스처 소실**: cleaner는 **메서드마다** pre-transaction으로 truncate하므로, 클래스 1회 `@BeforeAll`에서 **커밋**으로 시드한 공유 픽스처는 2번째 메서드부터 소실된다. create-drop 전제 IT엔 드물지만 전량 전환 시 잠재 — 커밋형 `@BeforeAll` 시드는 **메서드 스코프로 이전**하거나 그 대상을 보존대상화해야 한다(§5.0b 재측정에서 발현 시 처리).
+- **`@BeforeAll` 커밋 픽스처 소실**: cleaner는 **메서드마다** pre-transaction으로 truncate하므로, 클래스 1회 `@BeforeAll`에서 **커밋**으로 시드한 공유 픽스처는 2번째 메서드부터 소실된다. create-drop 전제 IT엔 드물지만 전량 전환 시 잠재 — 커밋형 `@BeforeAll` 시드는 **메서드 스코프로 이전**하거나 그 대상을 보존대상화(이때 §8-1 FK-closure 준수)해야 한다(§5.0b 재측정에서 발현 시 처리).
 - **Flyway 슬롯**: 본 브랜치는 마이그레이션 무추가라 무관. 오히려 IT가 Flyway를 타므로 향후 슬롯 충돌 PR은 IT 부팅에서 즉시 red(이점).
 
 ## 8. 오픈 결정 (스펙 리뷰에서 확정)
