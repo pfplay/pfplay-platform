@@ -19,7 +19,7 @@ import java.time.Instant;
 @Table(
         name = "PLAYBACK",
         indexes = {
-                @Index(name = "playback_partyroom_id_IDX", columnList = "partyroom_id")
+                @Index(name = "idx_playback_partyroom_time", columnList = "partyroom_id, created_at")
         }
 )
 @Entity
