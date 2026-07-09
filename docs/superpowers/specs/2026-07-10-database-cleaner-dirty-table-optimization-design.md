@@ -43,11 +43,18 @@ truncate하는 것은 **관측 가능한 상태 변화가 없는 no-op**이다(�
 ### 3.1 "더티" 정의 (핵심 불변식)
 
 현행 `clean()`의 사후 보장 = **비-PRESERVE 테이블 전부가 (0행 AND AUTO_INCREMENT=1)**.
-비-PRESERVE 테이블은 Flyway 시드가 없어(참조 시드는 전부 PRESERVE_SET) 스키마 초기 상태가
-(0행, AI=1)이다. 따라서 다음이 성립한다:
+(주의: 비-PRESERVE 테이블 중 일부는 Flyway 시드가 있다 — 예: `V5__create_administrator.sql`가
+`user_account`/`administrator`/`member`를 시드하며 이들은 PRESERVE_SET이 아니다. 아래 논거는
+"시드 없음"에 의존하지 않는다.)
 
-> 테이블이 **(0행 AND AI=1)** 이면 = 한 번도 쓰이지 않았거나 이미 정리됨 = 오염원 없음 →
-> **truncate는 no-op → 스킵 안전**.
+무조건적 성립:
+
+> 테이블이 **현재 (0행 AND AI=1)** 상태이면, truncate해도 지울 행이 없고 이미 1인 AI를 1로
+> 리셋하는 것뿐 = **관측 가능한 상태 변화 없는 no-op → 스킵해도 사후 상태 동일 → 안전**.
+> (그 테이블이 과거에 시드됐든, 쓰였다 정리됐든, 한 번도 안 쓰였든 무관 — 지금 상태만이 결정.)
+
+시드된 비-PRESERVE 테이블(user_account 등)은 시드 행이 존재하므로 조건①(행 존재)로 더티 판정되어
+정상적으로 truncate된다(현행과 동일). 즉 "시드 없음" 전제 없이도 정확하다.
 
 **더티(= truncate 대상) ⟺ (행이 1개 이상 존재) OR (AUTO_INCREMENT > 1)**
 
@@ -63,25 +70,34 @@ truncate하는 것은 **관측 가능한 상태 변화가 없는 no-op**이다(�
 
 `clean()` 시작 시, 별도 autocommit 커넥션(현행과 동일)에서:
 
-1. **행 존재 테이블** — 비-PRESERVE base table 목록에 대해 한 번의 배치 쿼리:
+1. **행 존재 테이블 (조건①)** — 비-PRESERVE base table 목록에 대해 한 번의 배치 쿼리:
    ```sql
    SELECT 'tbl_a' AS t WHERE EXISTS (SELECT 1 FROM `tbl_a`)
    UNION ALL SELECT 'tbl_b' WHERE EXISTS (SELECT 1 FROM `tbl_b`)
    ... (비-PRESERVE 전 테이블)
    ```
-   → 비어있지 않은 테이블 이름 집합(1 라운드트립).
-2. **AI 전진 테이블** — 한 번의 메타데이터 조회:
+   → 비어있지 않은 테이블 이름 집합(1 라운드트립). **실데이터 라이브 쿼리 = 캐시 없음.**
+2. **AI 전진 테이블 (조건②)** — 한 번의 메타데이터 조회.
+   ⚠️ **MySQL 8.0 캐시 우회 필수**: `information_schema.tables.AUTO_INCREMENT`(및 `TABLE_ROWS`)는
+   8.0에서 **캐시된 통계**로, `information_schema_stats_expiry`(기본 86400초)에 지배된다. DML은
+   이 캐시를 무효화하지 않으므로, 조회 전 세션 변수로 **캐시를 꺼서 live 값**을 읽어야 한다
+   (안 그러면 INSERT-롤백 후에도 stale AI=1을 읽어 스킵 → 불변식 붕괴). 이 설정도 읽기라 fsync 무관.
    ```sql
+   SET SESSION information_schema_stats_expiry = 0;
    SELECT table_name FROM information_schema.tables
    WHERE table_schema = DATABASE() AND auto_increment > 1;
    ```
-   → AUTO_INCREMENT>1 테이블 집합(1 라운드트립).
-   (AI 컬럼 없는 테이블은 `auto_increment` NULL → 미포함. 그런 테이블은 조건①로만 판정 = 정확.)
+   → AUTO_INCREMENT>1 테이블 집합(1 라운드트립). (AI 컬럼 없는 테이블은 `auto_increment` NULL →
+   미포함. 그런 테이블은 조건①로만 판정 = 정확.)
+
+   세션 변수는 pooled 커넥션에 남을 수 있으나 `stats_expiry=0`은 무해(메타 조회가 항상 fresh일 뿐)
+   하며, 매 `clean()`이 재설정하므로 복원 불필요.
 
 두 집합의 **합집합 ∩ (비-PRESERVE base table)** = truncate 대상.
 
-감지는 전부 읽기(fsync 없음)이며 서버측에서 즉시 반환된다. 라운드트립 2회는 TRUNCATE 1건의
-fsync보다 훨씬 싸다.
+감지는 전부 읽기(fsync 없음)이며 서버측에서 즉시 반환된다. 라운드트립은 TRUNCATE 1건의
+fsync보다 훨씬 싸다. **비대칭 주의**: 조건①은 라이브 데이터 쿼리(캐시 무관), 조건②만 8.0 통계
+캐시 우회(`stats_expiry=0`)가 필요하다.
 
 ### 3.3 실행 (현행과 동일한 뼈대)
 
@@ -100,10 +116,11 @@ try (Connection c = dataSource.getConnection()) {   // autocommit=true, 별도 �
 
 ### 3.4 정확성 논거 (요약)
 
-- 비-PRESERVE 테이블은 시드가 없어 초기 (0행, AI=1).
-- (0행 AND AI=1) 테이블 truncate = no-op → 스킵해도 사후 상태 동일.
-- 더티 정의가 "pristine 아님"을 정확히(누락 없이) 덮음:
-  행 존재 / UPDATE(행 존재) / INSERT-롤백(AI>1) / INSERT-DELETE(AI>1) 모두 감지.
+- **핵심**: 현재 (0행 AND AI=1) 상태인 테이블은 truncate가 no-op → 스킵해도 사후 상태 동일.
+  (시드 여부·과거 이력 무관, 현재 상태만이 결정 — §3.1.)
+- 더티 정의가 "pristine 아님"을 **누락 없이** 덮음:
+  행 존재(시드행 포함) / UPDATE(행 존재) / INSERT-롤백(0행·AI>1) / INSERT-DELETE(0행·AI>1) 전부 감지.
+  단 조건②는 8.0 통계 캐시를 우회해야 live AI를 봄(§3.2) — 이 우회가 INSERT-롤백 케이스의 핵심.
 - 따라서 `clean()` 사후 상태(모든 비-PRESERVE 테이블 = 0행 & AI=1)는 현행과 **동일**.
 - FK: FK_CHECKS=0 하에 부분 집합 truncate는 dangling을 만들지 않음(현행과 동일).
 
@@ -112,12 +129,15 @@ try (Connection c = dataSource.getConnection()) {   // autocommit=true, 별도 �
 `DatabaseCleanerIsolationIT`(기존) 확장 — 별도 커밋의 검증:
 
 - **T1 더티 정리**: 비-PRESERVE 테이블에 행 커밋 → `clean()` 후 0행.
-- **T2 AI 전진 복원**: 테이블에 INSERT 후 DELETE(행 0, AI>1) → `clean()` 후 AI=1(다음 INSERT id=1).
+- **T2 AI 전진 복원(같은 커넥션)**: 테이블에 INSERT 후 DELETE(행 0, AI>1) → `clean()` 후
+  AI=1(다음 INSERT id=1).
+- **T2b AI 전진 복원(INSERT-롤백, 캐시 버그 직격)**: 한 메서드에서 INSERT 후 롤백(행 0, engine AI 전진)
+  → 다음 메서드 `clean()` → 그 다음 INSERT id=1 확인. **8.0 통계 캐시 우회(`stats_expiry=0`)가
+  없으면 이 테스트가 실패**한다(회귀 가드). 반드시 메서드 경계를 넘겨 캐시 stale 경로를 태운다.
 - **T3 pristine 스킵 후에도 격리 유지**: 기존 격리 검증(교차 테스트 오염 없음)이 그대로 그린.
 - **T4 PRESERVE 불변**: 참조 시드(avatar/system_config) 보존 확인(기존 유지).
-
-(선택) 화이트박스: `clean()`이 pristine 테이블에 TRUNCATE를 발행하지 않음을 검증 — 감지된 dirty
-목록을 관측 가능한 지점으로 노출하거나, 카운터/로그로 확인. 과설계면 생략하고 T1~T4로 충분.
+- **T5(화이트박스, 유지 권장)**: `clean()`이 pristine 테이블에 TRUNCATE를 발행하지 않음을 검증 —
+  감지된 dirty 목록/카운터를 관측 지점으로 노출. false-negative 회귀를 잡는 가장 싼 가드라 유지한다.
 
 ## 5. 검증(게이트)
 
@@ -130,8 +150,11 @@ try (Connection c = dataSource.getConnection()) {   // autocommit=true, 별도 �
 
 - **감지 누락(false-negative)로 더티 테이블 스킵 → 격리 붕괴**: 가장 큰 위험. 완화 = 정확성
   논거(3.4) + T1~T3 + 전량 2회 그린. 조건①②가 신뢰 판정이라 논리적 누락 없음.
-- **information_schema.auto_increment 신뢰성**: MySQL/InnoDB에서 `AUTO_INCREMENT`(다음 값)는
-  신뢰 가능(반면 `TABLE_ROWS`는 근사라 **사용하지 않음** — 행 판정은 EXISTS로만).
+- **information_schema 캐시(8.0)**: MySQL 8.0에서 `AUTO_INCREMENT`·`TABLE_ROWS` **둘 다 캐시된
+  통계**(`information_schema_stats_expiry` 기본 86400s, DML로 무효화 안 됨). 그래서 (a) 행 판정은
+  캐시 없는 라이브 `EXISTS`로만 하고, (b) AI 판정은 조회 전 `SET SESSION
+  information_schema_stats_expiry=0`으로 캐시를 꺼 live 값을 읽는다(§3.2). 이 우회를 빼면 stale
+  AI=1로 INSERT-롤백 테이블을 스킵해 격리가 조용히 깨진다 — 이번 최적화의 최대 함정.
 - **UNION 쿼리 길이(~70 테이블)**: 문자열이 길지만 단일 쿼리로 처리, 문제 없음. 테이블 목록은
   동적이라 하드코딩 없음.
 - **롤백 불가**: 순수 성능 최적화, 스키마/마이그레이션 무변경.
