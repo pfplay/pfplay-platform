@@ -1,9 +1,14 @@
 package com.pfplaybackend.api.administration.adapter.out.persistence;
 
+import com.pfplaybackend.api.administration.domain.entity.data.AdministratorData;
 import com.pfplaybackend.api.administration.domain.entity.data.SystemAnnouncementData;
 import com.pfplaybackend.api.administration.domain.value.AnnouncementSeverity;
 import com.pfplaybackend.api.administration.domain.value.AnnouncementType;
 import com.pfplaybackend.api.common.AbstractIntegrationTest;
+import com.pfplaybackend.api.common.domain.value.UserId;
+import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
+import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,10 +25,28 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Transactional
 class SystemAnnouncementRepositoryIntegrationTest extends AbstractIntegrationTest {
 
+    private static final long ADMIN_USER_ID = 990101L;
+
     @Autowired
     SystemAnnouncementRepository repo;
+    @Autowired
+    AdministratorRepository administratorRepository;
+    @Autowired
+    UserAccountRepository userAccountRepository;
 
     private final LocalDateTime now = LocalDateTime.of(2026, 5, 4, 0, 0);
+
+    /** FK fk_announcement_sent_by / cancelled_by → administrator(administrator_id). */
+    private Long adminId;
+
+    @BeforeEach
+    void seedAdmin() {
+        userAccountRepository.saveAndFlush(
+                UserAccountData.createForLocal(new UserId(ADMIN_USER_ID), "sysann-repo-it@x", "h"));
+        adminId = administratorRepository
+                .saveAndFlush(AdministratorData.createSuperAdmin(ADMIN_USER_ID))
+                .getAdministratorId();
+    }
 
     @Test
     @DisplayName("findDueForMaintenanceActivation — start<=now, end>now, started=null, cancelled=null")
@@ -76,28 +99,28 @@ class SystemAnnouncementRepositoryIntegrationTest extends AbstractIntegrationTes
                                                 LocalDateTime started, LocalDateTime cancelled) {
         SystemAnnouncementData d = SystemAnnouncementData.create(
                 AnnouncementType.MAINTENANCE_NOTICE, AnnouncementSeverity.WARN,
-                "k", "e", "ko", "en", s, e, null, now, 1L, false);
+                "k", "e", "ko", "en", s, e, null, now, adminId, false);
         if (started != null) ReflectionTestUtils.setField(d, "maintenanceStartedAt", started);
         if (cancelled != null) {
             ReflectionTestUtils.setField(d, "cancelledAt", cancelled);
-            ReflectionTestUtils.setField(d, "cancelledByAdministratorId", 2L);
+            ReflectionTestUtils.setField(d, "cancelledByAdministratorId", adminId);
         }
         return d;
     }
 
     private SystemAnnouncementData event() {
         return SystemAnnouncementData.create(AnnouncementType.EVENT, AnnouncementSeverity.INFO,
-                "k", "e", "ko", "en", null, null, null, now, 1L, false);
+                "k", "e", "ko", "en", null, null, null, now, adminId, false);
     }
 
     private SystemAnnouncementData eventWithExpiry(LocalDateTime exp) {
         return SystemAnnouncementData.create(AnnouncementType.EVENT, AnnouncementSeverity.INFO,
-                "k", "e", "ko", "en", null, null, exp, now, 1L, false);
+                "k", "e", "ko", "en", null, null, exp, now, adminId, false);
     }
 
     private SystemAnnouncementData eventCancelled() {
         SystemAnnouncementData d = event();
-        d.cancel(2L, Clock.fixed(now.toInstant(ZoneOffset.UTC), ZoneOffset.UTC));
+        d.cancel(adminId, Clock.fixed(now.toInstant(ZoneOffset.UTC), ZoneOffset.UTC));
         return d;
     }
 }

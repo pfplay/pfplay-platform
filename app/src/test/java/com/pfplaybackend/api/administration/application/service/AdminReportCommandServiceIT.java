@@ -2,8 +2,10 @@ package com.pfplaybackend.api.administration.application.service;
 
 import com.pfplaybackend.api.administration.adapter.in.web.dto.AdminReportDetailResponse;
 import com.pfplaybackend.api.administration.adapter.in.web.dto.AdminReportStatusUpdateRequest;
+import com.pfplaybackend.api.administration.adapter.out.persistence.AdministratorRepository;
 import com.pfplaybackend.api.administration.adapter.out.persistence.PartyroomReportRepository;
 import com.pfplaybackend.api.administration.application.AdminContext;
+import com.pfplaybackend.api.administration.domain.entity.data.AdministratorData;
 import com.pfplaybackend.api.administration.domain.entity.data.PartyroomReportData;
 import com.pfplaybackend.api.administration.domain.enums.ReportCategory;
 import com.pfplaybackend.api.administration.domain.enums.ReportStatus;
@@ -53,8 +55,12 @@ class AdminReportCommandServiceIT extends AbstractIntegrationTest {
 
     private static final long HOST_UID = 8201L;
     private static final long REPORTER_UID = 8202L;
-    private static final long ADMIN_ID = 99L;
-    private static final long FIRST_REVIEWER_ADMIN_ID = 88L;
+    private static final long ADMIN_USER_ID = 990199L;
+    private static final long REVIEWER_USER_ID = 990188L;
+
+    // FK reviewed_by_administrator_id → administrator. AUTO_INCREMENT id 이므로 시드 후 생성 id 채택.
+    private Long adminId;
+    private Long firstReviewerAdminId;
     private static final String NOTE = "처리 완료 메모";
 
     @Autowired AdminReportCommandService service;
@@ -63,6 +69,7 @@ class AdminReportCommandServiceIT extends AbstractIntegrationTest {
     @Autowired PartyroomRepository partyroomRepository;
     @Autowired MemberRepository memberRepository;
     @Autowired UserAccountRepository userAccountRepository;
+    @Autowired AdministratorRepository administratorRepository;
     @Autowired TransactionTemplate transactionTemplate;
 
     @PersistenceContext EntityManager em;
@@ -77,17 +84,21 @@ class AdminReportCommandServiceIT extends AbstractIntegrationTest {
 
     @BeforeEach
     void seed() {
+        // FK reviewed_by_administrator_id → administrator. actor(현재 검토자) + 첫 검토자 2명 시드.
+        adminId = seedAdmin(ADMIN_USER_ID, "admin-g4it@g4it.local", null);
+        firstReviewerAdminId = seedAdmin(REVIEWER_USER_ID, "reviewer-admin-g4it@g4it.local", adminId);
+
         seedMember(HOST_UID, "host-g4it@g4it.local");
         seedMember(REPORTER_UID, "reporter-g4it@g4it.local");
         partyroomId = seedRoom(HOST_UID, "g4-active-room").getId();
 
         // 4 reports each in different from-state.
         pendingId = saveReport(ReportStatus.PENDING, ReportCategory.SPAM, null);
-        reviewingId = saveReport(ReportStatus.REVIEWING, ReportCategory.HARASSMENT, FIRST_REVIEWER_ADMIN_ID);
-        resolvedId = saveReport(ReportStatus.RESOLVED, ReportCategory.OTHER, FIRST_REVIEWER_ADMIN_ID);
-        dismissedId = saveReport(ReportStatus.DISMISSED, ReportCategory.SPAM, FIRST_REVIEWER_ADMIN_ID);
+        reviewingId = saveReport(ReportStatus.REVIEWING, ReportCategory.HARASSMENT, firstReviewerAdminId);
+        resolvedId = saveReport(ReportStatus.RESOLVED, ReportCategory.OTHER, firstReviewerAdminId);
+        dismissedId = saveReport(ReportStatus.DISMISSED, ReportCategory.SPAM, firstReviewerAdminId);
 
-        given(adminContext.currentAdministratorId()).willReturn(ADMIN_ID);
+        given(adminContext.currentAdministratorId()).willReturn(adminId);
     }
 
     @AfterEach
@@ -104,6 +115,16 @@ class AdminReportCommandServiceIT extends AbstractIntegrationTest {
         userAccountRepository.saveAndFlush(
                 UserAccountData.createForLocal(new UserId(uid), email, "h"));
         memberRepository.saveAndFlush(MemberData.createForUserAccount(uid));
+    }
+
+    /** grantedBy=null → super admin, else 일반 admin. 생성된 administrator_id 반환. */
+    private Long seedAdmin(long uid, String email, Long grantedBy) {
+        userAccountRepository.saveAndFlush(
+                UserAccountData.createForLocal(new UserId(uid), email, "h"));
+        AdministratorData admin = (grantedBy == null)
+                ? AdministratorData.createSuperAdmin(uid)
+                : AdministratorData.createAdmin(uid, grantedBy);
+        return administratorRepository.saveAndFlush(admin).getAdministratorId();
     }
 
     private PartyroomData seedRoom(long hostUid, String title) {
@@ -162,7 +183,7 @@ class AdminReportCommandServiceIT extends AbstractIntegrationTest {
         assertThat(response.status()).isEqualTo(ReportStatus.REVIEWING);
         PartyroomReportData persisted = reportRepository.findById(pendingId).orElseThrow();
         assertThat(persisted.getStatus()).isEqualTo(ReportStatus.REVIEWING);
-        assertThat(persisted.getReviewedByAdministratorId()).isEqualTo(ADMIN_ID);
+        assertThat(persisted.getReviewedByAdministratorId()).isEqualTo(adminId);
         assertThat(persisted.getResolvedAt()).isNull();
         assertThat(persisted.getResolutionNote()).isNull();
     }
@@ -176,7 +197,7 @@ class AdminReportCommandServiceIT extends AbstractIntegrationTest {
         assertThat(response.status()).isEqualTo(ReportStatus.DISMISSED);
         PartyroomReportData persisted = reportRepository.findById(pendingId).orElseThrow();
         assertThat(persisted.getStatus()).isEqualTo(ReportStatus.DISMISSED);
-        assertThat(persisted.getReviewedByAdministratorId()).isEqualTo(ADMIN_ID);
+        assertThat(persisted.getReviewedByAdministratorId()).isEqualTo(adminId);
         assertThat(persisted.getResolvedAt()).isNotNull();
         assertThat(persisted.getResolutionNote()).isEqualTo(NOTE);
     }
@@ -190,8 +211,8 @@ class AdminReportCommandServiceIT extends AbstractIntegrationTest {
         assertThat(response.status()).isEqualTo(ReportStatus.RESOLVED);
         PartyroomReportData persisted = reportRepository.findById(reviewingId).orElseThrow();
         assertThat(persisted.getStatus()).isEqualTo(ReportStatus.RESOLVED);
-        // D3.2: 첫 검토자(FIRST_REVIEWER_ADMIN_ID) 보존, 현재 ADMIN_ID는 덮어쓰지 않음
-        assertThat(persisted.getReviewedByAdministratorId()).isEqualTo(FIRST_REVIEWER_ADMIN_ID);
+        // D3.2: 첫 검토자(firstReviewerAdminId) 보존, 현재 adminId는 덮어쓰지 않음
+        assertThat(persisted.getReviewedByAdministratorId()).isEqualTo(firstReviewerAdminId);
         assertThat(persisted.getResolvedAt()).isNotNull();
         assertThat(persisted.getResolutionNote()).isEqualTo(NOTE);
     }
@@ -206,7 +227,7 @@ class AdminReportCommandServiceIT extends AbstractIntegrationTest {
         PartyroomReportData persisted = reportRepository.findById(reviewingId).orElseThrow();
         assertThat(persisted.getStatus()).isEqualTo(ReportStatus.PENDING);
         // D3.2: hold 시에도 첫 검토자(audit) 보존
-        assertThat(persisted.getReviewedByAdministratorId()).isEqualTo(FIRST_REVIEWER_ADMIN_ID);
+        assertThat(persisted.getReviewedByAdministratorId()).isEqualTo(firstReviewerAdminId);
         assertThat(persisted.getResolvedAt()).isNull();
     }
 
@@ -298,6 +319,6 @@ class AdminReportCommandServiceIT extends AbstractIntegrationTest {
         assertThat(response.partyroom().host()).isNotNull();
         assertThat(response.partyroom().host().userAccountId()).isEqualTo(HOST_UID);
         assertThat(response.review()).isNotNull();
-        assertThat(response.review().reviewedByAdministratorId()).isEqualTo(ADMIN_ID);
+        assertThat(response.review().reviewedByAdministratorId()).isEqualTo(adminId);
     }
 }

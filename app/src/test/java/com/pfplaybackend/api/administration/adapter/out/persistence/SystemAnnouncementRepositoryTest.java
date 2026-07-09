@@ -1,9 +1,14 @@
 package com.pfplaybackend.api.administration.adapter.out.persistence;
 
+import com.pfplaybackend.api.administration.domain.entity.data.AdministratorData;
 import com.pfplaybackend.api.administration.domain.entity.data.SystemAnnouncementData;
 import com.pfplaybackend.api.administration.domain.value.AnnouncementSeverity;
 import com.pfplaybackend.api.administration.domain.value.AnnouncementType;
 import com.pfplaybackend.api.common.AbstractIntegrationTest;
+import com.pfplaybackend.api.common.domain.value.UserId;
+import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
+import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,15 +22,31 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Transactional
 class SystemAnnouncementRepositoryTest extends AbstractIntegrationTest {
 
+    private static final long ADMIN_USER_ID = 990102L;
+
     @Autowired SystemAnnouncementRepository repository;
+    @Autowired AdministratorRepository administratorRepository;
+    @Autowired UserAccountRepository userAccountRepository;
 
     private static final ZoneId Z = ZoneId.of("Asia/Seoul");
     private Clock clockAt(LocalDateTime t) { return Clock.fixed(t.atZone(Z).toInstant(), Z); }
 
+    /** FK fk_announcement_sent_by / cancelled_by → administrator(administrator_id). */
+    private Long adminId;
+
+    @BeforeEach
+    void seedAdmin() {
+        userAccountRepository.saveAndFlush(
+                UserAccountData.createForLocal(new UserId(ADMIN_USER_ID), "sysann-repo-test@x", "h"));
+        adminId = administratorRepository
+                .saveAndFlush(AdministratorData.createSuperAdmin(ADMIN_USER_ID))
+                .getAdministratorId();
+    }
+
     private SystemAnnouncementData maintenance(LocalDateTime start, LocalDateTime end) {
         return SystemAnnouncementData.create(
                 AnnouncementType.MAINTENANCE_NOTICE, AnnouncementSeverity.WARN,
-                "점검", "m", "b", "b", start, end, null, start.minusHours(1), 1L, false);
+                "점검", "m", "b", "b", start, end, null, start.minusHours(1), adminId, false);
     }
 
     @Test
@@ -53,7 +74,7 @@ class SystemAnnouncementRepositoryTest extends AbstractIntegrationTest {
 
         SystemAnnouncementData cancelled = maintenance(now.minusHours(1), now.minusMinutes(1));
         cancelled.markMaintenanceStarted(clockAt(now.minusHours(1)));
-        cancelled.cancel(1L, clockAt(now.minusMinutes(30)));
+        cancelled.cancel(adminId, clockAt(now.minusMinutes(30)));
         SystemAnnouncementData completed = maintenance(now.minusHours(1), now.minusMinutes(1));
         completed.markMaintenanceStarted(clockAt(now.minusHours(1)));
         completed.markCompleted(clockAt(now.minusMinutes(20)));
