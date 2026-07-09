@@ -13,6 +13,15 @@ public final class SilenceExitCalculator {
     public record Result(long totalExits, long exitsDuringSilence,
                          Double silenceExitRatio, long totalSilenceMinutes) {}
 
+    /**
+     * 무음 이탈 지표 계산 (근사). 모든 시각 epoch millis.
+     *
+     * @param rawIntervals playback 트랙 구간. <b>createdAtMs ASC 정렬 전제</b> — skip-clamp가
+     *                     {@code next.createdAtMs()}를 raw 순서로 참조하므로, 미정렬 입력이면
+     *                     구간이 잘못 폐기될 수 있다(현재 caller {@code findPlaybackForInterval}가 ASC 보장).
+     * @param exitMsList   윈도우 내 EXIT occurred_at(ms). <b>{@code [fromMs, nowMs)} 안의 값 전제</b> —
+     *                     윈도우 밖 값이 섞이면 전부 무음으로 분류되어 silence 지표가 부풀려진다.
+     */
     public static Result compute(List<PlaybackInterval> rawIntervals,
                                  List<Long> exitMsList, long fromMs, long nowMs) {
         List<long[]> clamped = new ArrayList<>();

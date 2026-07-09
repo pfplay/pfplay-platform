@@ -23,6 +23,14 @@ class SilenceExitCalculatorTest {
         assertThat(r.exitsDuringSilence()).isEqualTo(1);
     }
     @Test
+    void 분리된_두트랙_갭내퇴장은_무음_둘째트랙내퇴장은_음악() {
+        // 실제 갭이 보존되는 다중구간(merge 후 disjoint 2개) + 이진탐색 right 분기 검증
+        var intervals = List.of(new PlaybackInterval(0, m(10)), new PlaybackInterval(m(20), m(30)));
+        var r = SilenceExitCalculator.compute(intervals, List.of(m(15), m(25)), 0, m(30));
+        assertThat(r.exitsDuringSilence()).isEqualTo(1);            // @15 갭=무음, @25 둘째트랙=음악
+        assertThat(r.totalSilenceMinutes()).isEqualTo(10);         // 갭 [10,20) = 10분
+    }
+    @Test
     void 경계_half_open_start는_음악_end는_무음() {
         var intervals = List.of(new PlaybackInterval(m(5), m(10)));
         var r = SilenceExitCalculator.compute(intervals, List.of(m(5), m(10)), 0, m(20));
