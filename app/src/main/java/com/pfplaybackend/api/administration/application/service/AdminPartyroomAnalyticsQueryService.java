@@ -120,9 +120,10 @@ public class AdminPartyroomAnalyticsQueryService {
         return (m == null || m.getProfileData() == null) ? null : m.getProfileData().getNicknameValue();
     }
 
+    /** avatarIconUri 계약: 항상 non-null 문자열. member/profile 부재 시에도 "" 반환(DTO 문서와 일치). */
     private static String avatarUri(MemberData m) {
         if (m == null || m.getProfileData() == null || m.getProfileData().getAvatarSetting() == null) {
-            return null;
+            return "";
         }
         return m.getProfileData().getAvatarSetting().getAvatarIconUriValue();
     }

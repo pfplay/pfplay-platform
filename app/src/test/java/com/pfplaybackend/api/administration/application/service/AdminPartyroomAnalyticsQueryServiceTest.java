@@ -158,7 +158,7 @@ class AdminPartyroomAnalyticsQueryServiceTest {
         assertThat(item.trackName()).isEqualTo("Song A");
         assertThat(item.djUserAccountId()).isEqualTo(11L);
         assertThat(item.djNickname()).isEqualTo("djNick");
-        assertThat(item.avatarIconUri()).isNotNull();
+        assertThat(item.avatarIconUri()).isEqualTo("");   // 미설정 아바타 계약: "" (non-null)
         assertThat(item.thumbnailImage()).isEqualTo("thumb.png");
         assertThat(item.playedAt()).isEqualTo(playedAt);
     }
