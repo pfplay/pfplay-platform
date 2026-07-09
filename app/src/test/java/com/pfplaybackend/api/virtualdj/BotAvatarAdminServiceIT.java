@@ -65,12 +65,14 @@ class BotAvatarAdminServiceIT extends AbstractIntegrationTest {
 
     @BeforeEach
     void seedCatalog() {
+        // 이름은 테스트 전용(=V3 시드 ava_body_basic_* 과 uk_avatar_body_name 충돌 회피).
+        // 서비스/단언은 URI 기준이므로 이름 값 자체는 무의미.
         // combinable 바디: icon_uri NULL → face 합성이 강제됨.
-        seedBody("ava_body_basic_001", COMBINABLE_BODY_URI, null, true, true, 60, 41);
+        seedBody("bot-avatar-it-body-001", COMBINABLE_BODY_URI, null, true, true, 60, 41);
         // standalone 바디: 자체 icon_uri 보유.
-        seedBody("ava_body_basic_002", STANDALONE_BODY_URI, STANDALONE_ICON_URI, false, false, 0, 0);
+        seedBody("bot-avatar-it-body-002", STANDALONE_BODY_URI, STANDALONE_ICON_URI, false, false, 0, 0);
         // 기본 face: face-pair 아이콘 보유.
-        seedFace("ava_face_basic_001", FACE_URI, FACE_ICON_URI);
+        seedFace("bot-avatar-it-face-001", FACE_URI, FACE_ICON_URI);
     }
 
     private void seedBody(String name, String uri, String iconUri, boolean combinable,
