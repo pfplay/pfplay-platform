@@ -169,6 +169,29 @@ public class PartyroomRepositoryImpl implements PartyroomRepositoryCustom {
     }
 
     @Override
+    public List<PlaybackData> findPlaybackForInterval(PartyroomId partyroomId, LocalDateTime from, LocalDateTime now) {
+        QPlaybackData q = QPlaybackData.playbackData;
+        List<PlaybackData> inWindow = queryFactory
+                .select(q).from(q)
+                .where(q.partyroomId.id.eq(partyroomId.getId())
+                        .and(q.createdAt.goe(from))
+                        .and(q.createdAt.lt(now)))
+                .orderBy(q.createdAt.asc())
+                .fetch();
+        PlaybackData straddle = queryFactory
+                .select(q).from(q)
+                .where(q.partyroomId.id.eq(partyroomId.getId())
+                        .and(q.createdAt.lt(from)))
+                .orderBy(q.createdAt.desc())
+                .fetchFirst();
+        if (straddle == null) return inWindow;
+        List<PlaybackData> result = new ArrayList<>(inWindow.size() + 1);
+        result.add(straddle);
+        result.addAll(inWindow);
+        return result;
+    }
+
+    @Override
     public List<PartyroomData> findAllUnusedPartyroomDataByDay(int days) {
         QPartyroomData qPartyroomData = QPartyroomData.partyroomData;
 

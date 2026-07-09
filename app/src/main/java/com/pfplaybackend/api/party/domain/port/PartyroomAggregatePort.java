@@ -57,4 +57,11 @@ public interface PartyroomAggregatePort {
     // ===== Reconcile cron (#308) =====
     List<PartyroomId> findPartyroomIdsWithInactiveCrewDj();
     List<PartyroomId> findStuckActivatedPartyroomIds(long threshold);
+
+    // ===== Playback interval 재구성 (어드민 행동분석) =====
+    /**
+     * 음악 재생 구간 재구성용 playback 조회.
+     * created_at ∈ [from, now) 인 모든 row + from 직전 최신 1건(straddle)을 created_at ASC 로 반환.
+     */
+    List<PlaybackData> findPlaybackForInterval(PartyroomId partyroomId, LocalDateTime from, LocalDateTime now);
 }

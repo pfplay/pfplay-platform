@@ -188,6 +188,13 @@ public class PartyroomAggregateAdapter implements PartyroomAggregatePort, Partyr
         return partyroomPlaybackRepository.findStuckActivatedPartyroomIds(threshold);
     }
 
+    // ===== Playback interval 재구성 (어드민 행동분석) =====
+
+    @Override
+    public List<PlaybackData> findPlaybackForInterval(PartyroomId partyroomId, LocalDateTime from, LocalDateTime now) {
+        return partyroomRepository.findPlaybackForInterval(partyroomId, from, now);
+    }
+
     // ===== Query Port (DTO-returning QueryDSL methods) =====
 
     @Override
