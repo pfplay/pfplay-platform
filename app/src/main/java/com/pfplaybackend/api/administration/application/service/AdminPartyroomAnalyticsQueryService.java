@@ -35,8 +35,10 @@ import java.util.stream.Collectors;
  * 모든 시각 계산은 Asia/Seoul 벽시계 기준 — DB occurred_at/created_at 이 KST 로컬시각이므로
  * epoch millis 변환도 동일 존을 사용한다.
  *
- * <p>Cross-BC 읽기는 {@link PartyroomAggregatePort}(Party)/{@link MemberRepository}(User)를 통해서만
- * 이뤄지며, Administration BC 는 Party/User 엔티티 타입을 직접 다루지 않는다.
+ * <p>Cross-BC 접근은 오직 {@link PartyroomAggregatePort}(Party)/{@link MemberRepository}(User) 포트를
+ * 통해서만 이뤄진다 — Party/User의 adapter/persistence 내부에는 의존하지 않는다(sibling
+ * {@code AdminPartyroomQueryService.detail()}과 동일 전략). 포트가 반환하는 {@code PlaybackData}
+ * (Party)·{@code MemberData}(User)는 읽기 전용으로 소비한다.
  */
 @Service
 @RequiredArgsConstructor
