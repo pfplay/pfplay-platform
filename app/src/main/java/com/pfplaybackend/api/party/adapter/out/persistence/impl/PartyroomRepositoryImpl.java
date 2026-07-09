@@ -18,6 +18,9 @@ import com.querydsl.jpa.JPAExpressions;
 import com.querydsl.jpa.JPQLQuery;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -189,6 +192,23 @@ public class PartyroomRepositoryImpl implements PartyroomRepositoryCustom {
         result.add(straddle);
         result.addAll(inWindow);
         return result;
+    }
+
+    @Override
+    public Page<PlaybackData> findPlaybackHistory(PartyroomId partyroomId, Pageable pageable) {
+        QPlaybackData q = QPlaybackData.playbackData;
+        List<PlaybackData> content = queryFactory
+                .select(q).from(q)
+                .where(q.partyroomId.id.eq(partyroomId.getId()))
+                .orderBy(q.createdAt.desc())            // 정렬 고정
+                .offset(pageable.getOffset())
+                .limit(pageable.getPageSize())
+                .fetch();
+        Long total = queryFactory
+                .select(q.count()).from(q)
+                .where(q.partyroomId.id.eq(partyroomId.getId()))
+                .fetchOne();
+        return new PageImpl<>(content, pageable, total == null ? 0L : total);
     }
 
     @Override

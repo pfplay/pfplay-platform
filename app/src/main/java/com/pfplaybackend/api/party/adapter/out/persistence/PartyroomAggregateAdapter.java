@@ -10,6 +10,8 @@ import com.pfplaybackend.api.party.domain.value.CrewId;
 import com.pfplaybackend.api.party.domain.value.LinkDomain;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
@@ -193,6 +195,11 @@ public class PartyroomAggregateAdapter implements PartyroomAggregatePort, Partyr
     @Override
     public List<PlaybackData> findPlaybackForInterval(PartyroomId partyroomId, LocalDateTime from, LocalDateTime now) {
         return partyroomRepository.findPlaybackForInterval(partyroomId, from, now);
+    }
+
+    @Override
+    public Page<PlaybackData> findPlaybackHistory(PartyroomId partyroomId, Pageable pageable) {
+        return partyroomRepository.findPlaybackHistory(partyroomId, pageable);
     }
 
     // ===== Query Port (DTO-returning QueryDSL methods) =====
