@@ -53,16 +53,20 @@ origin/develop 워크트리에서 `application-test.yml`을 `ddl-auto: validate`
 > **치명 함정**: MySQL의 `TRUNCATE`는 DDL이라 **implicit COMMIT**을 유발한다. 스위트의 **~31개 IT가 class-level `@Transactional`(롤백형)** 인데(전체의 42%), Spring은 test-managed 트랜잭션으로 `@BeforeEach`까지 감싼다. cleaner를 `@BeforeEach`에서 같은 커넥션으로 돌리면 test 트랜잭션이 **강제 커밋**되어 롤백 격리가 붕괴 → 비결정 오염/flake. **디스커버리(§2, 41 failures)는 cleaner 없이 config만 뒤집은 측정이라 이 상호작용은 미검증이다.**
 
 따라서:
-- cleaner는 **`TestExecutionListener.beforeTestMethod()`** 로 구현하고, **`TransactionalTestExecutionListener`보다 먼저** 순서를 배치(`@TestExecutionListeners(..., mergeMode=MERGE_WITH_DEFAULTS)` + `@Order`/우선순위)한다. 이 시점은 test 트랜잭션이 **아직 시작되기 전**이라 implicit commit이 test tx를 깨지 않는다.
-- 또는 cleaner 전용 **별도 `DataSource` 커넥션(autocommit=true)** 사용. 어느 쪽이든 "test tx 바깥"이 불변식.
+- **기본(권장) — cleaner 전용 별도 `DataSource` 커넥션(autocommit=true)에서 TRUNCATE.** implicit commit이 **자기 커넥션에만** 적용되므로 TTEL 순서와 **무관하게** test tx를 절대 깨지 않는다(순서 실수 내성).
+- 실행 훅은 `TestExecutionListener.beforeTestMethod()`(test body 전, MDL 회피 위해). test tx가 아직 안 열린 시점 + 별도 커넥션 → 이중 안전.
+- 대안(비권장 — footgun): 같은 커넥션 + `@Order`로 `TransactionalTestExecutionListener`(order 4000)보다 앞(2000<order<4000)에 배치. 순서를 **한 번이라도 잘못 매기면(order>4000) C1이 조용히 재발**한다. 별도 커넥션 방식이 이 함정을 원천 제거하므로 기본값으로 확정.
 - **`@BeforeEach`에 넣지 않는다.**
 
 **설계 통찰**: `@Transactional` 롤백형 IT는 스스로 롤백하므로 사실 정리 대상이 아니다. cleaner가 실제로 지워야 할 것은 **직전 "커밋형" 테스트가 남긴 오염**뿐이고, 그 정리는 다음 test tx가 열리기 **전(pre-transaction)** 에 일어나야 한다 → 위 실행 지점과 일치.
 
 #### 3.2.2 async quiescence — 커밋형 @Async 리스너 레이스 차단 (C2)
 AFTER_COMMIT + `@Async` 리스너(`UserActivityLogListener` 등)는 커밋 후 별 스레드에서 `user_activity_log` 등에 INSERT한다. async 부작용을 **트리거하지만 await하지 않는** 테스트가 있으면, 그 late INSERT가 **다음 테스트 truncate 이후 착지**해 오염(예: `hasSize(1)`→2)하거나 MDL과 충돌한다.
-- cleaner truncate **직전에 async executor idle 대기**(테스트용 `ThreadPoolTaskExecutor`의 active count 0 + queue empty를 폴링, 짧은 타임아웃). 이를 pre-transaction 훅에 포함.
-- 병행: **커밋형 async 부작용을 내는 IT 목록화**(`UserActivityLog*Listener*IT` 8개 + 파티룸 생성/제재 트리거 IT 1차 후보) → 필요 시 해당 테스트에 Awaitility await 보강(이미 `UserActivityLogListenerAdminPenaltyIT`는 그렇게 함 — 그 패턴을 표준으로).
+- cleaner truncate **직전에 커밋행을 쓰는 async executor를 전부 idle 대기**(activeCount 0 + queue empty 폴링).
+  - ⚠️ **executor는 단수가 아니라 최소 3개다**(반드시 전부 대기): `userActivityLogExecutor`·`webPushExecutor`(`AsyncConfig`), `vdjChatExecutor`(`VirtualDjChatAsyncConfig`). UAL 하나만 폴링하면 **webpush(`AnnouncementPushFlowIntegrationTest`)·vdj(`VirtualDjEventListenerIT`) 경로 레이스가 그대로 열린다** — 이 둘은 §2 실패목록에 실재. 구현은 `ThreadPoolTaskExecutor` 빈들을 컨텍스트에서 수집해 모두 quiesce.
+  - **타임아웃 만료 = fail-loud**(예외로 테스트 실패). 여전히 바쁜데 조용히 truncate 진행하면 C2 재발/침묵오염. 짧은 상한(예 수 초) 후 명시적 실패.
+  - 이 quiescence를 pre-transaction 훅(§3.2.1)에 truncate **직전** 배치 → 직전 테스트 async tx의 MDL도 해소됨.
+- 병행: **커밋형 async 부작용을 내는 IT 목록화**(`UserActivityLog*Listener*IT` 8개 + 파티룸 생성/제재 + push + vdj 트리거) → 필요 시 Awaitility await 보강(`UserActivityLogListenerAdminPenaltyIT` 패턴을 표준으로).
 
 #### 3.2.3 truncate 로직
 1. `information_schema.tables`에서 현재 스키마(`pfplay_test`)의 **모든 base table** 동적 조회(하드코딩 목록 불요).
@@ -102,8 +106,9 @@ truncate 도입 후에도 남는 실패(시드 유니크 충돌·FK·단언)는 
 - 수정: `.github/workflows/ci-test.yml`(integrationTest 스텝; 74 초록 뒤 별 커밋/후속)
 
 ## 5. 검증 (DoD 게이트)
-0. **cleaner 적용 후 재측정(S2)**: config 전환 + `DatabaseCleaner`(§3.2 pre-transaction)까지 넣은 상태로 `:app:integrationTest --continue` 재실행 → 실패를 **재분류**(§3.2로 자동해소된 것 vs 개별수정 필요). §2의 41/14는 cleaner **이전** 수치라 신뢰 불가 — 이 재측정이 개별수정 범위의 진실원천.
-1. `:app:integrationTest` **전량 초록**(0 fail/0 error) — 로컬 uncontended 1회. 특히 `@Transactional` IT 31개가 cleaner와 flake 없이 통과하는지 확인(C1 검증).
+0a. **cleaner 결정론 마이크로 검증(C1, 재측정 전 선행)**: 전량 실행 전에, cleaner가 롤백 격리를 **깨지 않음**을 결정론적으로 단언하는 전용 테스트를 먼저 통과시킨다 — 롤백형 `@Transactional` IT에서 "메서드가 비보존 테이블에 write → 같은 메서드 내 롤백으로 사라짐"과, 인접 두 메서드가 서로의 커밋 잔재를 **관측하지 않음**(clean 시작)을 명시 단언. **1회 초록은 flake 부재의 증명이 아니므로**(C1 발현형=비결정), 이 마이크로 검증 + 31개 반복/스트레스 실행으로 "격리가 살아있음"을 단언한다.
+0b. **cleaner 적용 후 재측정(S2)**: config 전환 + `DatabaseCleaner`(§3.2 pre-transaction, 별도 커넥션)까지 넣은 상태로 `:app:integrationTest --continue` 재실행 → 실패 **재분류**(자동해소 vs 개별수정). §2의 41/14는 cleaner **이전** 수치라 신뢰 불가 — 이 재측정이 개별수정 범위의 진실원천.
+1. `:app:integrationTest` **전량 초록**(0 fail/0 error) — 로컬 uncontended, 안정성 위해 **연속 2회 이상** 초록.
 2. `:app:test` 회귀 무변(유닛/웹 여전히 초록).
 3. CI 배선 후 실제 워크플로에서 integrationTest 초록(또는 로컬로 CI 명령 재현).
 4. validate 상시 활성 → 이후 마이그레이션 drift는 IT 부팅에서 즉시 검출.
@@ -119,11 +124,12 @@ truncate 도입 후에도 남는 실패(시드 유니크 충돌·FK·단언)는 
 - **성능/CI 시간(S5)**: 매 테스트 40+ 테이블 truncate(FK off) — TRUNCATE 빠름, 테스트당 수십 ms 허용. 별개로 **`@MockBean` 사용 IT는 별도 Spring 컨텍스트 캐시 엔트리**를 만들어 캐시 스래싱→다수 풀부팅 유발(74 IT). CI 소요는 이 컨텍스트 파편화가 지배 → **DoD 재측정(§5.0) 때 실제 벽시계 측정**해 CI 예산 확정(Open Decision #3와 연동). 최적화("변경 테이블만 truncate", 컨텍스트 통합)는 후속.
 - **PRESERVE_SET 누락/과다**: 적게 보존하면 참조 데이터 소실(부팅 실패), 많이 보존하면 오염. §5.0 재측정으로 조정.
 - **CI 러너 Docker**: GitHub-hosted `ubuntu-latest`는 Docker 지원(확인) → Testcontainers 동작. self-hosted면 데몬 확인 필요.
+- **`@BeforeAll` 커밋 픽스처 소실**: cleaner는 **메서드마다** pre-transaction으로 truncate하므로, 클래스 1회 `@BeforeAll`에서 **커밋**으로 시드한 공유 픽스처는 2번째 메서드부터 소실된다. create-drop 전제 IT엔 드물지만 전량 전환 시 잠재 — 커밋형 `@BeforeAll` 시드는 **메서드 스코프로 이전**하거나 그 대상을 보존대상화해야 한다(§5.0b 재측정에서 발현 시 처리).
 - **Flyway 슬롯**: 본 브랜치는 마이그레이션 무추가라 무관. 오히려 IT가 Flyway를 타므로 향후 슬롯 충돌 PR은 IT 부팅에서 즉시 red(이점).
 
 ## 8. 오픈 결정 (스펙 리뷰에서 확정)
-1. `PRESERVE_SET` 최종 목록(가상DJ 설정 테이블 포함 여부, `system_config` 보존/재시드).
+1. `PRESERVE_SET` 최종 목록(가상DJ 설정 테이블 포함 여부, `system_config` 보존/재시드). **FK-closure 기준(필수)**: 보존 테이블은 **truncate 대상으로 나가는 outgoing FK가 없어야** 한다. 있으면 FK_CHECKS=0로 대상을 비우는 순간 보존 테이블 행에 **dangling 참조**가 남고 MySQL은 FK_CHECKS=1 복원 시 **재검증하지 않아 조용히 잔존**한다. V27/V28/V29 가상DJ 설정 시드의 outgoing FK를 확인해, 참조 대상이 truncate 대상이면 그 대상도 보존(또는 보존 테이블을 truncate 대상으로 강등)해 FK-closure를 만족시킨다.
 2. 레퍼런스-변경 테스트(§3.3): "보존 테이블에 커밋하는 비-`@Transactional` IT" 열거 후 자체정리 vs 클래스스코프 재시드 택1.
 3. CI: `test`와 `integrationTest`를 한 스텝으로 묶을지 분리할지 — §5.0 벽시계 측정 후 결정. 배선은 74 초록 확인 뒤 **별 커밋/후속 PR** 권장(first-run flake가 dev 자동배포 게이트 막지 않게, N2).
-4. **cleaner 실행 지점 확정(C1 해소)**: `TestExecutionListener.beforeTestMethod()`(Transactional TEL보다 앞) vs 별도 autocommit 커넥션 — 둘 다 "test tx 바깥" 충족. async quiescence(§3.2.2)를 이 훅에 포함. **`@BeforeEach` 불가.**
+4. **cleaner 실행 지점(C1 — 확정)**: **별도 autocommit 커넥션 + `beforeTestMethod` 훅**을 기본으로 확정(§3.2.1). TEL-ordering 단독은 footgun이라 채택 안 함. async quiescence(§3.2.2, executor 전부)를 이 훅에 truncate 직전 포함. **`@BeforeEach` 불가.** (남은 결정: quiescence 타임아웃 상한값·fail-loud 메시지 등 세부.)
 5. 기존 테스트들의 자체 `@AfterEach deleteAll`(N1): cleaner 도입 후 중복이 되면 제거할지 존치할지 정리 방침.
