@@ -7,11 +7,16 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.TestExecutionListeners;
+import org.springframework.test.context.TestExecutionListeners.MergeMode;
 import org.springframework.transaction.annotation.Transactional;
 
 @Tag("integration")
 @SpringBootTest
 @ActiveProfiles("test")
+@TestExecutionListeners(
+        value = DatabaseCleanupTestExecutionListener.class,
+        mergeMode = MergeMode.MERGE_WITH_DEFAULTS)
 public abstract class AbstractIntegrationTest {
 
     @DynamicPropertySource
