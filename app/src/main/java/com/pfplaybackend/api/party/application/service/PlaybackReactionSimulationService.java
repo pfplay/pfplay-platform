@@ -20,7 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 반응(LIKE/GRAB)을 명시적 신원으로 적용하는 프리미티브. WS·ThreadLocalContext 비의존.
- * admin 시뮬레이션과 virtualdj 봇 반응이 공유한다(admin ReactionSimulationService에서 이관).
+ * admin 시뮬레이션과 virtualcrew 봇 반응이 공유한다(admin ReactionSimulationService에서 이관).
  */
 @Slf4j
 @Service

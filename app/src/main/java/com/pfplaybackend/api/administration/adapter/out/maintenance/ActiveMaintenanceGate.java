@@ -64,7 +64,7 @@ public class ActiveMaintenanceGate implements MaintenanceGate {
     /**
      * 점검 상태 전이 이벤트 → 캐시 무효화.
      *
-     * <p><b>{@code @Order(HIGHEST_PRECEDENCE)} 가 핵심:</b> {@code VirtualDjMaintenanceListener} 의
+     * <p><b>{@code @Order(HIGHEST_PRECEDENCE)} 가 핵심:</b> {@code VirtualCrewMaintenanceListener} 의
      * 봇 부활 리스너와 <b>동일 이벤트·동일 AFTER_COMMIT phase</b> 에서 함께 발화한다. 이 evictor 가
      * <b>먼저</b> 실행되어 캐시를 비워야, 뒤이어 부활 리스너가 호출하는 {@link #isUnderMaintenance()} 가
      * 점검 종료 후의 DB 상태(=false)를 신선하게 재조회해 부활이 진행된다. 부활 리스너에는 {@code @Order}

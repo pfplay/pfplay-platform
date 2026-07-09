@@ -186,7 +186,7 @@ public class PartyroomQueryService {
      *
      * <p>가상 DJ 봇 반응 틱이 현재 재생 곡·DJ crew 를 참조하기 위해 호출한다.
      * {@link PartyroomAggregatePort} 접근은 party BC 안에 가두고, 호출자에게는 평이한 view record 만
-     * 노출한다(virtualdj 패키지의 ArchUnit AggregatePort 의존 금지 가드 준수). 가드는 sibling
+     * 노출한다(virtualcrew 패키지의 ArchUnit AggregatePort 의존 금지 가드 준수). 가드는 sibling
      * {@link #getCurrentPlaybackName} 와 동일하다.
      */
     @Transactional(readOnly = true)
