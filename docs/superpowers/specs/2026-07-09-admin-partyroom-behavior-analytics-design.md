@@ -177,7 +177,7 @@ ALTER TABLE playback
 DROP INDEX playback_partyroom_id_IDX ON playback;
 ```
 
-> 엔티티 `PlaybackData`의 `@Index(name="playback_partyroom_id_IDX", ...)`도 신규 복합 인덱스로 **동시 교체**해야 한다(미교체 시 Hibernate `ddl-auto=validate`/부팅 게이트에서 스키마 drift로 실패). 마이그레이션 DROP과 엔티티 애노테이션을 한 커밋에 묶는다.
+> 엔티티 `PlaybackData`의 `@Index(name="playback_partyroom_id_IDX", ...)`도 신규 복합 인덱스로 **동시 교체**한다. (주의: Hibernate `validate`는 테이블/컬럼/타입만 검증하고 secondary index는 검증하지 않으므로 미교체가 부팅을 깨진 않는다 — 부팅 게이트에 의존하지 말 것. 다만 `create-drop` 테스트 컨텍스트의 생성 DDL 정합을 위해 애노테이션 동기화는 위생 요건.) 마이그레이션 DROP과 엔티티 애노테이션을 한 커밋에 묶는다.
 
 - **컬럼 순서(S4)**: `user_activity_log`는 `(partyroom_id, event_type, occurred_at)`. 등가 필터(`partyroom_id`, `event_type IN/=`)를 앞에, 범위/정렬(`occurred_at`)을 뒤에 둔다. ②는 `event_type IN (ENTERED,EXITED)` + GROUP BY date, ③은 `event_type = EXITED` — **둘 다 이 하나의 인덱스로 커버**. (단순 `(partyroom_id, occurred_at)`은 event_type을 잔여 필터로 남겨 ②의 선택도가 떨어짐.)
 - **쓰기 비용 저울질(S4)**: `user_activity_log`는 append-only **핫 라이트 경로**라 인덱스 1개 추가는 매 INSERT에 소폭 비용. 그러나 (a) 어드민 조회의 스캔 폭발 방어 이득이 크고, (b) 인덱스 선두가 write 분산되는 `partyroom_id`라 hot-spot 삽입은 아님 → **추가 채택**. 향후 write 병목 관측 시 재검토.
