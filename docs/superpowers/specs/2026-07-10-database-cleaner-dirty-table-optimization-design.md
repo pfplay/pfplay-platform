@@ -149,7 +149,7 @@ try (Connection c = dataSource.getConnection()) {   // autocommit=true, 별도 �
 ## 6. 리스크 / 완화
 
 - **감지 누락(false-negative)로 더티 테이블 스킵 → 격리 붕괴**: 가장 큰 위험. 완화 = 정확성
-  논거(3.4) + T1~T3 + 전량 2회 그린. 조건①②가 신뢰 판정이라 논리적 누락 없음.
+  논거(3.4) + T1~T3 + **T2b(캐시 함정 직격 가드)** + 전량 2회 그린. 조건①②가 신뢰 판정이라 논리적 누락 없음.
 - **information_schema 캐시(8.0)**: MySQL 8.0에서 `AUTO_INCREMENT`·`TABLE_ROWS` **둘 다 캐시된
   통계**(`information_schema_stats_expiry` 기본 86400s, DML로 무효화 안 됨). 그래서 (a) 행 판정은
   캐시 없는 라이브 `EXISTS`로만 하고, (b) AI 판정은 조회 전 `SET SESSION
