@@ -39,10 +39,18 @@ jobs:
       - name: Run tests
         run: ./gradlew test
 
+      # 통합 테스트 게이트: Testcontainers(Docker) 로 실 Flyway 스키마 부팅 + validate.
+      # ubuntu-latest 는 Docker 지원 → Testcontainers 동작. 직렬 실행(공유 스키마 truncate
+      # 상호파괴 방지) 은 build.gradle 의 maxParallelForks=1 로 강제됨.
+      - name: Run integration tests
+        run: ./gradlew :app:integrationTest
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-results
-          path: '**/build/test-results/test/*.xml'
+          path: |
+            **/build/test-results/test/*.xml
+            **/build/test-results/integrationTest/*.xml
           retention-days: 14

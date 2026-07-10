@@ -6,7 +6,11 @@ import com.pfplaybackend.api.avatar.domain.enums.ObtainmentType;
 import com.pfplaybackend.api.common.AbstractIntegrationTest;
 import com.pfplaybackend.api.common.ThreadLocalContext;
 import com.pfplaybackend.api.common.domain.value.PlaylistId;
+import com.pfplaybackend.api.administration.adapter.out.persistence.AdministratorRepository;
+import com.pfplaybackend.api.administration.domain.entity.data.AdministratorData;
 import com.pfplaybackend.api.common.domain.value.UserId;
+import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
+import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
 import com.pfplaybackend.api.party.adapter.out.persistence.CrewRepository;
 import com.pfplaybackend.api.party.adapter.out.persistence.PartyroomRepository;
 import com.pfplaybackend.api.party.application.port.out.UserProfileQueryPort;
@@ -82,6 +86,8 @@ class VirtualDjEventListenerIT extends AbstractIntegrationTest {
     @Autowired private VirtualSongPackTrackRepository packTrackRepository;
     @Autowired private CrewRepository crewRepository;
     @Autowired private AvatarBodyResourceRepository avatarBodyResourceRepository;
+    @Autowired private AdministratorRepository administratorRepository;
+    @Autowired private UserAccountRepository userAccountRepository;
 
     @SpyBean private DjCommandService djCommandService;
     @SpyBean private FlapGuard flapGuard;
@@ -89,9 +95,16 @@ class VirtualDjEventListenerIT extends AbstractIntegrationTest {
     @MockBean private UserProfileQueryPort userProfileQueryPort;
 
     private Long roomId;
+    /** FK fk_paa_administrator → administrator. terminate 이벤트 actor. */
+    private Long adminId;
 
     @BeforeEach
     void seed() {
+        userAccountRepository.saveAndFlush(
+                UserAccountData.createForLocal(new UserId(990900L), "vdj-evt-admin@x", "h"));
+        adminId = administratorRepository
+                .saveAndFlush(AdministratorData.createSuperAdmin(990900L)).getAdministratorId();
+
         lenient().when(userProfileQueryPort.getUsersProfileSetting(any()))
                 .thenAnswer(inv -> {
                     List<UserId> ids = inv.getArgument(0);
@@ -171,7 +184,7 @@ class VirtualDjEventListenerIT extends AbstractIntegrationTest {
     void terminated_turns_config_off_and_skips_reconcile() {
         transactionTemplate.executeWithoutResult(status ->
                 eventPublisher.publishEvent(new PartyroomTerminatedEvent(
-                        new PartyroomId(roomId), 9000L, "test-terminate")));
+                        new PartyroomId(roomId), adminId, "test-terminate")));
 
         Awaitility.await().atMost(Duration.ofSeconds(5)).pollInterval(Duration.ofMillis(200))
                 .untilAsserted(() -> {
