@@ -322,6 +322,28 @@ class AdminVirtualCrewControllerTest {
 
     @Test
     @WithMockUser(roles = "ADMIN")
+    void replace_admin_returns204() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/partyrooms/7/virtual-crew/replace").with(csrf()))
+                .andExpect(status().isNoContent());
+        verify(adminService).replace(new PartyroomId(7L));
+    }
+
+    @Test
+    @WithMockUser(roles = "MEMBER")
+    void replace_member_returns403() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/partyrooms/7/virtual-crew/replace").with(csrf()))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void replace_missingCsrf_returns403() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/partyrooms/7/virtual-crew/replace"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
     void liveStatus_admin_returns200() throws Exception {
         given(adminService.liveStatus(new PartyroomId(7L)))
                 .willReturn(new VirtualCrewAdminService.LiveStatus(VirtualCrewStatus.MANAGED, 2, 1, 5L, 2));
