@@ -55,4 +55,28 @@ public class VirtualCrewOrchestratorImpl implements VirtualCrewOrchestrator {
             return null;
         });
     }
+
+    /**
+     * {@link #reconcileRoom} 과 동일한 per-call(룸 단위) {@code @Transactional} 경계.
+     *
+     * <p><b>락 합성 금지:</b> {@link DistributedLockExecutor} 는 비재진입(점유 중이면 무음 skip)이므로
+     * 락이 걸린 {@code drainRoom}/{@code reconcileRoom} 을 이어 부르지 않고, 락 1회 안에서
+     * 언락 프리미티브({@code drainResources}→{@code placeToTarget})를 직접 호출한다.
+     *
+     * <p><b>복구 모델:</b> place 단계 예외 시 — {@code /replace} 엔드포인트 경로는 config 무변경(MANAGED
+     * 유지)이라 revive 재시도로 복구, applyConfig 자동 replace 경로는 같은 트랜잭션이라 송팩 변경까지
+     * 롤백(기존 reconcile 실패 시맨틱과 동일).
+     *
+     * <p>⚠️ 락 TTL 대비 임계구간이 drain+place 로 길어진다 — placeToTarget 단독도 초과 가능한
+     * 선재 리스크 클래스로, 본 변경에서 확장하지 않는다.
+     */
+    @Override
+    @Transactional
+    public void replaceRoom(PartyroomId partyroomId) {
+        lock.performTaskWithLock("virtualcrew:" + partyroomId.getId(), () -> {
+            botPlacementService.drainResources(partyroomId);
+            botPlacementService.placeToTarget(partyroomId);
+            return null;
+        });
+    }
 }
