@@ -1,7 +1,9 @@
 package com.pfplaybackend.api.virtualcrew;
 
 import com.pfplaybackend.api.administration.adapter.out.maintenance.ActiveMaintenanceGate;
+import com.pfplaybackend.api.administration.adapter.out.persistence.AdministratorRepository;
 import com.pfplaybackend.api.administration.adapter.out.persistence.SystemAnnouncementRepository;
+import com.pfplaybackend.api.administration.domain.entity.data.AdministratorData;
 import com.pfplaybackend.api.administration.domain.entity.data.SystemAnnouncementData;
 import com.pfplaybackend.api.administration.domain.event.MaintenanceEndedEvent;
 import com.pfplaybackend.api.administration.domain.value.AnnouncementSeverity;
@@ -21,7 +23,9 @@ import com.pfplaybackend.api.party.domain.enums.StageType;
 import com.pfplaybackend.api.party.domain.value.LinkDomain;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import com.pfplaybackend.api.party.domain.value.PlaybackTimeLimit;
+import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
 import com.pfplaybackend.api.user.application.dto.shared.ProfileSettingDto;
+import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
 import com.pfplaybackend.api.virtualcrew.adapter.out.persistence.PartyroomVirtualCrewConfigRepository;
 import com.pfplaybackend.api.virtualcrew.adapter.out.persistence.VirtualSongPackRepository;
 import com.pfplaybackend.api.virtualcrew.adapter.out.persistence.VirtualSongPackTrackRepository;
@@ -82,6 +86,9 @@ class VirtualCrewMaintenanceGateEvictionIT extends AbstractIntegrationTest {
     private static final String DEFAULT_BODY_URI =
             "https://firebasestorage.googleapis.com/v0/b/pfplay-firebase.appspot.com/o/ava_basic%2Fava_basic_001.png?alt=media";
 
+    // system_announcement.sent_by_administrator_id FK 부모 — 패턴A(실 admin 시드 + 생성 id).
+    private static final long ADMIN_USER_ID = 8801L;
+
     @Autowired private ApplicationEventPublisher eventPublisher;
     @Autowired private TransactionTemplate transactionTemplate;
     @Autowired private VirtualUserPoolService poolService;
@@ -91,6 +98,8 @@ class VirtualCrewMaintenanceGateEvictionIT extends AbstractIntegrationTest {
     @Autowired private VirtualSongPackTrackRepository packTrackRepository;
     @Autowired private AvatarBodyResourceRepository avatarBodyResourceRepository;
     @Autowired private SystemAnnouncementRepository announcementRepository;
+    @Autowired private AdministratorRepository administratorRepository;
+    @Autowired private UserAccountRepository userAccountRepository;
     @Autowired private Clock clock;
 
     // 실제 게이트(캐시 + evictor)를 그대로 사용 — mock 하지 않는다. invalidate() 프라임을 위해 구체 타입 주입.
@@ -100,6 +109,7 @@ class VirtualCrewMaintenanceGateEvictionIT extends AbstractIntegrationTest {
 
     private Long roomId;
     private Long announcementId;
+    private Long adminId;
 
     @BeforeEach
     void seed() {
@@ -123,6 +133,13 @@ class VirtualCrewMaintenanceGateEvictionIT extends AbstractIntegrationTest {
             body.publish(null);
             avatarBodyResourceRepository.save(body);
         }
+
+        // system_announcement.sent_by_administrator_id FK 부모 — user_account → administrator 순서로 실 시드(자체 커밋).
+        userAccountRepository.saveAndFlush(
+                UserAccountData.createForLocal(new UserId(ADMIN_USER_ID), "vcrew-gate-admin@x", "h"));
+        this.adminId = administratorRepository
+                .saveAndFlush(AdministratorData.createSuperAdmin(ADMIN_USER_ID))
+                .getAdministratorId();
 
         // MANAGED 룸 + 송팩(≥2 재생가능 트랙)을 실제로 커밋. targetCount=3, djBotCount=2 → 2 DJ + 1 listener.
         transactionTemplate.executeWithoutResult(status -> {
@@ -169,7 +186,7 @@ class VirtualCrewMaintenanceGateEvictionIT extends AbstractIntegrationTest {
                     AnnouncementType.MAINTENANCE_NOTICE, AnnouncementSeverity.WARN,
                     "점검", "Maint", "점검 중입니다", "Under maintenance",
                     LocalDateTime.now(clock).minusHours(1), LocalDateTime.now(clock).plusHours(1), null,
-                    LocalDateTime.now(clock), 1L, false);
+                    LocalDateTime.now(clock), adminId, false);
             a.markMaintenanceStarted(clock); // maintenanceStartedAt 설정 → ACTIVE 점검.
             this.announcementId = announcementRepository.saveAndFlush(a).getId();
         });
