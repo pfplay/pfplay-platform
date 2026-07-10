@@ -292,7 +292,7 @@ public class AdminVirtualCrewController {
 
     // ── 일괄 ──
 
-    @Operation(summary = "여러 룸 config 일괄 적용", description = "체크박스 일괄 — MANAGED 는 각각 reconcile")
+    @Operation(summary = "여러 룸 config 일괄 적용", description = "체크박스 일괄 — MANAGED 는 각각 reconcile(송팩 변경 시 replace — 방 전체 봇 교체), OFF 는 각각 drain")
     @SecurityRequirement(name = "cookieAuth")
     @PreAuthorize("@adminAuth.canManageVirtualCrew()")
     @PutMapping("/virtual-crew/bulk")

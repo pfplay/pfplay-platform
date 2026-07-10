@@ -24,7 +24,7 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * 어드민 가상 DJ 운영 서비스 — config 적용/drain + 단건/일괄 reconcile + live status 조회.
+ * 어드민 가상 DJ 운영 서비스 — config 적용/drain + 단건/일괄 reconcile·replace + live status 조회.
  *
  * <p>config 전환은 도메인 메서드({@link PartyroomVirtualCrewConfigData#applyManaged}/{@code turnOff})를
  * 통해서만 수행하고, 봇 투입/제거는 모두 {@link VirtualCrewOrchestrator}(봇 신원 path A)에 위임한다.
@@ -143,7 +143,8 @@ public class VirtualCrewAdminService {
     // ── bulk ──
 
     /**
-     * 여러 룸에 같은 config 를 적용(체크박스 일괄). MANAGED 는 각각 reconcile, OFF 는 각각 drain.
+     * 여러 룸에 같은 config 를 적용(체크박스 일괄). MANAGED 는 각각 reconcile(송팩 변경 시
+     * replace — 방 전체 봇 교체), OFF 는 각각 drain.
      *
      * <p>per-room 트랜잭션 격리: {@code self} 프록시를 통해 룸마다 {@link #applyConfig} 의
      * {@code @Transactional} 경계를 독립적으로 적용한다. 한 룸의 reconcile/drain 예외가 다른 룸의

@@ -285,11 +285,16 @@ class VirtualCrewAdminServiceIT extends AbstractIntegrationTest {
         adminService.applyConfig(new PartyroomId(roomId), VirtualCrewStatus.MANAGED, 2, 2, packId);
         flushAndClear();
         List<UserId> before = activeBotUserIds(roomId);
+        Set<Long> trackIdsBefore = activeBotPlaylistTrackIds(roomId);
+        assertThat(trackIdsBefore).isNotEmpty();
 
         adminService.applyConfig(new PartyroomId(roomId), VirtualCrewStatus.MANAGED, 3, 2, packId);
         flushAndClear();
 
-        assertThat(activeBotUserIds(roomId)).containsAll(before); // 기존 봇 그대로 + 리스너 1 추가
+        assertThat(activeBotUserIds(roomId)).hasSize(3).containsAll(before); // 기존 봇 그대로 + 리스너 1 추가
+        // 판별력 핵심: idle 봇 선택이 결정적(oldest-first)이라 userId 단언만으론 replace 로 흘러도 통과할 수 있다.
+        // replace 였다면 re-copy 로 Track row 가 재생성돼 PK 가 바뀌고, reconcile 이면 기존 row 그대로다.
+        assertThat(activeBotPlaylistTrackIds(roomId)).containsAll(trackIdsBefore);
     }
 
     @Test
@@ -359,6 +364,23 @@ class VirtualCrewAdminServiceIT extends AbstractIntegrationTest {
     /** 룸의 활성 봇 crew userId 목록(역할 무관). */
     private List<UserId> activeBotUserIds(long roomId) {
         return botPoolQueryRepository.findActiveBotCrewUserIdsByJoinedDesc(new PartyroomId(roomId));
+    }
+
+    /**
+     * 룸의 활성 봇 crew 전원의 개인 플레이리스트 Track row PK(id) 집합.
+     * replace(re-copy) 는 Track row 를 재생성해 PK 를 바꾸고, reconcile 은 기존 row 를 보존한다 —
+     * count-only 경로가 reconcile 로 흘렀는지 판별하는 지문(fingerprint)으로 쓴다.
+     */
+    private Set<Long> activeBotPlaylistTrackIds(long roomId) {
+        List<UserId> bots = botPoolQueryRepository.findActiveBotCrewUserIdsByJoinedDesc(new PartyroomId(roomId));
+        Set<Long> trackIds = new HashSet<>();
+        for (UserId bot : bots) {
+            Long playlistId = poolService.playlistIdOf(bot);
+            for (TrackData track : trackRepository.findAllByPlaylistId(new PlaylistId(playlistId))) {
+                trackIds.add(track.getId());
+            }
+        }
+        return trackIds;
     }
 
     private long activeBotDjCount(long roomId) {
