@@ -2,8 +2,15 @@ package com.pfplaybackend.api.administration.adapter.out.maintenance;
 
 import com.pfplaybackend.api.administration.adapter.out.persistence.SystemAnnouncementRepository;
 import com.pfplaybackend.api.administration.domain.entity.data.SystemAnnouncementData;
+import com.pfplaybackend.api.administration.domain.event.AnnouncementCancelledEvent;
+import com.pfplaybackend.api.administration.domain.event.MaintenanceEndedEvent;
+import com.pfplaybackend.api.administration.domain.event.MaintenanceStartedEvent;
 import com.pfplaybackend.api.operations.application.port.out.MaintenanceGate;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -44,6 +51,45 @@ public class ActiveMaintenanceGate implements MaintenanceGate {
     @Override
     public String getMaintenanceMessage() {
         return current().message;
+    }
+
+    /**
+     * 스냅샷 캐시를 즉시 무효화 — 다음 {@link #isUnderMaintenance()} 호출이 DB 를 재조회하게 한다.
+     * 점검 상태 전이 이벤트 직후 호출되어, 30s TTL 로 인한 staleness 를 우회한다.
+     */
+    public void invalidate() {
+        snapshotRef.set(null);
+    }
+
+    /**
+     * 점검 상태 전이 이벤트 → 캐시 무효화.
+     *
+     * <p><b>{@code @Order(HIGHEST_PRECEDENCE)} 가 핵심:</b> {@code VirtualCrewMaintenanceListener} 의
+     * 봇 부활 리스너와 <b>동일 이벤트·동일 AFTER_COMMIT phase</b> 에서 함께 발화한다. 이 evictor 가
+     * <b>먼저</b> 실행되어 캐시를 비워야, 뒤이어 부활 리스너가 호출하는 {@link #isUnderMaintenance()} 가
+     * 점검 종료 후의 DB 상태(=false)를 신선하게 재조회해 부활이 진행된다. 부활 리스너에는 {@code @Order}
+     * 가 없어(=LOWEST_PRECEDENCE) 항상 이 evictor 뒤에 실행된다.
+     *
+     * <p>세 이벤트 모두에서 무효화하는 것이 옳다: 재조회는 실제 DB 상태를 반영하므로, 겹치는 점검이
+     * 아직 ACTIVE 라면 {@code findCurrentMaintenance} 가 그것을 그대로 반환해 게이트가 true 로 유지되어
+     * 부활이 올바르게 차단된다. {@code fallbackExecution = true} 로, 주변 트랜잭션이 없어도 발화한다.
+     */
+    @Order(Ordered.HIGHEST_PRECEDENCE)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onMaintenanceStarted(MaintenanceStartedEvent e) {
+        invalidate();
+    }
+
+    @Order(Ordered.HIGHEST_PRECEDENCE)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onMaintenanceEnded(MaintenanceEndedEvent e) {
+        invalidate();
+    }
+
+    @Order(Ordered.HIGHEST_PRECEDENCE)
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onAnnouncementCancelled(AnnouncementCancelledEvent e) {
+        invalidate();
     }
 
     private Snapshot current() {

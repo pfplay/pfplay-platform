@@ -6,6 +6,7 @@ import com.pfplaybackend.api.common.domain.enums.AvatarCompositionType;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.enums.AuthorityTier;
 import com.pfplaybackend.api.common.exception.http.NotFoundException;
+import com.pfplaybackend.api.party.application.dto.CurrentPlaybackView;
 import com.pfplaybackend.api.party.application.dto.crew.CrewDto;
 import com.pfplaybackend.api.party.application.dto.partyroom.ActivePartyroomDto;
 import com.pfplaybackend.api.party.application.dto.partyroom.PartyroomWithCrewDto;
@@ -624,5 +625,36 @@ class PartyroomQueryServiceTest {
 
         // then
         assertThat(result).isNull();
+    }
+
+    // ── getCurrentPlaybackState ──
+
+    @Test
+    @DisplayName("getCurrentPlaybackState — 재생 중이면 (playbackId, 현재 DJ crewId)")
+    void getCurrentPlaybackState_present() {
+        // given
+        PlaybackId playbackId = new PlaybackId(9L);
+        CrewId djCrewId = new CrewId(200L);
+        PartyroomPlaybackData playbackState = PartyroomPlaybackData.createFor(partyroomId);
+        playbackState.activate(playbackId, djCrewId);
+
+        when(aggregatePort.findPlaybackState(partyroomId)).thenReturn(playbackState);
+
+        // when
+        Optional<CurrentPlaybackView> result = partyroomQueryService.getCurrentPlaybackState(partyroomId);
+
+        // then
+        assertThat(result).contains(new CurrentPlaybackView(playbackId, djCrewId));
+    }
+
+    @Test
+    @DisplayName("getCurrentPlaybackState — 재생 비활성/곡 없으면 empty")
+    void getCurrentPlaybackState_absent() {
+        // given: 활성화 안 함 → isActivated() == false, currentPlaybackId == null
+        PartyroomPlaybackData playbackState = PartyroomPlaybackData.createFor(partyroomId);
+        when(aggregatePort.findPlaybackState(partyroomId)).thenReturn(playbackState);
+
+        // when & then
+        assertThat(partyroomQueryService.getCurrentPlaybackState(partyroomId)).isEmpty();
     }
 }

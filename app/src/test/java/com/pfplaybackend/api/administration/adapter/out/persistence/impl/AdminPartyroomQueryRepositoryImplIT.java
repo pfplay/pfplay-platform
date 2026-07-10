@@ -3,7 +3,7 @@ package com.pfplaybackend.api.administration.adapter.out.persistence.impl;
 import com.pfplaybackend.api.administration.adapter.out.persistence.AdminPartyroomQueryRepository;
 import com.pfplaybackend.api.administration.application.dto.AdminPartyroomListFilter;
 import com.pfplaybackend.api.administration.application.dto.AdminPartyroomListRow;
-import com.pfplaybackend.api.administration.adapter.in.web.payload.response.AdminPartyroomListItemResponse.VirtualDjSummary;
+import com.pfplaybackend.api.administration.adapter.in.web.payload.response.AdminPartyroomListItemResponse.VirtualCrewSummary;
 import com.pfplaybackend.api.common.AbstractIntegrationTest;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.party.adapter.out.persistence.CrewRepository;
@@ -25,9 +25,9 @@ import com.pfplaybackend.api.user.domain.entity.data.MemberData;
 import com.pfplaybackend.api.user.domain.entity.data.ProfileData;
 import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
 import com.pfplaybackend.api.user.domain.value.Nickname;
-import com.pfplaybackend.api.virtualdj.adapter.out.persistence.PartyroomVirtualDjConfigRepository;
-import com.pfplaybackend.api.virtualdj.domain.entity.data.PartyroomVirtualDjConfigData;
-import com.pfplaybackend.api.virtualdj.domain.enums.VirtualDjStatus;
+import com.pfplaybackend.api.virtualcrew.adapter.out.persistence.PartyroomVirtualCrewConfigRepository;
+import com.pfplaybackend.api.virtualcrew.domain.entity.data.PartyroomVirtualCrewConfigData;
+import com.pfplaybackend.api.virtualcrew.domain.enums.VirtualCrewStatus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -48,7 +48,7 @@ class AdminPartyroomQueryRepositoryImplIT extends AbstractIntegrationTest {
     @Autowired private MemberRepository memberRepository;
     @Autowired private CrewRepository crewRepository;
     @Autowired private DjRepository djRepository;
-    @Autowired private PartyroomVirtualDjConfigRepository virtualDjConfigRepository;
+    @Autowired private PartyroomVirtualCrewConfigRepository virtualCrewConfigRepository;
 
     private Long aliceUid;
     private Long bobUid;
@@ -224,16 +224,16 @@ class AdminPartyroomQueryRepositoryImplIT extends AbstractIntegrationTest {
     }
 
     private void seedManagedConfig(long roomId, int targetCount) {
-        PartyroomVirtualDjConfigData cfg = PartyroomVirtualDjConfigData.create(roomId);
+        PartyroomVirtualCrewConfigData cfg = PartyroomVirtualCrewConfigData.create(roomId);
         cfg.applyManaged(targetCount, 1, null);
-        virtualDjConfigRepository.saveAndFlush(cfg);
+        virtualCrewConfigRepository.saveAndFlush(cfg);
     }
 
     @Test
-    @DisplayName("가상DJ config(MANAGED) + 봇 DJ 2명 → virtualDj.status=MANAGED, botDjCount=2")
-    void virtual_dj_summary_with_managed_config_and_two_bots() {
-        seedBotAccount(7201L, "bot-7201@vdj-test.local");
-        seedBotAccount(7202L, "bot-7202@vdj-test.local");
+    @DisplayName("가상DJ config(MANAGED) + 봇 DJ 2명 → virtualCrew.status=MANAGED, botDjCount=2")
+    void virtual_crew_summary_with_managed_config_and_two_bots() {
+        seedBotAccount(7201L, "bot-7201@vcrew-test.local");
+        seedBotAccount(7202L, "bot-7202@vcrew-test.local");
 
         PartyroomData room = seedRoom(aliceUid, "managed-room", PartyroomStatus.ACTIVE);
         long roomId = room.getId();
@@ -248,16 +248,16 @@ class AdminPartyroomQueryRepositoryImplIT extends AbstractIntegrationTest {
         AdminPartyroomListRow row = result.getContent().stream()
                 .filter(r -> r.partyroomId().equals(roomId))
                 .findFirst().orElseThrow();
-        VirtualDjSummary vdj = row.virtualDj();
-        assertThat(vdj).isNotNull();
-        assertThat(vdj.status()).isEqualTo(VirtualDjStatus.MANAGED);
-        assertThat(vdj.targetCount()).isEqualTo(3);
-        assertThat(vdj.botDjCount()).isEqualTo(2L);
+        VirtualCrewSummary vcrew = row.virtualCrew();
+        assertThat(vcrew).isNotNull();
+        assertThat(vcrew.status()).isEqualTo(VirtualCrewStatus.MANAGED);
+        assertThat(vcrew.targetCount()).isEqualTo(3);
+        assertThat(vcrew.botDjCount()).isEqualTo(2L);
     }
 
     @Test
-    @DisplayName("가상DJ config 없는 룸 → virtualDj=null")
-    void virtual_dj_summary_null_without_config() {
+    @DisplayName("가상DJ config 없는 룸 → virtualCrew=null")
+    void virtual_crew_summary_null_without_config() {
         PartyroomData room = seedRoom(aliceUid, "no-config-room", PartyroomStatus.ACTIVE);
 
         Page<AdminPartyroomListRow> result = queryRepository.findAdminList(
@@ -267,12 +267,12 @@ class AdminPartyroomQueryRepositoryImplIT extends AbstractIntegrationTest {
         AdminPartyroomListRow row = result.getContent().stream()
                 .filter(r -> r.partyroomId().equals(room.getId()))
                 .findFirst().orElseThrow();
-        assertThat(row.virtualDj()).isNull();
+        assertThat(row.virtualCrew()).isNull();
     }
 
     @Test
     @DisplayName("봇 DJ 가 없는 MANAGED config → botDjCount=0 (사람 DJ 는 봇으로 집계 안 됨)")
-    void virtual_dj_summary_human_dj_not_counted_as_bot() {
+    void virtual_crew_summary_human_dj_not_counted_as_bot() {
         // alice(사람 host) 를 같은 룸의 DJ 로 배치 — is_dummy=false 이므로 botDjCount 에서 제외돼야 함.
         PartyroomData room = seedRoom(aliceUid, "human-dj-room", PartyroomStatus.ACTIVE);
         long roomId = room.getId();
@@ -286,17 +286,17 @@ class AdminPartyroomQueryRepositoryImplIT extends AbstractIntegrationTest {
         AdminPartyroomListRow row = result.getContent().stream()
                 .filter(r -> r.partyroomId().equals(roomId))
                 .findFirst().orElseThrow();
-        assertThat(row.virtualDj()).isNotNull();
-        assertThat(row.virtualDj().status()).isEqualTo(VirtualDjStatus.MANAGED);
-        assertThat(row.virtualDj().botDjCount()).isEqualTo(0L);
+        assertThat(row.virtualCrew()).isNotNull();
+        assertThat(row.virtualCrew().status()).isEqualTo(VirtualCrewStatus.MANAGED);
+        assertThat(row.virtualCrew().botDjCount()).isEqualTo(0L);
     }
 
     @Test
     @DisplayName("비활성 crew 의 봇 DJ 는 botDjCount 에서 제외 (stale DJ 방어, canonical 정렬)")
     void inactive_crew_bot_dj_not_counted() {
         // 봇 계정 2개 준비: 한 명은 활성 crew, 한 명은 비활성(stale) crew.
-        seedBotAccount(7301L, "bot-7301@vdj-test.local");
-        seedBotAccount(7302L, "bot-7302@vdj-test.local");
+        seedBotAccount(7301L, "bot-7301@vcrew-test.local");
+        seedBotAccount(7302L, "bot-7302@vcrew-test.local");
 
         PartyroomData room = seedRoom(aliceUid, "stale-bot-room", PartyroomStatus.ACTIVE);
         long roomId = room.getId();
@@ -311,8 +311,8 @@ class AdminPartyroomQueryRepositoryImplIT extends AbstractIntegrationTest {
         AdminPartyroomListRow row = result.getContent().stream()
                 .filter(r -> r.partyroomId().equals(roomId))
                 .findFirst().orElseThrow();
-        assertThat(row.virtualDj()).isNotNull();
-        assertThat(row.virtualDj().botDjCount()).isEqualTo(1L);
+        assertThat(row.virtualCrew()).isNotNull();
+        assertThat(row.virtualCrew().botDjCount()).isEqualTo(1L);
     }
 
     @Test

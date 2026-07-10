@@ -28,7 +28,7 @@ public class SystemConfigCache {
     static final int DEFAULT_LISTENER_GRACE_SECONDS = 10;
     static final int DEFAULT_BOT_YIELD_DEBOUNCE_MS = 5_000;
     static final int DEFAULT_BOT_MIN_DWELL_MS = 10_000;
-    static final boolean DEFAULT_VIRTUALDJ_DISTINGUISHABLE = false;
+    static final boolean DEFAULT_VIRTUALCREW_DISTINGUISHABLE = false;
 
     private final SystemConfigRepository repository;
     private final Clock clock;
@@ -61,8 +61,8 @@ public class SystemConfigCache {
      * 가상 DJ 식별 가능 여부 토글 — pre-seed 전용(이번 chunk 에서는 접근자만 제공, DTO 노출은 Plan B).
      * fail-open false.
      */
-    public boolean isVirtualDjDistinguishable() {
-        return current().virtualDjDistinguishable;
+    public boolean isVirtualCrewDistinguishable() {
+        return current().virtualCrewDistinguishable;
     }
 
     /** Public so PR 6's event listener can force-invalidate after admin toggle. */
@@ -84,9 +84,9 @@ public class SystemConfigCache {
     private Snapshot fetch(Instant now) {
         int djGrace = readInt(ConfigKey.PRESENCE_DJ_GRACE_SECONDS, DEFAULT_DJ_GRACE_SECONDS);
         int listenerGrace = readInt(ConfigKey.PRESENCE_LISTENER_GRACE_SECONDS, DEFAULT_LISTENER_GRACE_SECONDS);
-        int botYieldDebounce = readInt(ConfigKey.VIRTUALDJ_BOT_YIELD_DEBOUNCE_MS, DEFAULT_BOT_YIELD_DEBOUNCE_MS);
-        int botMinDwell = readInt(ConfigKey.VIRTUALDJ_BOT_MIN_DWELL_MS, DEFAULT_BOT_MIN_DWELL_MS);
-        boolean distinguishable = readBoolean(ConfigKey.VIRTUALDJ_DISTINGUISHABLE, DEFAULT_VIRTUALDJ_DISTINGUISHABLE);
+        int botYieldDebounce = readInt(ConfigKey.VIRTUALCREW_BOT_YIELD_DEBOUNCE_MS, DEFAULT_BOT_YIELD_DEBOUNCE_MS);
+        int botMinDwell = readInt(ConfigKey.VIRTUALCREW_BOT_MIN_DWELL_MS, DEFAULT_BOT_MIN_DWELL_MS);
+        boolean distinguishable = readBoolean(ConfigKey.VIRTUALCREW_DISTINGUISHABLE, DEFAULT_VIRTUALCREW_DISTINGUISHABLE);
         return new Snapshot(djGrace, listenerGrace, botYieldDebounce, botMinDwell, distinguishable, now);
     }
 
@@ -124,5 +124,5 @@ public class SystemConfigCache {
 
     private record Snapshot(int djGraceSeconds, int listenerGraceSeconds,
                             int botYieldDebounceMs, int botMinDwellMs,
-                            boolean virtualDjDistinguishable, Instant fetchedAt) {}
+                            boolean virtualCrewDistinguishable, Instant fetchedAt) {}
 }

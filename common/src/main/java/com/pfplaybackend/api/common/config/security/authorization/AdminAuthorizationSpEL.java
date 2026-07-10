@@ -53,7 +53,7 @@ public class AdminAuthorizationSpEL {
         return isSuperAdmin();
     }
 
-    public boolean canManageVirtualDj() {
+    public boolean canManageVirtualCrew() {
         return isAdmin();
     }
 

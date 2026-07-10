@@ -5,6 +5,7 @@ import com.pfplaybackend.api.common.aspect.context.AuthContext;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.enums.AuthorityTier;
 import com.pfplaybackend.api.common.exception.ExceptionCreator;
+import com.pfplaybackend.api.party.application.dto.CurrentPlaybackView;
 import com.pfplaybackend.api.party.application.dto.crew.CrewDto;
 import com.pfplaybackend.api.party.application.dto.dj.DjWithProfileDto;
 import com.pfplaybackend.api.party.application.dto.partyroom.ActivePartyroomDto;
@@ -178,6 +179,24 @@ public class PartyroomQueryService {
             return null;
         }
         return playbackQueryService.getPlaybackById(playbackState.getCurrentPlaybackId()).getLinkId();
+    }
+
+    /**
+     * 현재 재생 상태({@link CurrentPlaybackView})를 반환한다. 재생 비활성/곡 없음이면 empty.
+     *
+     * <p>가상 DJ 봇 반응 틱이 현재 재생 곡·DJ crew 를 참조하기 위해 호출한다.
+     * {@link PartyroomAggregatePort} 접근은 party BC 안에 가두고, 호출자에게는 평이한 view record 만
+     * 노출한다(virtualcrew 패키지의 ArchUnit AggregatePort 의존 금지 가드 준수). 가드는 sibling
+     * {@link #getCurrentPlaybackName} 와 동일하다.
+     */
+    @Transactional(readOnly = true)
+    public Optional<CurrentPlaybackView> getCurrentPlaybackState(PartyroomId partyroomId) {
+        PartyroomPlaybackData playbackState = aggregatePort.findPlaybackState(partyroomId);
+        if (playbackState == null || !playbackState.isActivated() || playbackState.getCurrentPlaybackId() == null) {
+            return Optional.empty();
+        }
+        return Optional.of(new CurrentPlaybackView(
+                playbackState.getCurrentPlaybackId(), playbackState.getCurrentDjCrewId()));
     }
 
     @Transactional(readOnly = true)
