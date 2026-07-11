@@ -82,6 +82,7 @@ class MemberSignServiceTest {
         // Side-effects on the new-Member path (matches pre-V4 behavior).
         verify(userProfileCommandService).createProfileDataForMember(savedAccount.getUserId());
         verify(playlistSetupPort).createDefaultPlaylist(savedAccount.getUserId());
+        verify(playlistSetupPort).createDefaultDjPlaylist(savedAccount.getUserId());
         verify(applicationEventPublisher).publishEvent(any(MemberRegisteredEvent.class));
     }
 
@@ -111,6 +112,7 @@ class MemberSignServiceTest {
         // No new-Member side-effects when Member already exists.
         verify(userProfileCommandService, never()).createProfileDataForMember(any(UserId.class));
         verify(playlistSetupPort, never()).createDefaultPlaylist(any(UserId.class));
+        verify(playlistSetupPort, never()).createDefaultDjPlaylist(any(UserId.class));
         verify(applicationEventPublisher, never()).publishEvent(any(MemberRegisteredEvent.class));
     }
 
@@ -143,6 +145,7 @@ class MemberSignServiceTest {
         // so onboarding side-effects fire here too.
         verify(userProfileCommandService).createProfileDataForMember(existingAccount.getUserId());
         verify(playlistSetupPort).createDefaultPlaylist(existingAccount.getUserId());
+        verify(playlistSetupPort).createDefaultDjPlaylist(existingAccount.getUserId());
         verify(applicationEventPublisher).publishEvent(any(MemberRegisteredEvent.class));
     }
 
@@ -167,6 +170,7 @@ class MemberSignServiceTest {
         verify(memberRepository).save(any(MemberData.class));
         verify(userProfileCommandService).createProfileDataForMember(existingAccount.getUserId());
         verify(playlistSetupPort).createDefaultPlaylist(existingAccount.getUserId());
+        verify(playlistSetupPort).createDefaultDjPlaylist(existingAccount.getUserId());
         verify(applicationEventPublisher).publishEvent(any(MemberRegisteredEvent.class));
         // Critical: no recordLogin side effect on the UA.
         assertThat(existingAccount.getLastLoginAt()).isNull();
@@ -189,6 +193,7 @@ class MemberSignServiceTest {
         verify(memberRepository, never()).save(any(MemberData.class));
         verify(userProfileCommandService, never()).createProfileDataForMember(any(UserId.class));
         verify(playlistSetupPort, never()).createDefaultPlaylist(any(UserId.class));
+        verify(playlistSetupPort, never()).createDefaultDjPlaylist(any(UserId.class));
         verify(applicationEventPublisher, never()).publishEvent(any(MemberRegisteredEvent.class));
         // No recordLogin side effect.
         assertThat(existingAccount.getLastLoginAt()).isNull();

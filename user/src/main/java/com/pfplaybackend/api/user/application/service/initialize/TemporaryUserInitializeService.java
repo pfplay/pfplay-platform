@@ -111,6 +111,7 @@ public class TemporaryUserInitializeService {
                     userActivityCommandService.createUserActivities(userId);
 
                     playlistSetupPort.createDefaultPlaylist(userId);
+                    playlistSetupPort.createDefaultDjPlaylist(userId);
                     return memberData;
                 });
     }
