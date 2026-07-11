@@ -14,6 +14,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -50,6 +51,24 @@ class PlaylistCommandServiceTest {
     @AfterEach
     void tearDown() {
         ThreadLocalContext.clearContext();
+    }
+
+    // ========== createDefaultDjPlaylist ==========
+
+    @Test
+    @DisplayName("createDefaultDjPlaylist — PLAYLIST 타입 '내 플레이리스트'(order 1)를 정책 검사 없이 저장한다")
+    void createDefaultDjPlaylist_savesPlaylistTypeWithFixedName() {
+        playlistCommandService.createDefaultDjPlaylist(userId);
+
+        ArgumentCaptor<PlaylistData> captor = ArgumentCaptor.forClass(PlaylistData.class);
+        verify(aggregatePort).savePlaylist(captor.capture());
+        PlaylistData saved = captor.getValue();
+        assertThat(saved.getType()).isEqualTo(PlaylistType.PLAYLIST);
+        assertThat(saved.getName()).isEqualTo("내 플레이리스트");
+        assertThat(saved.getOrderNumber()).isEqualTo(1);
+        assertThat(saved.getOwnerId()).isEqualTo(userId);
+        // 정책 우회: findPlaylistsByOwnerAndType(상한 카운트용 조회)가 호출되지 않아야 한다
+        verify(aggregatePort, never()).findPlaylistsByOwnerAndType(any(), any());
     }
 
     // ========== createPlaylist ==========

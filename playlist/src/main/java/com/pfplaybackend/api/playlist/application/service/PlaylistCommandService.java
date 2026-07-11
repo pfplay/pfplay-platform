@@ -32,6 +32,23 @@ public class PlaylistCommandService {
         aggregatePort.savePlaylist(playlist);
     }
 
+    /**
+     * 신규 가입자 온보딩용 기본 DJ 플레이리스트(#329).
+     * GRABLIST 생성({@link #createDefaultPlaylist})과 동일하게 시스템 생성이라 생성 상한 정책을 거치지
+     * 않는다(가입 시점 1회). AM 상한(1)은 이 플리가 소모하며, 유저는 rename/삭제가 자유롭고 삭제 시
+     * 슬롯이 해제된다(정책은 현존 행 수 기준).
+     *
+     * <p>⚠️ 호출처는 <b>사람 가입 경로 한정</b>(MemberSignService·TemporaryUserInitializeService).
+     * 봇/가상 멤버({@code AdminUserService.createVirtualMember} 경유 — 데모 멤버 포함)에는 배선하지
+     * 않는다: 봇은 provision 이 자체 PLAYLIST 를 만들며, 송팩 적용이
+     * {@code findByOwnerIdAndType(PLAYLIST)} 단건 조회에 의존하므로 두 번째 PLAYLIST 는 이를 파손한다.
+     */
+    @Transactional
+    public void createDefaultDjPlaylist(UserId userId) {
+        PlaylistData playlist = PlaylistData.create(1, "내 플레이리스트", PlaylistType.PLAYLIST, userId);
+        aggregatePort.savePlaylist(playlist);
+    }
+
     @Transactional
     public PlaylistData createPlaylist(String playlistName) {
         AuthContext authContext = ThreadLocalContext.getAuthContext();
