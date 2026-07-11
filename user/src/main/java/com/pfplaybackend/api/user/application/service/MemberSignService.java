@@ -122,8 +122,9 @@ public class MemberSignService {
         // 3. Persist Member (cascades the new ProfileData).
         MemberData savedMember = memberRepository.save(member);
 
-        // 4. Initialize default playlist (Party-context onboarding).
+        // 4. Initialize default playlists (Party-context onboarding): GRABLIST + PLAYLIST(#329).
         playlistSetupPort.createDefaultPlaylist(userAccount.getUserId());
+        playlistSetupPort.createDefaultDjPlaylist(userAccount.getUserId());
 
         // 5. Publish event for downstream listeners.
         applicationEventPublisher.publishEvent(
