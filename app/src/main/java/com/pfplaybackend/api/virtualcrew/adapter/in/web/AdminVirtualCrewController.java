@@ -271,6 +271,15 @@ public class AdminVirtualCrewController {
         return ResponseEntity.noContent().build();
     }
 
+    @Operation(summary = "룸 재배치(replace)", description = "봇 전원 회수 후 현재 config·송팩 기준 재배치 — 송팩 교체/곡 구성 변경 반영용")
+    @SecurityRequirement(name = "cookieAuth")
+    @PreAuthorize("@adminAuth.canManageVirtualCrew()")
+    @PostMapping("/partyrooms/{partyroomId}/virtual-crew/replace")
+    public ResponseEntity<Void> replace(@PathVariable("partyroomId") Long partyroomId) {
+        adminService.replace(new PartyroomId(partyroomId));
+        return ResponseEntity.noContent().build();
+    }
+
     @Operation(summary = "룸 가상 DJ live 상태 조회")
     @SecurityRequirement(name = "cookieAuth")
     @PreAuthorize("@adminAuth.canManageVirtualCrew()")
@@ -283,7 +292,7 @@ public class AdminVirtualCrewController {
 
     // ── 일괄 ──
 
-    @Operation(summary = "여러 룸 config 일괄 적용", description = "체크박스 일괄 — MANAGED 는 각각 reconcile")
+    @Operation(summary = "여러 룸 config 일괄 적용", description = "체크박스 일괄 — MANAGED 는 각각 reconcile(송팩 변경 시 replace — 방 전체 봇 교체), OFF 는 각각 drain")
     @SecurityRequirement(name = "cookieAuth")
     @PreAuthorize("@adminAuth.canManageVirtualCrew()")
     @PutMapping("/virtual-crew/bulk")

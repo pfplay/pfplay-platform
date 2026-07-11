@@ -26,4 +26,13 @@ public interface VirtualCrewOrchestrator {
      * 분산 락으로 reconcile 과 직렬화된다.
      */
     void drainRoom(PartyroomId partyroomId);
+
+    /**
+     * 재배치(replace) — 룸의 모든 봇을 회수(drain)한 뒤 현재 config·송팩 기준으로 즉시 재배치한다.
+     *
+     * <p>용도: 송팩 교체/곡 구성 변경 반영, djBotCount 변경 후 트랙 파티션 재분배, 자기갱신 드리프트 리셋.
+     * 봇은 배치 시점 송팩 스냅샷을 재생하므로({@code SongPackApplier}), 팩 변경은 회수→재배치로만 전파된다.
+     * 분산 락 1회로 회수·재배치 사이 개입 창을 봉쇄한다.
+     */
+    void replaceRoom(PartyroomId partyroomId);
 }

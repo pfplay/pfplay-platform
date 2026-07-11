@@ -21,9 +21,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 /**
- * 어드민 가상 DJ 운영 서비스 — config 적용/drain + 단건/일괄 reconcile + live status 조회.
+ * 어드민 가상 DJ 운영 서비스 — config 적용/drain + 단건/일괄 reconcile·replace + live status 조회.
  *
  * <p>config 전환은 도메인 메서드({@link PartyroomVirtualCrewConfigData#applyManaged}/{@code turnOff})를
  * 통해서만 수행하고, 봇 투입/제거는 모두 {@link VirtualCrewOrchestrator}(봇 신원 path A)에 위임한다.
@@ -74,11 +75,12 @@ public class VirtualCrewAdminService {
 
     // ── per-room config ──
 
-    /** 단일 룸 config 적용 후 MANAGED 면 reconcile, OFF 면 drain 을 같은 트랜잭션에서 트리거. */
+    /** 단일 룸 config 적용 후 MANAGED 면 reconcile(송팩 변경 시 replace), OFF 면 drain 을 같은 트랜잭션에서 트리거. */
     @Transactional
     public void applyConfig(PartyroomId partyroomId, VirtualCrewStatus status, Integer targetCount,
                             Integer djBotCount, Long songPackId) {
         PartyroomVirtualCrewConfigData cfg = loadOrCreate(partyroomId);
+        Long previousSongPackId = cfg.getSongPackId();
         applyStatus(cfg, status, targetCount, djBotCount, songPackId);
         // saveAndFlush: reconcile/drain 의 봇 명령 경로가 영속성 컨텍스트를 clear 할 수 있어,
         // config 변경을 즉시 DB 에 확정한 뒤 reconcile(자기 config 재조회)/drain 을 트리거한다.
@@ -87,7 +89,13 @@ public class VirtualCrewAdminService {
                 partyroomId.getId(), status, targetCount, djBotCount, songPackId);
 
         if (status == VirtualCrewStatus.MANAGED) {
-            orchestrator.reconcileRoom(partyroomId);
+            if (!Objects.equals(previousSongPackId, songPackId)) {
+                // 송팩 변경 — 봇은 배치 시점 스냅샷을 재생하므로 reconcile(카운트 수렴)만으로는
+                // 기존 봇이 옛 팩을 계속 튼다(무음 no-op). 회수→재배치로 새 팩 스냅샷을 강제한다.
+                orchestrator.replaceRoom(partyroomId);
+            } else {
+                orchestrator.reconcileRoom(partyroomId);
+            }
         } else if (status == VirtualCrewStatus.OFF) {
             orchestrator.drainRoom(partyroomId);
         }
@@ -122,10 +130,21 @@ public class VirtualCrewAdminService {
         log.info("[VirtualCrewAdmin.revive] partyroomId={}", partyroomId.getId());
     }
 
+    /**
+     * 재배치 — 봇 전원 회수 후 현재 config·송팩 기준으로 즉시 재배치. config 미변경(MANAGED 유지).
+     * 용도: 송팩 곡 구성 편집 반영, djBotCount 변경 후 파티션 재분배, 자기갱신 드리프트 리셋.
+     */
+    @Transactional
+    public void replace(PartyroomId partyroomId) {
+        orchestrator.replaceRoom(partyroomId);
+        log.info("[VirtualCrewAdmin.replace] partyroomId={}", partyroomId.getId());
+    }
+
     // ── bulk ──
 
     /**
-     * 여러 룸에 같은 config 를 적용(체크박스 일괄). MANAGED 는 각각 reconcile, OFF 는 각각 drain.
+     * 여러 룸에 같은 config 를 적용(체크박스 일괄). MANAGED 는 각각 reconcile(송팩 변경 시
+     * replace — 방 전체 봇 교체), OFF 는 각각 drain.
      *
      * <p>per-room 트랜잭션 격리: {@code self} 프록시를 통해 룸마다 {@link #applyConfig} 의
      * {@code @Transactional} 경계를 독립적으로 적용한다. 한 룸의 reconcile/drain 예외가 다른 룸의

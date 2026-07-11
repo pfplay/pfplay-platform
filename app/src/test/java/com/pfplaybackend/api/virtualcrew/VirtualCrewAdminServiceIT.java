@@ -5,6 +5,7 @@ import com.pfplaybackend.api.avatar.domain.entity.data.AvatarBodyResourceData;
 import com.pfplaybackend.api.avatar.domain.enums.ObtainmentType;
 import com.pfplaybackend.api.common.AbstractIntegrationTest;
 import com.pfplaybackend.api.common.ThreadLocalContext;
+import com.pfplaybackend.api.common.domain.value.PlaylistId;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.party.adapter.out.persistence.PartyroomRepository;
 import com.pfplaybackend.api.party.application.port.out.UserProfileQueryPort;
@@ -15,7 +16,10 @@ import com.pfplaybackend.api.party.domain.enums.StageType;
 import com.pfplaybackend.api.party.domain.value.LinkDomain;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import com.pfplaybackend.api.party.domain.value.PlaybackTimeLimit;
+import com.pfplaybackend.api.playlist.adapter.out.persistence.TrackRepository;
+import com.pfplaybackend.api.playlist.domain.entity.data.TrackData;
 import com.pfplaybackend.api.user.application.dto.shared.ProfileSettingDto;
+import com.pfplaybackend.api.virtualcrew.adapter.out.persistence.BotPoolQueryRepository;
 import com.pfplaybackend.api.virtualcrew.adapter.out.persistence.PartyroomVirtualCrewConfigRepository;
 import com.pfplaybackend.api.virtualcrew.adapter.out.persistence.VirtualSongPackRepository;
 import com.pfplaybackend.api.virtualcrew.adapter.out.persistence.VirtualSongPackTrackRepository;
@@ -34,8 +38,10 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import com.pfplaybackend.api.common.exception.http.BadRequestException;
 
@@ -64,6 +70,8 @@ class VirtualCrewAdminServiceIT extends AbstractIntegrationTest {
     @Autowired private VirtualSongPackRepository packRepository;
     @Autowired private VirtualSongPackTrackRepository packTrackRepository;
     @Autowired private AvatarBodyResourceRepository avatarBodyResourceRepository;
+    @Autowired private BotPoolQueryRepository botPoolQueryRepository;
+    @Autowired private TrackRepository trackRepository;
 
     @MockBean private UserProfileQueryPort userProfileQueryPort;
 
@@ -245,6 +253,72 @@ class VirtualCrewAdminServiceIT extends AbstractIntegrationTest {
         assertThat(configRepository.findByPartyroomId(roomId)).isEmpty();
     }
 
+    @Test
+    @DisplayName("applyConfig 송팩 교체 — 기존 배치 봇이 새 팩 스냅샷으로 재복사된다 (무음 no-op 회귀 방지)")
+    void applyConfig_packSwap_rebuildsBotSnapshots() {
+        long roomId = seedRoom(5);
+        Long packA = seedSongPackWith("vidA", "vidB");
+        Long packB = seedSongPackWith("vidC", "vidD");
+        poolService.provision(4);
+        flushAndClear();
+
+        adminService.applyConfig(new PartyroomId(roomId), VirtualCrewStatus.MANAGED, 2, 2, packA);
+        flushAndClear();
+        assertThat(activeBotPlaylistLinkIds(roomId)).containsExactlyInAnyOrder("vidA", "vidB");
+
+        // 카운트 동일 + 송팩만 교체 → 종전엔 무음 no-op, 이제 replace 로 새 팩 반영
+        adminService.applyConfig(new PartyroomId(roomId), VirtualCrewStatus.MANAGED, 2, 2, packB);
+        flushAndClear();
+
+        assertThat(activeBotDjCount(roomId)).isEqualTo(2);
+        assertThat(activeBotPlaylistLinkIds(roomId)).containsExactlyInAnyOrder("vidC", "vidD");
+    }
+
+    @Test
+    @DisplayName("applyConfig 카운트만 변경 — 기존 봇 유지(전원 교체 아님), 추가분만 투입")
+    void applyConfig_countOnly_keepsExistingBots() {
+        long roomId = seedRoom(5);
+        Long packId = seedSongPackWith("vidA", "vidB");
+        poolService.provision(4);
+        flushAndClear();
+
+        adminService.applyConfig(new PartyroomId(roomId), VirtualCrewStatus.MANAGED, 2, 2, packId);
+        flushAndClear();
+        List<UserId> before = activeBotUserIds(roomId);
+        Set<Long> trackIdsBefore = activeBotPlaylistTrackIds(roomId);
+        assertThat(trackIdsBefore).isNotEmpty();
+
+        adminService.applyConfig(new PartyroomId(roomId), VirtualCrewStatus.MANAGED, 3, 2, packId);
+        flushAndClear();
+
+        assertThat(activeBotUserIds(roomId)).hasSize(3).containsAll(before); // 기존 봇 그대로 + 리스너 1 추가
+        // 판별력 핵심: idle 봇 선택이 결정적(oldest-first)이라 userId 단언만으론 replace 로 흘러도 통과할 수 있다.
+        // replace 였다면 re-copy 로 Track row 가 재생성돼 PK 가 바뀌고, reconcile 이면 기존 row 그대로다.
+        assertThat(activeBotPlaylistTrackIds(roomId)).containsAll(trackIdsBefore);
+    }
+
+    @Test
+    @DisplayName("replace() — 송팩 곡 구성 편집이 재배치로 반영된다")
+    void replace_appliesEditedPackContents() {
+        long roomId = seedRoom(5);
+        Long packId = seedSongPackWith("vidA", "vidB");
+        poolService.provision(4);
+        flushAndClear();
+
+        adminService.applyConfig(new PartyroomId(roomId), VirtualCrewStatus.MANAGED, 2, 2, packId);
+        flushAndClear();
+
+        // 팩 내용 편집(트랙 추가) — 기존 봇에는 미반영 상태
+        packTrackRepository.save(VirtualSongPackTrackData.create(packId, 3, "vidE", "Song vidE", "2:30", null));
+        flushAndClear();
+
+        adminService.replace(new PartyroomId(roomId));
+        flushAndClear();
+
+        assertThat(activeBotDjCount(roomId)).isEqualTo(2);
+        assertThat(activeBotPlaylistLinkIds(roomId)).contains("vidE"); // 2봇 청크 분배에 vidE 포함
+    }
+
     // ── fixtures (mirror VirtualCrewOrchestratorIT) ──
 
     private long seedRoom(int playbackTimeLimitMinutes) {
@@ -265,6 +339,48 @@ class VirtualCrewAdminServiceIT extends AbstractIntegrationTest {
         packTrackRepository.save(VirtualSongPackTrackData.create(pack.getId(), 1, "vidA", "Song A", "2:00", null));
         packTrackRepository.save(VirtualSongPackTrackData.create(pack.getId(), 2, "vidB", "Song B", "3:00", null));
         return pack.getId();
+    }
+
+    private Long seedSongPackWith(String vid1, String vid2) {
+        VirtualSongPackData pack = packRepository.save(VirtualSongPackData.create("Pack-" + System.nanoTime(), "IT"));
+        packTrackRepository.save(VirtualSongPackTrackData.create(pack.getId(), 1, vid1, "Song " + vid1, "2:00", null));
+        packTrackRepository.save(VirtualSongPackTrackData.create(pack.getId(), 2, vid2, "Song " + vid2, "3:00", null));
+        return pack.getId();
+    }
+
+    /** 룸의 활성 봇 crew 전원의 개인 플레이리스트 트랙 linkId 합집합(청크 분배라 개별 봇 단위로 나뉘어질 수 있음). */
+    private Set<String> activeBotPlaylistLinkIds(long roomId) {
+        List<UserId> bots = botPoolQueryRepository.findActiveBotCrewUserIdsByJoinedDesc(new PartyroomId(roomId));
+        Set<String> linkIds = new HashSet<>();
+        for (UserId bot : bots) {
+            Long playlistId = poolService.playlistIdOf(bot);
+            for (TrackData track : trackRepository.findAllByPlaylistId(new PlaylistId(playlistId))) {
+                linkIds.add(track.getLinkId());
+            }
+        }
+        return linkIds;
+    }
+
+    /** 룸의 활성 봇 crew userId 목록(역할 무관). */
+    private List<UserId> activeBotUserIds(long roomId) {
+        return botPoolQueryRepository.findActiveBotCrewUserIdsByJoinedDesc(new PartyroomId(roomId));
+    }
+
+    /**
+     * 룸의 활성 봇 crew 전원의 개인 플레이리스트 Track row PK(id) 집합.
+     * replace(re-copy) 는 Track row 를 재생성해 PK 를 바꾸고, reconcile 은 기존 row 를 보존한다 —
+     * count-only 경로가 reconcile 로 흘렀는지 판별하는 지문(fingerprint)으로 쓴다.
+     */
+    private Set<Long> activeBotPlaylistTrackIds(long roomId) {
+        List<UserId> bots = botPoolQueryRepository.findActiveBotCrewUserIdsByJoinedDesc(new PartyroomId(roomId));
+        Set<Long> trackIds = new HashSet<>();
+        for (UserId bot : bots) {
+            Long playlistId = poolService.playlistIdOf(bot);
+            for (TrackData track : trackRepository.findAllByPlaylistId(new PlaylistId(playlistId))) {
+                trackIds.add(track.getId());
+            }
+        }
+        return trackIds;
     }
 
     private long activeBotDjCount(long roomId) {
