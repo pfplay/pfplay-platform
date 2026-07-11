@@ -35,9 +35,12 @@ public class PlaylistQueryService {
     }
 
     /**
-     * 소유권 검증 — 조회 숨김(TEMP 제외, V36)과는 별개 관심사라 view 쿼리가 아닌
-     * aggregate 포트의 원시 조회를 쓴다. Quick-DJ(#331)의 TEMP 플리도 본인 소유면 true —
-     * view 쿼리에 얹으면 ONE_SHOT enqueue 의 ownership 검증이 NOT_OWNED 로 오탐한다.
+     * 소유권 검증 — 조회 숨김(TEMP 제외 — PlaylistRepositoryImpl 필터)과는 별개 관심사라
+     * view 쿼리가 아닌 aggregate 포트의 원시 조회를 쓴다. Quick-DJ(#331)의 TEMP 플리도
+     * 본인 소유면 true — view 쿼리에 얹으면 ONE_SHOT enqueue 의 ownership 검증이
+     * NOT_OWNED 로 오탐한다.
+     * TEMP 는 소유권상 valid — ONE_SHOT 전용 강제는 별도 불변식이며 현재
+     * 미구현(TEMP id 비노출로 실질 도달 불가).
      */
     @Transactional(readOnly = true)
     public boolean isOwnedBy(Long playlistId, UserId userId) {

@@ -221,6 +221,21 @@ class DjCommandControllerTest extends AbstractPartyCommandWebMvcTest {
     }
 
     @Test
+    @DisplayName("quickEnqueueDj — DJ-007 TRACK_EXCEEDS_TIME_LIMIT → 400")
+    void quickEnqueueDjTrackExceedsTimeLimitReturns400() throws Exception {
+        doThrow(ExceptionCreator.create(DjException.TRACK_EXCEEDS_TIME_LIMIT))
+                .when(quickDjService).quickEnqueue(any(), any());
+
+        mockMvc.perform(post("/api/v1/partyrooms/1/dj-queue/quick")
+                        .with(jwt().authorities(() -> "ROLE_MEMBER"))
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(quickBody("곡", "3:01")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorCode").value("DJ-007"));
+    }
+
+    @Test
     @DisplayName("quickEnqueueDj — name \"\" → 400")
     void quickEnqueueDjBlankNameReturns400() throws Exception {
         mockMvc.perform(post("/api/v1/partyrooms/1/dj-queue/quick")
