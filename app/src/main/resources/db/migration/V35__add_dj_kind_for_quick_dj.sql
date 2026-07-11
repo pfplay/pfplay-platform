@@ -1,0 +1,3 @@
+-- V35: Quick-DJ(#331) — dj.kind 추가 (NORMAL/ONE_SHOT), 기존 행 NORMAL 백필
+ALTER TABLE dj
+    ADD COLUMN kind VARCHAR(20) NOT NULL DEFAULT 'NORMAL' COMMENT 'DJ 큐 엔트리 종류 (NORMAL/ONE_SHOT)' AFTER playlist_id;
