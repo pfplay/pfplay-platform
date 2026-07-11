@@ -10,6 +10,7 @@ import com.pfplaybackend.api.common.exception.http.ForbiddenException;
 import com.pfplaybackend.api.party.application.port.out.PlaybackControlPort;
 import com.pfplaybackend.api.party.application.port.out.PlaylistQueryPort;
 import com.pfplaybackend.api.party.domain.entity.data.*;
+import com.pfplaybackend.api.party.domain.enums.DjKind;
 import com.pfplaybackend.api.party.domain.enums.GradeType;
 import com.pfplaybackend.api.party.domain.port.PartyroomAggregatePort;
 import com.pfplaybackend.api.party.domain.service.PartyroomAggregateService;
@@ -20,6 +21,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -163,6 +165,66 @@ class DjCommandServiceTest {
 
         // then
         verify(playbackControlPort).startPlayback(partyroom);
+    }
+
+    @Test
+    @DisplayName("enqueueDj(kind) — ONE_SHOT 지정 시 kind 가 저장된다")
+    void enqueueDjPersistsOneShotKind() {
+        // given — 기존 enqueueDj happy 테스트와 동일 스텁 구성
+        PartyroomData partyroom = PartyroomData.builder()
+                .id(partyroomId.getId()).partyroomId(partyroomId).build();
+        PartyroomPlaybackData playbackState = PartyroomPlaybackData.createFor(partyroomId);
+        DjQueueData djQueue = DjQueueData.createFor(partyroomId);
+        CrewData crew = CrewData.builder()
+                .id(1L).partyroomId(partyroomId).userId(userId).gradeType(GradeType.CLUBBER).build();
+
+        when(partyroomQueryService.getPartyroomById(partyroomId)).thenReturn(partyroom);
+        when(aggregatePort.findPlaybackState(partyroomId)).thenReturn(playbackState);
+        when(aggregatePort.findDjQueueState(partyroomId)).thenReturn(djQueue);
+        when(partyroomQueryService.getCrewOrThrow(partyroomId, userId)).thenReturn(crew);
+        when(aggregatePort.isDjRegistered(partyroomId, new CrewId(1L))).thenReturn(false);
+        when(playlistQueryPort.isOwnedBy(playlistId.getId(), userId.getUid())).thenReturn(true);
+        when(playlistQueryPort.isEmptyPlaylist(playlistId.getId())).thenReturn(false);
+        when(aggregatePort.findDjsOrdered(partyroomId)).thenReturn(Collections.emptyList());
+        when(aggregatePort.saveDj(any(DjData.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        // when
+        djCommandService.enqueueDj(partyroomId, playlistId, DjKind.ONE_SHOT);
+
+        // then
+        ArgumentCaptor<DjData> captor = ArgumentCaptor.forClass(DjData.class);
+        verify(aggregatePort).saveDj(captor.capture());
+        assertThat(captor.getValue().getKind()).isEqualTo(DjKind.ONE_SHOT);
+    }
+
+    @Test
+    @DisplayName("enqueueDj(2-arg) — 기존 경로는 NORMAL 유지(회귀)")
+    void enqueueDjDefaultsToNormalKind() {
+        // given — 동일 스텁
+        PartyroomData partyroom = PartyroomData.builder()
+                .id(partyroomId.getId()).partyroomId(partyroomId).build();
+        PartyroomPlaybackData playbackState = PartyroomPlaybackData.createFor(partyroomId);
+        DjQueueData djQueue = DjQueueData.createFor(partyroomId);
+        CrewData crew = CrewData.builder()
+                .id(1L).partyroomId(partyroomId).userId(userId).gradeType(GradeType.CLUBBER).build();
+
+        when(partyroomQueryService.getPartyroomById(partyroomId)).thenReturn(partyroom);
+        when(aggregatePort.findPlaybackState(partyroomId)).thenReturn(playbackState);
+        when(aggregatePort.findDjQueueState(partyroomId)).thenReturn(djQueue);
+        when(partyroomQueryService.getCrewOrThrow(partyroomId, userId)).thenReturn(crew);
+        when(aggregatePort.isDjRegistered(partyroomId, new CrewId(1L))).thenReturn(false);
+        when(playlistQueryPort.isOwnedBy(playlistId.getId(), userId.getUid())).thenReturn(true);
+        when(playlistQueryPort.isEmptyPlaylist(playlistId.getId())).thenReturn(false);
+        when(aggregatePort.findDjsOrdered(partyroomId)).thenReturn(Collections.emptyList());
+        when(aggregatePort.saveDj(any(DjData.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        // when
+        djCommandService.enqueueDj(partyroomId, playlistId);
+
+        // then
+        ArgumentCaptor<DjData> captor = ArgumentCaptor.forClass(DjData.class);
+        verify(aggregatePort).saveDj(captor.capture());
+        assertThat(captor.getValue().getKind()).isEqualTo(DjKind.NORMAL);
     }
 
     @Test
