@@ -61,4 +61,21 @@ class TempPlaylistServiceIntegrationTest extends AbstractIntegrationTest {
         assertThat(aggregatePort.findTrackByPlaylistAndLink(new PlaylistId(first), "aaa111")).isEmpty();
         assertThat(aggregatePort.findTrackByPlaylistAndLink(new PlaylistId(first), "bbb222")).isPresent();
     }
+
+    @Test
+    @DisplayName("동시 더블서밋 잔재(TEMP 2행) — 다음 호출이 1행만 남기고 자가치유(opportunistic dedup)")
+    void dedupsLeftoverDuplicateTemps() {
+        UserId owner = new UserId(9203L);
+        entityManager.persist(PlaylistData.create(0, "Quick-DJ", PlaylistType.TEMP, owner));
+        entityManager.persist(PlaylistData.create(0, "Quick-DJ", PlaylistType.TEMP, owner));
+        flushAndClear();
+
+        Long playlistId = tempPlaylistService.prepareOneShotPlaylist(owner, track("ccc333", "곡C"));
+        flushAndClear();
+
+        List<PlaylistData> temps = aggregatePort.findPlaylistsByOwnerAndType(owner, PlaylistType.TEMP);
+        assertThat(temps).hasSize(1);
+        assertThat(temps.get(0).getId()).isEqualTo(playlistId);
+        assertThat(aggregatePort.findTrackByPlaylistAndLink(new PlaylistId(playlistId), "ccc333")).isPresent();
+    }
 }

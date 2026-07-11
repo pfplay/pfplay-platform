@@ -12,6 +12,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 /**
  * Quick-DJ(#331) one-shot 곡 저장용 TEMP 플리 준비.
  * per-user 1개를 재사용하며 호출마다 리셋(전곡 삭제) 후 선택 곡 1개만 삽입한다(spec §3-2 step3~5, 결정6).
@@ -26,10 +28,23 @@ public class TempPlaylistService {
 
     @Transactional
     public Long prepareOneShotPlaylist(UserId userId, AddTrackCommand command) {
-        PlaylistData temp = aggregatePort.findPlaylistsByOwnerAndType(userId, PlaylistType.TEMP).stream()
+        List<PlaylistData> temps = aggregatePort.findPlaylistsByOwnerAndType(userId, PlaylistType.TEMP);
+        PlaylistData temp = temps.stream()
                 .findFirst()
                 .orElseGet(() -> aggregatePort.savePlaylist(
                         PlaylistData.create(0, "Quick-DJ", PlaylistType.TEMP, userId)));
+
+        // 같은 유저의 동시 더블서밋 시 find-or-create 는 read-then-write 레이스라 TEMP 가 2행 이상
+        // 생길 수 있다(per-user 유니크 제약 없음 — MySQL 은 partial index 불가). blast radius 는
+        // 숨김 행 고아화에 한정된다(TEMP 는 목록/단건 조회에서 제외되고, enqueue 는 isDjRegistered
+        // 가드가 큐 중복을 차단). 여기서 첫 행만 남기고 정리해 다음 호출이 자가치유한다(opportunistic dedup).
+        if (temps.size() > 1) {
+            List<Long> extraIds = temps.subList(1, temps.size()).stream()
+                    .map(PlaylistData::getId)
+                    .toList();
+            extraIds.forEach(aggregatePort::deleteAllTracksByPlaylist);
+            aggregatePort.deletePlaylistsByIds(extraIds);
+        }
 
         aggregatePort.deleteAllTracksByPlaylist(temp.getId());
 
