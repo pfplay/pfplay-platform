@@ -11,7 +11,8 @@ public enum DjException implements DomainException {
     EMPTY_PLAYLIST("DJ-003", "빈 플레이리스트로 등록할 수 없습니다", ErrorType.FORBIDDEN),
     NOT_FOUND_DJ("DJ-004", "DJ 대기열에서 해당 DJ를 찾을 수 없습니다", ErrorType.NOT_FOUND),
     NOT_OWNED_PLAYLIST("DJ-005", "본인 소유 플레이리스트가 아닙니다", ErrorType.FORBIDDEN),
-    CURRENT_DJ_CANNOT_CHANGE_PLAYLIST("DJ-006", "재생 중 DJ는 플레이리스트를 변경할 수 없습니다", ErrorType.CONFLICT);
+    CURRENT_DJ_CANNOT_CHANGE_PLAYLIST("DJ-006", "재생 중 DJ는 플레이리스트를 변경할 수 없습니다", ErrorType.CONFLICT),
+    TRACK_EXCEEDS_TIME_LIMIT("DJ-007", "곡 길이가 방의 재생 시간 한도를 초과합니다", ErrorType.BAD_REQUEST);
 
     private final String errorCode;
     private final String message;
