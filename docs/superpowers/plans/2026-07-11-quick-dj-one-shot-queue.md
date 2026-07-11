@@ -6,7 +6,7 @@
 
 **Architecture:** 곡 저장은 신규 `PlaylistType.TEMP`(per-user 1개 재사용·조회 숨김), 큐 엔트리는 신규 `DjData.kind`(NORMAL/ONE_SHOT). ONE_SHOT 이탈은 위치(order-1)가 아닌 **outgoing DJ 정체**(`PartyroomPlaybackData.getCurrentDjCrewId()`) 기준으로 `tryProceed`에서 분기하고 `doStart`는 rotate 플래그를 받는다. NORMAL 라운드로빈·dequeue quirk·활성화 경로는 무변경.
 
-**Tech Stack:** Spring Boot 3 / JPA(Hibernate) / QueryDSL / Flyway(V35) / JUnit5+Mockito / Testcontainers MySQL+Redis IT 하네스(`AbstractIntegrationTest`, `@Tag("integration")`)
+**Tech Stack:** Spring Boot 3 / JPA(Hibernate) / QueryDSL / Flyway(V35+V36) / JUnit5+Mockito / Testcontainers MySQL+Redis IT 하네스(`AbstractIntegrationTest`, `@Tag("integration")`)
 
 **승인 스펙:** `docs/superpowers/specs/2026-07-01-quick-dj-one-shot-queue-design.md` (2패스 리뷰 승인 · 오픈결정 전부 확정 · 이슈 [#331](https://github.com/pfplay/pfplay-platform/issues/331))
 
@@ -16,7 +16,7 @@
 - `app` 모듈 = party 도메인(DJ큐·재생) + 컨트롤러. `playlist` 모듈 = 플레이리스트/트랙.
 - party→playlist 접근은 포트 경유: `app/.../party/application/port/out/PlaylistCommandPort.java` ← 구현 `app/.../party/adapter/out/external/PlaylistCommandAdapter.java`(playlist 모듈 서비스 직접 주입).
 - IT는 `app/src/test/...`에 위치, `AbstractIntegrationTest` 상속 시 `@Tag("integration")` 자동 부여 → `./gradlew integrationTest`로 실행(단일 fork, DatabaseCleaner truncate).
-- 마이그레이션: `app/src/main/resources/db/migration/` — 현재 최신 **V34** → 이 작업은 **V35** 슬롯 사용. IT 하네스는 Flyway 적용+`ddl-auto: validate`이므로 엔티티와 DDL이 어긋나면 IT 부팅에서 잡힌다.
+- 마이그레이션: `app/src/main/resources/db/migration/` — 현재 최신 **V34** → 이 작업은 **V35(dj.kind)+V36(playlist.type ENUM 확장)** 두 슬롯 사용. IT 하네스는 Flyway 적용+`ddl-auto: validate`이므로 엔티티와 DDL이 어긋나면 IT 부팅에서 잡힌다.
 
 ---
 
@@ -136,7 +136,7 @@ Expected: PASS
 - [ ] **Step 5: Flyway 슬롯 중복 사전스캔** (배치 머지 함정 회피)
 
 Run: `ls app/src/main/resources/db/migration/ | sed -E 's/^(V[0-9]+)__.*/\1/' | sort | uniq -d`
-Expected: 출력 없음 (V35 유일)
+Expected: 출력 없음 (V35/V36 둘 다 유일 확인 — 이 작업은 두 슬롯 사용)
 
 - [ ] **Step 6: 커밋**
 
@@ -153,6 +153,7 @@ git commit -m "feat(party): DjData.kind(NORMAL/ONE_SHOT) 도입 + Flyway V35 (#3
 **Files:**
 - Modify: `playlist/src/main/java/com/pfplaybackend/api/playlist/domain/enums/PlaylistType.java`
 - Modify: `playlist/src/main/java/com/pfplaybackend/api/playlist/adapter/out/persistence/impl/PlaylistRepositoryImpl.java` (`findAllByUserId`, `findByIdAndUserId` 양쪽)
+- Create: `app/src/main/resources/db/migration/V36__add_temp_playlist_type.sql` — **V1 DDL 의 `playlist.type` 이 MySQL `ENUM('GRABLIST','PLAYLIST')` 라 Java enum append 만으로는 'TEMP' INSERT 가 strict mode 에서 실패** → `ALTER TABLE playlist MODIFY COLUMN type ENUM('GRABLIST','PLAYLIST','TEMP')` (V32 MODIFY ENUM 패턴 계승)
 - Test: `app/src/test/java/com/pfplaybackend/api/playlist/application/service/TempPlaylistVisibilityIntegrationTest.java` (신규 IT — QueryDSL이라 DB 필요)
 
 - [ ] **Step 1: 실패하는 IT 작성**
