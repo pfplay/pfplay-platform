@@ -12,6 +12,9 @@ import com.pfplaybackend.api.party.adapter.out.persistence.CrewRepository;
 import com.pfplaybackend.api.party.domain.entity.data.CrewData;
 import com.pfplaybackend.api.party.domain.enums.GradeType;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
+import com.pfplaybackend.api.playlist.domain.entity.data.PlaylistData;
+import com.pfplaybackend.api.playlist.domain.enums.PlaylistType;
+import com.pfplaybackend.api.playlist.domain.port.PlaylistAggregatePort;
 import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
 import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
 import com.pfplaybackend.api.virtualcrew.application.service.VirtualUserPoolService;
@@ -46,6 +49,7 @@ class VirtualUserPoolServiceIT extends AbstractIntegrationTest {
     @Autowired private AdminUserService adminUserService;
     @Autowired private AvatarBodyResourceRepository avatarBodyResourceRepository;
     @Autowired private AvatarFaceResourceRepository avatarFaceResourceRepository;
+    @Autowired private PlaylistAggregatePort aggregatePort;
 
     @BeforeEach
     void seedCatalog() {
@@ -165,5 +169,15 @@ class VirtualUserPoolServiceIT extends AbstractIntegrationTest {
                     .as("bot %s user_profile row count (provision 후 정확히 1개)", id.getUid())
                     .isEqualTo(1L);
         }
+    }
+
+    @Test
+    @DisplayName("봇 provision — PLAYLIST 타입이 정확히 1개(봇 전용)여야 한다 (#329 기본 플리 이중 생성 회귀 방지)")
+    void provision_botHasExactlyOnePlaylistTypePlaylist() {
+        List<UserId> bots = poolService.provision(1);
+        flushAndClear();
+
+        List<PlaylistData> playlists = aggregatePort.findPlaylistsByOwnerAndType(bots.get(0), PlaylistType.PLAYLIST);
+        assertThat(playlists).hasSize(1); // 두 번째 PLAYLIST가 생기면 playlistIdOf 단건 조회 파손
     }
 }
