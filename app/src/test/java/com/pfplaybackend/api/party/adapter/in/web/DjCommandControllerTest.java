@@ -5,10 +5,12 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 
 import com.pfplaybackend.api.common.exception.ExceptionCreator;
+import com.pfplaybackend.api.party.domain.entity.data.DjData;
 import com.pfplaybackend.api.party.domain.exception.DjException;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
@@ -152,6 +154,81 @@ class DjCommandControllerTest extends AbstractPartyCommandWebMvcTest {
                         .content("{\"playlistId\": 99}"))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.errorCode").value("DJ-003"));
+    }
+
+    // ───────────────────────── Quick-DJ (#331) ─────────────────────────
+
+    private String quickBody(String name, String duration) {
+        return """
+                {
+                    "name": "%s",
+                    "linkId": "POe9SOEKotk",
+                    "duration": "%s",
+                    "thumbnailImage": "https://i.ytimg.com/vi/POe9SOEKotk/mqdefault.jpg"
+                }
+                """.formatted(name, duration);
+    }
+
+    @Test
+    @DisplayName("quickEnqueueDj — 201 Created + djId/orderNumber 반환")
+    void quickEnqueueDjReturns201WithDjIdAndOrderNumber() throws Exception {
+        DjData dj = mock(DjData.class);
+        when(dj.getId()).thenReturn(77L);
+        when(dj.getOrderNumber()).thenReturn(2);
+        when(quickDjService.quickEnqueue(any(), any())).thenReturn(dj);
+
+        mockMvc.perform(post("/api/v1/partyrooms/1/dj-queue/quick")
+                        .with(jwt().authorities(() -> "ROLE_MEMBER"))
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(quickBody("BLACKPINK - 'Shut Down' M/V", "3:01")))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.djId").value(77))
+                .andExpect(jsonPath("$.data.orderNumber").value(2));
+    }
+
+    @Test
+    @DisplayName("quickEnqueueDj — duration \"abc\" (형식 전체 불일치) → 400")
+    void quickEnqueueDjInvalidDurationReturns400() throws Exception {
+        mockMvc.perform(post("/api/v1/partyrooms/1/dj-queue/quick")
+                        .with(jwt().authorities(() -> "ROLE_MEMBER"))
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(quickBody("곡", "abc")))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("quickEnqueueDj — duration \"3:xx\" (비숫자 세그먼트) → 400")
+    void quickEnqueueDjNonNumericSegmentDurationReturns400() throws Exception {
+        mockMvc.perform(post("/api/v1/partyrooms/1/dj-queue/quick")
+                        .with(jwt().authorities(() -> "ROLE_MEMBER"))
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(quickBody("곡", "3:xx")))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("quickEnqueueDj — duration \"1:02:03:04\" (세그먼트 수 초과) → 400")
+    void quickEnqueueDjTooManySegmentsDurationReturns400() throws Exception {
+        mockMvc.perform(post("/api/v1/partyrooms/1/dj-queue/quick")
+                        .with(jwt().authorities(() -> "ROLE_MEMBER"))
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(quickBody("곡", "1:02:03:04")))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("quickEnqueueDj — name \"\" → 400")
+    void quickEnqueueDjBlankNameReturns400() throws Exception {
+        mockMvc.perform(post("/api/v1/partyrooms/1/dj-queue/quick")
+                        .with(jwt().authorities(() -> "ROLE_MEMBER"))
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(quickBody("", "3:01")))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
