@@ -5,6 +5,7 @@ import com.pfplaybackend.api.playlist.adapter.out.persistence.custom.PlaylistRep
 import com.pfplaybackend.api.playlist.application.dto.PlaylistSummaryDto;
 import com.pfplaybackend.api.playlist.domain.entity.data.QPlaylistData;
 import com.pfplaybackend.api.playlist.domain.entity.data.QTrackData;
+import com.pfplaybackend.api.playlist.domain.enums.PlaylistType;
 import com.querydsl.core.types.Projections;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import lombok.RequiredArgsConstructor;
@@ -31,7 +32,8 @@ public class PlaylistRepositoryImpl implements PlaylistRepositoryCustom {
                 )
                 .from(qPlaylistData)
                 .leftJoin(qTrackData).on(qPlaylistData.id.eq(qTrackData.playlistId.id))
-                .where(qPlaylistData.ownerId.eq(ownerId))
+                .where(qPlaylistData.ownerId.eq(ownerId)
+                        .and(qPlaylistData.type.ne(PlaylistType.TEMP)))
                 .groupBy(qPlaylistData.id)
                 .orderBy(qPlaylistData.type.desc(), qPlaylistData.orderNumber.asc())
                 .fetch();
@@ -54,6 +56,7 @@ public class PlaylistRepositoryImpl implements PlaylistRepositoryCustom {
                 .leftJoin(qTrackData).on(qPlaylistData.id.eq(qTrackData.playlistId.id))
                 .where(qPlaylistData.id.eq(playlistId)
                         .and(qPlaylistData.ownerId.eq(ownerId))
+                        .and(qPlaylistData.type.ne(PlaylistType.TEMP))
                 )
                 .groupBy(qPlaylistData.id)
                 .orderBy(qPlaylistData.type.desc(), qPlaylistData.orderNumber.asc())

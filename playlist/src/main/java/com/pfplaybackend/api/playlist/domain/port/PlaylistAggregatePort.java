@@ -29,6 +29,7 @@ public interface PlaylistAggregatePort {
     TrackData findFirstTrackByLink(String linkId);
     Optional<TrackData> findTrackByIdAndPlaylist(Long trackId, PlaylistId playlistId);
     boolean hasTracksByPlaylist(PlaylistId playlistId);
+    void deleteAllTracksByPlaylist(Long playlistId);
 
     // ===== Track Reordering (batch operations) =====
     void shiftAllOrdersDown(Long playlistId);
