@@ -20,6 +20,7 @@ import com.pfplaybackend.api.playlist.domain.event.TrackAddedEvent;
 import com.pfplaybackend.api.playlist.domain.event.TrackRemovedEvent;
 import com.pfplaybackend.api.playlist.domain.exception.PlaylistException;
 import com.pfplaybackend.api.playlist.domain.exception.TrackException;
+import com.pfplaybackend.api.playlist.domain.policy.PlaybackCursorPolicy;
 import com.pfplaybackend.api.playlist.domain.port.PlaylistAggregatePort;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -179,15 +180,8 @@ public class TrackCommandService {
                 .map(PlaylistData::getLastPlayedTrackId)
                 .orElse(null);
 
-        int start = 0; // 커서 null 또는 미발견 → top(0)부터
-        if (cursor != null) {
-            for (int i = 0; i < ordered.size(); i++) {
-                if (cursor.equals(ordered.get(i).trackId())) {
-                    start = i + 1; // 커서 "다음"부터
-                    break;
-                }
-            }
-        }
+        List<Long> orderedIds = ordered.stream().map(PlaylistTrackDto::trackId).toList();
+        int start = PlaybackCursorPolicy.startIndexAfterCursor(orderedIds, cursor);
 
         int n = ordered.size();
         List<PlaybackTrackDto> rotated = new ArrayList<>(n);
