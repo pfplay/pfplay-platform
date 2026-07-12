@@ -5,7 +5,9 @@ import com.pfplaybackend.api.common.aspect.context.AuthContext;
 import com.pfplaybackend.api.common.domain.value.PlaylistId;
 import com.pfplaybackend.api.common.exception.ExceptionCreator;
 import com.pfplaybackend.api.playlist.application.dto.PlaylistTrackDto;
+import com.pfplaybackend.api.playlist.application.dto.TrackListView;
 import com.pfplaybackend.api.playlist.application.port.out.PlaylistQueryPort;
+import com.pfplaybackend.api.playlist.domain.entity.data.PlaylistData;
 import com.pfplaybackend.api.playlist.domain.exception.PlaylistException;
 import com.pfplaybackend.api.playlist.domain.port.PlaylistAggregatePort;
 import lombok.RequiredArgsConstructor;
@@ -25,13 +27,17 @@ public class TrackQueryService {
     private final PlaylistQueryPort queryPort;
 
     @Transactional(readOnly = true)
-    public Page<PlaylistTrackDto> getTracks(Long playlistId, int pageNo, int pageSize) {
+    public TrackListView getTracks(Long playlistId, int pageNo, int pageSize) {
         AuthContext authContext = ThreadLocalContext.getAuthContext();
-        aggregatePort.findPlaylistByIdAndOwner(playlistId, authContext.getUserId())
+        PlaylistData playlist = aggregatePort.findPlaylistByIdAndOwner(playlistId, authContext.getUserId())
                 .orElseThrow(() -> ExceptionCreator.create(PlaylistException.NOT_FOUND_PLAYLIST));
 
+        PlaylistId pid = new PlaylistId(playlistId);
         Pageable pageable = PageRequest.of(pageNo, pageSize, Sort.by(Sort.Direction.ASC, "orderNumber"));
-        return queryPort.getTracksWithPagination(new PlaylistId(playlistId), pageable);
+        Page<PlaylistTrackDto> page = queryPort.getTracksWithPagination(pid, pageable);
+
+        // 커서(NOW 앵커)만 노출. NEXT는 커서 + 현재 순서로부터 클라이언트가 파생한다.
+        return new TrackListView(page, playlist.getLastPlayedTrackId());
     }
 
     @Transactional(readOnly = true)
