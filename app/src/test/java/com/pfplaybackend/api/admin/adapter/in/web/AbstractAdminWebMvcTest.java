@@ -30,6 +30,7 @@ import com.pfplaybackend.api.administration.application.service.AdminMemberQuery
 import com.pfplaybackend.api.administration.application.service.AdminMemberTierCommandService;
 import com.pfplaybackend.api.administration.application.service.AdminMemberWithdrawCommandService;
 import com.pfplaybackend.api.administration.application.service.AdminPartyroomCommandService;
+import com.pfplaybackend.api.administration.application.service.AdminPartyroomAnalyticsQueryService;
 import com.pfplaybackend.api.administration.application.service.AdminPartyroomQueryService;
 import com.pfplaybackend.api.administration.application.service.AdminReportCommandService;
 import com.pfplaybackend.api.administration.application.service.AdminReportQueryService;
@@ -98,6 +99,7 @@ public abstract class AbstractAdminWebMvcTest {
     @MockBean protected AdminPasswordService adminPasswordService;
     @MockBean protected AdminPartyroomCommandService adminPartyroomCommandService;
     @MockBean protected AdminPartyroomQueryService adminPartyroomQueryService;
+    @MockBean protected AdminPartyroomAnalyticsQueryService adminPartyroomAnalyticsQueryService;
     @MockBean protected AdminMemberQueryService adminMemberQueryService;
     @MockBean protected AdminGuestQueryService adminGuestQueryService;
     @MockBean protected AdminMemberTierCommandService adminMemberTierCommandService;

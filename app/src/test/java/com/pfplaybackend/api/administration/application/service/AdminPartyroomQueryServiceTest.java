@@ -2,7 +2,7 @@ package com.pfplaybackend.api.administration.application.service;
 
 import com.pfplaybackend.api.administration.adapter.in.web.payload.response.AdminPartyroomDetailResponse;
 import com.pfplaybackend.api.administration.adapter.in.web.payload.response.AdminPartyroomListItemResponse;
-import com.pfplaybackend.api.administration.adapter.in.web.payload.response.AdminPartyroomListItemResponse.VirtualDjSummary;
+import com.pfplaybackend.api.administration.adapter.in.web.payload.response.AdminPartyroomListItemResponse.VirtualCrewSummary;
 import com.pfplaybackend.api.administration.adapter.out.persistence.AdminPartyroomQueryRepository;
 import com.pfplaybackend.api.administration.adapter.out.persistence.PartyroomAdminActionRepository;
 import com.pfplaybackend.api.administration.application.dto.AdminPartyroomListFilter;
@@ -21,7 +21,7 @@ import com.pfplaybackend.api.party.domain.enums.PartyroomStatus;
 import com.pfplaybackend.api.party.domain.enums.PenaltyType;
 import com.pfplaybackend.api.party.domain.enums.PunisherType;
 import com.pfplaybackend.api.party.domain.enums.StageType;
-import com.pfplaybackend.api.virtualdj.domain.enums.VirtualDjStatus;
+import com.pfplaybackend.api.virtualcrew.domain.enums.VirtualCrewStatus;
 import com.pfplaybackend.api.party.domain.port.PartyroomAggregatePort;
 import com.pfplaybackend.api.party.domain.value.CrewId;
 import com.pfplaybackend.api.party.domain.value.LinkDomain;
@@ -101,7 +101,7 @@ class AdminPartyroomQueryServiceTest {
                 PartyroomStatus.ACTIVE, DisplayFlag.NORMAL,
                 LocalDateTime.of(2026, 4, 1, 0, 0),
                 LocalDateTime.of(2026, 4, 27, 10, 0),
-                new VirtualDjSummary(VirtualDjStatus.MANAGED, 3, 2L)
+                new VirtualCrewSummary(VirtualCrewStatus.MANAGED, 3, 2L)
         );
         Pageable pageable = PageRequest.of(0, 20);
         AdminPartyroomListFilter filter = new AdminPartyroomListFilter(null, null, null, null, null);
@@ -119,11 +119,11 @@ class AdminPartyroomQueryServiceTest {
         assertThat(item.djCount()).isEqualTo(2L);
         assertThat(item.playbackActivated()).isTrue();
         assertThat(item.status()).isEqualTo(PartyroomStatus.ACTIVE);
-        // P2 Task 2.2 — virtualDj 요약은 Row → Response 로 그대로 전달된다.
-        assertThat(item.virtualDj()).isNotNull();
-        assertThat(item.virtualDj().status()).isEqualTo(VirtualDjStatus.MANAGED);
-        assertThat(item.virtualDj().targetCount()).isEqualTo(3);
-        assertThat(item.virtualDj().botDjCount()).isEqualTo(2L);
+        // P2 Task 2.2 — virtualCrew 요약은 Row → Response 로 그대로 전달된다.
+        assertThat(item.virtualCrew()).isNotNull();
+        assertThat(item.virtualCrew().status()).isEqualTo(VirtualCrewStatus.MANAGED);
+        assertThat(item.virtualCrew().targetCount()).isEqualTo(3);
+        assertThat(item.virtualCrew().botDjCount()).isEqualTo(2L);
     }
 
     @Test
@@ -145,7 +145,7 @@ class AdminPartyroomQueryServiceTest {
 
         assertThat(item.playbackActivated()).isFalse();
         assertThat(item.hostNickname()).isNull();
-        assertThat(item.virtualDj()).isNull();  // config 없는 룸 → null passthrough
+        assertThat(item.virtualCrew()).isNull();  // config 없는 룸 → null passthrough
     }
 
     @Test

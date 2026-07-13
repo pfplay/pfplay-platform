@@ -4,14 +4,21 @@ import jakarta.persistence.EntityManager;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.junit.jupiter.api.Tag;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.TestExecutionListeners;
+import org.springframework.test.context.TestExecutionListeners.MergeMode;
 import org.springframework.transaction.annotation.Transactional;
 
 @Tag("integration")
 @SpringBootTest
 @ActiveProfiles("test")
+@Import(TestRedisClientConfig.class)
+@TestExecutionListeners(
+        value = DatabaseCleanupTestExecutionListener.class,
+        mergeMode = MergeMode.MERGE_WITH_DEFAULTS)
 public abstract class AbstractIntegrationTest {
 
     @DynamicPropertySource

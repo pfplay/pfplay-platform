@@ -5,6 +5,8 @@ import com.pfplaybackend.api.party.domain.entity.data.*;
 import com.pfplaybackend.api.party.domain.value.CrewId;
 import com.pfplaybackend.api.party.domain.value.LinkDomain;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -57,4 +59,16 @@ public interface PartyroomAggregatePort {
     // ===== Reconcile cron (#308) =====
     List<PartyroomId> findPartyroomIdsWithInactiveCrewDj();
     List<PartyroomId> findStuckActivatedPartyroomIds(long threshold);
+
+    // ===== Playback interval 재구성 (어드민 행동분석) =====
+    /**
+     * 음악 재생 구간 재구성용 playback 조회.
+     * created_at ∈ [from, now) 인 모든 row + from 직전 최신 1건(straddle)을 created_at ASC 로 반환.
+     */
+    List<PlaybackData> findPlaybackForInterval(PartyroomId partyroomId, LocalDateTime from, LocalDateTime now);
+
+    /**
+     * 디제잉 이력 페이지네이션 조회. created_at DESC 고정 정렬.
+     */
+    Page<PlaybackData> findPlaybackHistory(PartyroomId partyroomId, Pageable pageable);
 }

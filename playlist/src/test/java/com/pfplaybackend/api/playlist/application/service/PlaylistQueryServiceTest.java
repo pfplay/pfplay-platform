@@ -5,7 +5,9 @@ import com.pfplaybackend.api.common.aspect.context.AuthContext;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.playlist.application.dto.PlaylistSummaryDto;
 import com.pfplaybackend.api.playlist.application.port.out.PlaylistQueryPort;
+import com.pfplaybackend.api.playlist.domain.entity.data.PlaylistData;
 import com.pfplaybackend.api.playlist.domain.enums.PlaylistType;
+import com.pfplaybackend.api.playlist.domain.port.PlaylistAggregatePort;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -17,6 +19,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
@@ -25,6 +28,7 @@ import static org.mockito.Mockito.*;
 class PlaylistQueryServiceTest {
 
     @Mock PlaylistQueryPort queryPort;
+    @Mock PlaylistAggregatePort aggregatePort;
     @InjectMocks PlaylistQueryService playlistQueryService;
 
     private UserId userId;
@@ -93,9 +97,9 @@ class PlaylistQueryServiceTest {
     @Test
     @DisplayName("isOwnedBy — playlist 가 본인 소유면 true")
     void isOwnedByReturnsTrueWhenOwned() {
-        // given
-        PlaylistSummaryDto owned = new PlaylistSummaryDto(99L, "My Playlist", 5, PlaylistType.PLAYLIST, 1L);
-        when(queryPort.findByIdAndUserId(99L, userId)).thenReturn(owned);
+        // given — 소유권 검증은 view 쿼리가 아닌 aggregate 원시 조회 기반
+        PlaylistData owned = PlaylistData.create(5, "My Playlist", PlaylistType.PLAYLIST, userId);
+        when(aggregatePort.findPlaylistByIdAndOwner(99L, userId)).thenReturn(Optional.of(owned));
 
         // when
         boolean result = playlistQueryService.isOwnedBy(99L, userId);
@@ -105,10 +109,24 @@ class PlaylistQueryServiceTest {
     }
 
     @Test
+    @DisplayName("isOwnedBy — 조회 숨김 대상인 TEMP 도 본인 소유면 true (Quick-DJ #331)")
+    void isOwnedByReturnsTrueForOwnTempPlaylist() {
+        // given — TEMP 는 목록/단건 view 에서 숨겨지지만 소유권 검증은 통과해야 한다
+        PlaylistData temp = PlaylistData.create(0, "Quick-DJ", PlaylistType.TEMP, userId);
+        when(aggregatePort.findPlaylistByIdAndOwner(77L, userId)).thenReturn(Optional.of(temp));
+
+        // when
+        boolean result = playlistQueryService.isOwnedBy(77L, userId);
+
+        // then
+        assertThat(result).isTrue();
+    }
+
+    @Test
     @DisplayName("isOwnedBy — playlist 가 타인 소유거나 미존재면 false")
     void isOwnedByReturnsFalseWhenNotOwned() {
         // given
-        when(queryPort.findByIdAndUserId(99L, userId)).thenReturn(null);
+        when(aggregatePort.findPlaylistByIdAndOwner(99L, userId)).thenReturn(Optional.empty());
 
         // when
         boolean result = playlistQueryService.isOwnedBy(99L, userId);

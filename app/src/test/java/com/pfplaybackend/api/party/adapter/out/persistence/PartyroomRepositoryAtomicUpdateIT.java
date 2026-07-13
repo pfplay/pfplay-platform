@@ -13,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 
@@ -54,7 +55,8 @@ class PartyroomRepositoryAtomicUpdateIT extends AbstractIntegrationTest {
     @DisplayName("incrementCrewCount — ACTIVE 룸에서 +1, lastActivityAt 갱신, 1 affected")
     void increment_active() {
         PartyroomData p = createAndSaveActive(1001L);
-        LocalDateTime now = LocalDateTime.now();
+        // DB 컬럼이 DATETIME(0)(초 정밀)이라 MySQL 이 나노를 반올림 → 입력을 초로 절삭해 결정론 비교.
+        LocalDateTime now = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS);
 
         int affected = partyroomRepository.incrementCrewCount(p.getId(), now);
 
@@ -90,7 +92,7 @@ class PartyroomRepositoryAtomicUpdateIT extends AbstractIntegrationTest {
         partyroomRepository.incrementCrewCount(p.getId(), LocalDateTime.now());
         partyroomRepository.incrementCrewCount(p.getId(), LocalDateTime.now());
 
-        LocalDateTime decrementAt = LocalDateTime.now();
+        LocalDateTime decrementAt = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS);
         int affected = partyroomRepository.decrementCrewCount(p.getId(), decrementAt);
 
         assertThat(affected).isEqualTo(1);
@@ -129,7 +131,8 @@ class PartyroomRepositoryAtomicUpdateIT extends AbstractIntegrationTest {
     @DisplayName("touchLastActivity — ACTIVE 룸 갱신")
     void touch_active() {
         PartyroomData p = createAndSaveActive(1006L);
-        LocalDateTime now = LocalDateTime.now();
+        // DB 컬럼이 DATETIME(0)(초 정밀)이라 MySQL 이 나노를 반올림 → 입력을 초로 절삭해 결정론 비교.
+        LocalDateTime now = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS);
 
         int affected = partyroomRepository.touchLastActivity(p.getId(), now);
 

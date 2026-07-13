@@ -2,6 +2,7 @@ package com.pfplaybackend.api.party.domain.entity.data;
 
 import com.pfplaybackend.api.common.domain.value.PlaylistId;
 import com.pfplaybackend.api.common.entity.BaseEntity;
+import com.pfplaybackend.api.party.domain.enums.DjKind;
 import com.pfplaybackend.api.party.domain.value.CrewId;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import jakarta.persistence.*;
@@ -9,6 +10,8 @@ import lombok.Builder;
 import lombok.Getter;
 import org.hibernate.annotations.DynamicInsert;
 import org.hibernate.annotations.DynamicUpdate;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
 import java.util.Objects;
@@ -42,18 +45,24 @@ public class DjData extends BaseEntity {
 
     private int orderNumber;
 
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
+    @Column(length = 20, nullable = false)
+    private DjKind kind;
+
     // 데이터 엔티티 생성자
     protected DjData() {
     }
 
     @Builder
     public DjData(Long id, PartyroomId partyroomId, CrewId crewId, PlaylistId playlistId, int orderNumber,
-                  LocalDateTime createdAt, LocalDateTime updatedAt) {
+                  DjKind kind, LocalDateTime createdAt, LocalDateTime updatedAt) {
         this.id = id;
         this.partyroomId = partyroomId;
         this.crewId = crewId;
         this.playlistId = playlistId;
         this.orderNumber = orderNumber;
+        this.kind = kind;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
     }
@@ -61,11 +70,16 @@ public class DjData extends BaseEntity {
     // ── Business Methods ──
 
     public static DjData create(PartyroomId partyroomId, PlaylistId playlistId, CrewId crewId, int orderNumber) {
+        return create(partyroomId, playlistId, crewId, orderNumber, DjKind.NORMAL);
+    }
+
+    public static DjData create(PartyroomId partyroomId, PlaylistId playlistId, CrewId crewId, int orderNumber, DjKind kind) {
         return DjData.builder()
                 .partyroomId(partyroomId)
                 .playlistId(playlistId)
                 .crewId(crewId)
                 .orderNumber(orderNumber)
+                .kind(kind)
                 .build();
     }
 

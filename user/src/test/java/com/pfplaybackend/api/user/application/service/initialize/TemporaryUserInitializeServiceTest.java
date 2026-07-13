@@ -83,6 +83,7 @@ class TemporaryUserInitializeServiceTest {
         verify(memberRepository).save(any(MemberData.class));
         verify(userActivityCommandService).createUserActivities(any(UserId.class));
         verify(playlistSetupPort).createDefaultPlaylist(any(UserId.class));
+        verify(playlistSetupPort).createDefaultDjPlaylist(any(UserId.class));
     }
 
     @Test

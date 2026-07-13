@@ -60,7 +60,11 @@ class AdminMemberWithdrawCommandServiceIT extends AbstractIntegrationTest {
                 new UserId(SEED_USER_ACCOUNT_ID), "wd-it@g4it.local", "h");
         ua.recordLogin();  // set lastLoginAt
         userAccountRepository.saveAndFlush(ua);
-        this.seedLastLoginAt = ua.getLastLoginAt();
+        // lastLoginAt 컬럼이 DATETIME(0)(초 정밀)이라 저장 시 초로 반올림된다. 베이스라인을
+        // DB 에서 다시 읽어 반올림된 값으로 잡아야 withdraw 후 값과 정확히 비교된다.
+        entityManager.clear();
+        this.seedLastLoginAt = userAccountRepository.findById(new UserId(SEED_USER_ACCOUNT_ID))
+                .orElseThrow().getLastLoginAt();
 
         MemberData member = MemberData.createForUserAccount(SEED_USER_ACCOUNT_ID);
         this.memberId = memberRepository.saveAndFlush(member).getMemberId();
@@ -89,8 +93,8 @@ class AdminMemberWithdrawCommandServiceIT extends AbstractIntegrationTest {
         assertThat(ua.isWithdrawn()).isTrue();
         assertThat(ua.getEmail()).startsWith("withdrawn-").endsWith("@withdrawn.local");
         // lastLoginAt 미변경 (roadmap §11.2.2 compliance)
-        // — MySQL DATETIME(6) round-trip can shift sub-microsecond; tolerance 1ms is sufficient
-        //   to assert "untouched" vs "reset to now" (which would diverge by seconds).
+        // — 베이스라인을 DB 저장값(DATETIME(0) 반올림)으로 잡았으므로 untouched 면 정확히 일치.
+        //   withdraw 가 now 로 리셋했다면 초 단위로 벌어진다.
         assertThat(ua.getLastLoginAt()).isCloseTo(seedLastLoginAt, within(1, ChronoUnit.MILLIS));
 
         Awaitility.await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> {

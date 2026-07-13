@@ -39,10 +39,32 @@ jobs:
       - name: Run tests
         run: ./gradlew test
 
+      # 통합 테스트 게이트: Testcontainers(Docker) 로 실 Flyway 스키마 부팅 + validate.
+      # ubuntu-latest 는 Docker 지원 → Testcontainers 동작. 직렬 실행(공유 스키마 truncate
+      # 상호파괴 방지) 은 build.gradle 의 maxParallelForks=1 로 강제됨.
+      - name: Run integration tests
+        # #320: GitHub 러너/Docker 의 시간대별 컨디션에 따라 Testcontainers Redis 가 일부 실행에서
+        # 100스레드 버스트 중 도달불가('Connection refused: <mapped port>')가 되는 인프라 플래키
+        # (PartyroomAccessCommandServiceRaceIT). 불변식 crew_count==1 은 DB atomic UPDATE+unique+row
+        # lock 이 강제하므로 제품 무결이며, 실패는 코드가 아닌 러너 환경 기인. 시간대-클러스터링이라
+        # 코드로 결정적 제거 불가 → 실패 시 gradle 을 재호출해 Testcontainers 를 새로 띄워(죽은 컨테이너
+        # 탈출) 최대 3회 재시도. 실패 태스크는 캐싱 안 되므로 재시도는 실제 재실행됨.
+        run: |
+          for attempt in 1 2 3; do
+            echo "::group::integrationTest attempt ${attempt}/3"
+            ./gradlew :app:integrationTest && { echo "::endgroup::"; exit 0; }
+            echo "::endgroup::"
+            echo "::warning::[#320] integrationTest attempt ${attempt} 실패 — fresh Testcontainers 로 재시도"
+          done
+          echo "::error::[#320] integrationTest 3회 모두 실패 — 인프라 플래키 아닌 실 회귀 의심"
+          exit 1
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-results
-          path: '**/build/test-results/test/*.xml'
+          path: |
+            **/build/test-results/test/*.xml
+            **/build/test-results/integrationTest/*.xml
           retention-days: 14

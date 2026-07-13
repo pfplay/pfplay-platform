@@ -16,4 +16,9 @@ public class PlaylistSetupAdapter implements PlaylistSetupPort {
     public void createDefaultPlaylist(UserId userId) {
         playlistCommandService.createDefaultPlaylist(userId);
     }
+
+    @Override
+    public void createDefaultDjPlaylist(UserId userId) {
+        playlistCommandService.createDefaultDjPlaylist(userId);
+    }
 }

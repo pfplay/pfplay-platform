@@ -56,12 +56,12 @@ class ConfigKeyTest {
 
     @Test
     void selfUpdateTuningKeys_haveExpectedValues() {
-        assertThat(ConfigKey.VDJ_SELF_UPDATE_COOLDOWN_SECONDS.value()).isEqualTo("vdj.playlist.self_update.cooldown_seconds");
-        assertThat(ConfigKey.VDJ_SELF_UPDATE_MIN_REACTIONS.value()).isEqualTo("vdj.playlist.self_update.min_reactions");
-        assertThat(ConfigKey.VDJ_SELF_UPDATE_REPLACE_PER_CYCLE.value()).isEqualTo("vdj.playlist.self_update.replace_per_cycle");
-        assertThat(ConfigKey.VDJ_SELF_UPDATE_RECOMMEND_COUNT.value()).isEqualTo("vdj.playlist.self_update.recommend_count");
-        assertThat(ConfigKey.VDJ_SELF_UPDATE_WEIGHT_REACTION.value()).isEqualTo("vdj.playlist.self_update.weight.reaction");
-        assertThat(ConfigKey.VDJ_SELF_UPDATE_WEIGHT_GRAB.value()).isEqualTo("vdj.playlist.self_update.weight.grab");
-        assertThat(ConfigKey.VDJ_SELF_UPDATE_PRUNED_COOLDOWN_SECONDS.value()).isEqualTo("vdj.playlist.self_update.pruned_cooldown_seconds");
+        assertThat(ConfigKey.VCREW_SELF_UPDATE_COOLDOWN_SECONDS.value()).isEqualTo("vcrew.playlist.self_update.cooldown_seconds");
+        assertThat(ConfigKey.VCREW_SELF_UPDATE_MIN_REACTIONS.value()).isEqualTo("vcrew.playlist.self_update.min_reactions");
+        assertThat(ConfigKey.VCREW_SELF_UPDATE_REPLACE_PER_CYCLE.value()).isEqualTo("vcrew.playlist.self_update.replace_per_cycle");
+        assertThat(ConfigKey.VCREW_SELF_UPDATE_RECOMMEND_COUNT.value()).isEqualTo("vcrew.playlist.self_update.recommend_count");
+        assertThat(ConfigKey.VCREW_SELF_UPDATE_WEIGHT_REACTION.value()).isEqualTo("vcrew.playlist.self_update.weight.reaction");
+        assertThat(ConfigKey.VCREW_SELF_UPDATE_WEIGHT_GRAB.value()).isEqualTo("vcrew.playlist.self_update.weight.grab");
+        assertThat(ConfigKey.VCREW_SELF_UPDATE_PRUNED_COOLDOWN_SECONDS.value()).isEqualTo("vcrew.playlist.self_update.pruned_cooldown_seconds");
     }
 }

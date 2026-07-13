@@ -52,6 +52,9 @@ subprojects {
 		useJUnitPlatform {
 			includeTags 'integration'
 		}
+		// 직렬 실행 불변식: IT 는 단일 공유 Testcontainers 스키마를 DatabaseCleaner 로
+		// 각 테스트 전 truncate 한다. 병렬 fork 는 서로의 스키마를 truncate 해 상호파괴하므로
+		// maxParallelForks=1 을 유지한다(스키마-per-fork 격리 없이는 병렬화 불가).
 		maxParallelForks = 1
 		forkEvery = 0
 		jvmArgs '-XX:+UseParallelGC'

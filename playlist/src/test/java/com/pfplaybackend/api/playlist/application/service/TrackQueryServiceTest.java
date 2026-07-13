@@ -7,6 +7,7 @@ import com.pfplaybackend.api.common.domain.value.PlaylistId;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.exception.http.NotFoundException;
 import com.pfplaybackend.api.playlist.application.dto.PlaylistTrackDto;
+import com.pfplaybackend.api.playlist.application.dto.TrackListView;
 import com.pfplaybackend.api.playlist.application.port.out.PlaylistQueryPort;
 import com.pfplaybackend.api.playlist.domain.entity.data.PlaylistData;
 import com.pfplaybackend.api.playlist.domain.enums.PlaylistType;
@@ -71,11 +72,13 @@ class TrackQueryServiceTest {
         when(queryPort.getTracksWithPagination(eq(new PlaylistId(playlistId)), any(Pageable.class))).thenReturn(expectedPage);
 
         // when
-        Page<PlaylistTrackDto> result = trackQueryService.getTracks(playlistId, 0, 10);
+        TrackListView result = trackQueryService.getTracks(playlistId, 0, 10);
 
         // then
-        assertThat(result.getContent()).hasSize(2);
-        assertThat(result.getContent().get(0).name()).isEqualTo("Song A");
+        assertThat(result.page().getContent()).hasSize(2);
+        assertThat(result.page().getContent().get(0).name()).isEqualTo("Song A");
+        // 커서 미설정(builder에 없음) → NOW 앵커 없음. NEXT는 클라이언트가 파생.
+        assertThat(result.lastPlayedTrackId()).isNull();
         verify(aggregatePort).findPlaylistByIdAndOwner(playlistId, userId);
         verify(queryPort).getTracksWithPagination(eq(new PlaylistId(playlistId)), any(Pageable.class));
     }
