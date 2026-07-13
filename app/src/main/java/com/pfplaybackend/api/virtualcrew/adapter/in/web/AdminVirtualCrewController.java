@@ -21,6 +21,8 @@ import com.pfplaybackend.api.virtualcrew.adapter.in.web.payload.DistributeBotAva
 import com.pfplaybackend.api.virtualcrew.adapter.in.web.payload.DistributeBotAvatarResponse;
 import com.pfplaybackend.api.virtualcrew.adapter.in.web.payload.PoolSummaryResponse;
 import com.pfplaybackend.api.virtualcrew.adapter.in.web.payload.ProvisionPoolRequest;
+import com.pfplaybackend.api.virtualcrew.adapter.in.web.payload.RemoveBotsRequest;
+import com.pfplaybackend.api.virtualcrew.adapter.in.web.payload.RemoveBotsResponse;
 import com.pfplaybackend.api.virtualcrew.adapter.in.web.payload.RenameSongPackRequest;
 import com.pfplaybackend.api.virtualcrew.adapter.in.web.payload.SetBotAvatarRequest;
 import com.pfplaybackend.api.virtualcrew.adapter.in.web.payload.SongPackDetailResponse;
@@ -342,6 +344,16 @@ public class AdminVirtualCrewController {
             @Valid @RequestBody DistributeBotAvatarRequest req) {
         List<BotAvatarAssigner.Assigned> assigned = botAvatarAdminService.distribute(req.botIds(), req.bodyUris());
         return ResponseEntity.ok(ApiCommonResponse.success(DistributeBotAvatarResponse.from(assigned)));
+    }
+
+    @Operation(summary = "봇 일괄 제거(탈퇴)", description = "선택 봇들을 풀에서 제거(soft-delete). 배치된 봇이 포함되면 409(먼저 리소스 회수/재배치)")
+    @SecurityRequirement(name = "cookieAuth")
+    @PreAuthorize("@adminAuth.canManageVirtualCrew()")
+    @PostMapping("/virtual-crew/bots/remove")
+    public ResponseEntity<ApiCommonResponse<RemoveBotsResponse>> removeBots(
+            @Valid @RequestBody RemoveBotsRequest req) {
+        return ResponseEntity.ok(ApiCommonResponse.success(
+                RemoveBotsResponse.from(adminService.removeBots(req.botUserIds()))));
     }
 
     // ── 봇↔페르소나 매핑 (P3) ──

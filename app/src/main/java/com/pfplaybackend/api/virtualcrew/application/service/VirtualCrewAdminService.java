@@ -1,5 +1,6 @@
 package com.pfplaybackend.api.virtualcrew.application.service;
 
+import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.exception.ExceptionCreator;
 import com.pfplaybackend.api.party.application.service.PartyroomQueryService;
 import com.pfplaybackend.api.party.domain.entity.data.PartyroomData;
@@ -20,6 +21,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 
@@ -61,6 +63,42 @@ public class VirtualCrewAdminService {
     public void provisionPool(int count) {
         poolService.provision(count);
     }
+
+    /**
+     * 선택 봇들을 풀에서 제거(탈퇴 soft-delete)한다 — provision 의 역연산(로스터 다중 선택 삭제).
+     *
+     * <p><b>유휴 전용 가드:</b> 요청 봇 중 하나라도 현재 방에 배치돼 있으면 전체를 거부한다
+     * ({@link VirtualCrewException#BOT_PLACED_CANNOT_REMOVE}). 배치된 봇을 탈퇴시키면 다음 reconcile
+     * 까지 방에 남는 창(window)이 생기므로, 먼저 해당 방을 리소스 회수/재배치하도록 강제한다.
+     * 부분 제거 대신 all-or-nothing 으로 혼선을 막는다.
+     *
+     * <p>로스터에 없는 id(비-봇/미존재/이미 탈퇴)는 멱등적으로 스킵한다. 반환값은 실제 탈퇴된 봇 목록.
+     */
+    @Transactional
+    public BotRemovalResult removeBots(List<Long> botUserIds) {
+        if (botUserIds == null || botUserIds.isEmpty()) {
+            return new BotRemovalResult(0, List.of());
+        }
+        // 중복 제거 후 실제 봇(is_dummy·non-withdrawn)만 남긴다 — 비봇/미존재/이미 탈퇴 id 는 멱등 스킵.
+        List<Long> validBots = botPoolQueryRepository.filterBotUserIds(
+                new ArrayList<>(new LinkedHashSet<>(botUserIds)));
+        if (validBots.isEmpty()) {
+            return new BotRemovalResult(0, List.of());
+        }
+        // 활성 crew 로 배치된 봇이 하나라도 있으면 전체 거부(먼저 리소스 회수/재배치). 파티룸 행 존재가
+        // 아니라 활성 crew 존재(권위 신호)로 판정 — orphan 방 잔류 봇도 배치로 본다. all-or-nothing.
+        if (!botPoolQueryRepository.filterPlacedBotUserIds(validBots).isEmpty()) {
+            throw ExceptionCreator.create(VirtualCrewException.BOT_PLACED_CANNOT_REMOVE);
+        }
+        for (Long id : validBots) {
+            poolService.withdrawBot(new UserId(id));
+        }
+        log.info("[VirtualCrewAdmin.removeBots] requested={} removed={}", botUserIds.size(), validBots.size());
+        return new BotRemovalResult(validBots.size(), validBots);
+    }
+
+    /** 봇 제거 결과 — 실제 탈퇴된 봇 수 + userId 목록(로스터에 없던 id 는 제외). */
+    public record BotRemovalResult(int removed, List<Long> removedUserIds) {}
 
     /** 봇 풀 전체 요약 — 전체/idle 수 + 파티룸별 배치 현황. */
     @Transactional(readOnly = true)

@@ -3,6 +3,7 @@ package com.pfplaybackend.api.admin.application.service;
 import com.pfplaybackend.api.admin.application.port.out.AdminMemberPort;
 import com.pfplaybackend.api.admin.application.port.out.AdminPlaylistPort;
 import com.pfplaybackend.api.admin.domain.exception.AdminException;
+import com.pfplaybackend.api.administration.application.service.AdminMemberWithdrawCommandService;
 import com.pfplaybackend.api.common.config.security.enums.ProviderType;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.exception.ExceptionCreator;
@@ -37,6 +38,7 @@ public class AdminUserService {
     private final AdminProfileService adminProfileService;
     private final AdminPlaylistPort adminPlaylistPort;
     private final UserAccountRepository userAccountRepository;
+    private final AdminMemberWithdrawCommandService adminMemberWithdrawCommandService;
 
     /**
      * Create virtual member with auto-generated profile and FM authority
@@ -173,6 +175,31 @@ public class AdminUserService {
         adminMemberPort.deleteMemberById(userId.getUid());
 
         log.info("Virtual member deleted: userId={}", userId.getUid());
+    }
+
+    /**
+     * 가상 회원을 탈퇴(soft-delete)한다 — 물리 삭제 대신 {@code withdrawn_at} 세팅 + 이메일 PII 비식별화.
+     *
+     * <p>가상 크루 봇 제거의 진입점. 봇 계정은 crew/dj/playlist/activity 등 여러 테이블이 참조하므로
+     * 물리 삭제는 orphan/FK 위험이 크다. 대신 실회원과 동일한 검증된 탈퇴 경로
+     * ({@link AdminMemberWithdrawCommandService#withdraw})를 재사용한다 — idempotent(재호출 무해),
+     * adminId 기록, {@code UserAccountWithdrawnEvent} 발행을 모두 승계한다. 모든 봇 풀 조회가
+     * {@code withdrawn_at IS NULL} 로 필터하므로 탈퇴 즉시 풀·로스터·배치 대상에서 사라진다.
+     *
+     * @param userId 가상 회원(봇)의 user_account_id
+     */
+    @Transactional
+    public void withdrawVirtualMember(UserId userId) {
+        // 1. 회원 조회(user_account_id) — 없으면 MEMBER_NOT_FOUND.
+        MemberData member = findMemberByUserId(userId);
+
+        // 2. LOCAL provider(가상 회원)인지 검증 — 실 소셜 회원 오탈퇴 방지.
+        requireLocalProviderForVirtualMemberOp(member, AdminException.NON_VIRTUAL_MEMBER_DELETE);
+
+        // 3. 검증된 탈퇴 명령에 위임(member_id 기준). idempotent — 이미 탈퇴면 no-op.
+        adminMemberWithdrawCommandService.withdraw(member.getMemberId());
+
+        log.info("Virtual member withdrawn (soft-delete): userId={}", userId.getUid());
     }
 
     /**

@@ -79,6 +79,19 @@ public class VirtualUserPoolService {
     }
 
     /**
+     * 봇 1명을 풀에서 탈퇴(soft-delete)시킨다 — {@code provision} 의 역연산.
+     *
+     * <p>물리 삭제(playlist/track/activity/crew 등 다수 테이블 정리 + orphan/FK 위험) 대신 실회원과
+     * 동일한 검증된 탈퇴 경로({@link VirtualMemberProvisionPort#withdrawVirtualMember})를 재사용한다.
+     * 모든 봇 풀 조회가 {@code withdrawn_at IS NULL} 로 필터하므로 탈퇴 즉시 풀·로스터·idle 후보에서 사라진다.
+     * 배치 여부 가드(placed 봇 거부)는 상위 오케스트레이션({@code VirtualCrewAdminService.removeBots})이 담당한다.
+     */
+    @Transactional
+    public void withdrawBot(UserId botUserId) {
+        virtualMemberProvisionPort.withdrawVirtualMember(botUserId.getUid());
+    }
+
+    /**
      * 봇의 DJ 용 {@link PlaylistType#PLAYLIST} playlist id 를 반환한다(Chunk 4 enqueueDj 에서 사용).
      */
     @Transactional(readOnly = true)
@@ -91,6 +104,6 @@ public class VirtualUserPoolService {
     }
 
     private String generateBotNickname() {
-        return "DJ_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+        return "VCREW_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
     }
 }
