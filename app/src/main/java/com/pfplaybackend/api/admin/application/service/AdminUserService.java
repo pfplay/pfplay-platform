@@ -8,9 +8,11 @@ import com.pfplaybackend.api.common.config.security.enums.ProviderType;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.exception.ExceptionCreator;
 import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
+import com.pfplaybackend.api.user.adapter.out.persistence.UserProfileRepository;
 import com.pfplaybackend.api.user.domain.entity.data.MemberData;
 import com.pfplaybackend.api.user.domain.entity.data.ProfileData;
 import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
+import com.pfplaybackend.api.user.domain.value.Nickname;
 import com.pfplaybackend.api.avatar.domain.value.AvatarBodyUri;
 import com.pfplaybackend.api.avatar.domain.value.AvatarFaceUri;
 import com.pfplaybackend.api.user.domain.value.WalletAddress;
@@ -38,6 +40,7 @@ public class AdminUserService {
     private final AdminProfileService adminProfileService;
     private final AdminPlaylistPort adminPlaylistPort;
     private final UserAccountRepository userAccountRepository;
+    private final UserProfileRepository userProfileRepository;
     private final AdminMemberWithdrawCommandService adminMemberWithdrawCommandService;
 
     /**
@@ -200,6 +203,41 @@ public class AdminUserService {
         adminMemberWithdrawCommandService.withdraw(member.getMemberId());
 
         log.info("Virtual member withdrawn (soft-delete): userId={}", userId.getUid());
+    }
+
+    /**
+     * 가상 회원(봇)의 닉네임을 변경한다. 봇의 닉네임은 파티룸에서 그대로 노출되므로, 운영자가
+     * 사람처럼 보이는 이름으로 덮어쓸 수 있게 한다.
+     *
+     * <p>{@link Nickname} 도메인 규칙(비블랭크·20자 이하, charset 무제한 — 한글/공백 허용)을 따르고,
+     * {@code uk_user_profile_nickname} UNIQUE 제약을 사전 검사({@code existsByNicknameAndUserIdNot},
+     * self 제외)로 확인해 충돌 시 409({@link AdminException#DUPLICATE_NICKNAME})를 던진다.
+     * 프로필은 기존 행을 in-place mutate({@link ProfileData#updateNickname}) — 아바타 변경과 동일하게
+     * cascade 더블 인서트(uk 위반)를 피한다.
+     *
+     * @param userId   가상 회원(봇)의 user_account_id
+     * @param nickname 새 닉네임
+     */
+    @Transactional
+    public void updateVirtualMemberNickname(UserId userId, String nickname) {
+        // 1. 회원 조회 + LOCAL(가상) 검증.
+        MemberData member = findMemberByUserId(userId);
+        requireLocalProviderForVirtualMemberOp(member, AdminException.NON_VIRTUAL_MEMBER_NICKNAME_UPDATE);
+
+        // 2. 도메인 규칙 검증(비블랭크·20자 이하). 페이로드에서도 @NotBlank/@Size 로 400 선차단하지만
+        //    도메인 불변식을 최종 방어선으로 다시 태운다.
+        Nickname requested = new Nickname(nickname);
+
+        // 3. 닉네임 UNIQUE 사전 검사(self 제외) — 재저장(동일 닉) 은 허용, 타인 중복은 409.
+        if (userProfileRepository.existsByNicknameAndUserIdNot(requested, userId)) {
+            throw ExceptionCreator.create(AdminException.DUPLICATE_NICKNAME);
+        }
+
+        // 4. 기존 프로필 행 in-place 수정 후 저장(cascade UPDATE).
+        member.getProfileData().updateNickname(nickname);
+        adminMemberPort.saveMember(member);
+
+        log.info("Virtual member nickname updated: userId={}, nickname={}", userId.getUid(), nickname);
     }
 
     /**

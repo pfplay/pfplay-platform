@@ -92,6 +92,14 @@ public class VirtualUserPoolService {
     }
 
     /**
+     * 봇 닉네임을 변경한다(파티룸 노출명 교체). 검증·UNIQUE 는 provision seam 너머(admin) 에서 수행한다.
+     */
+    @Transactional
+    public void renameBot(UserId botUserId, String nickname) {
+        virtualMemberProvisionPort.updateVirtualMemberNickname(botUserId.getUid(), nickname);
+    }
+
+    /**
      * 봇의 DJ 용 {@link PlaylistType#PLAYLIST} playlist id 를 반환한다(Chunk 4 enqueueDj 에서 사용).
      */
     @Transactional(readOnly = true)

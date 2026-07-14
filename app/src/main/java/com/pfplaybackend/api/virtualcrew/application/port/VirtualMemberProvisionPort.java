@@ -25,4 +25,13 @@ public interface VirtualMemberProvisionPort {
      * @param botUserId 봇의 user_account_id
      */
     void withdrawVirtualMember(Long botUserId);
+
+    /**
+     * 봇(가상 멤버)의 닉네임을 변경한다(파티룸 노출명 교체). 비블랭크·20자 이하 + 닉네임 UNIQUE 를
+     * 검증하며, 충돌 시 예외를 던진다.
+     *
+     * @param botUserId 봇의 user_account_id
+     * @param nickname  새 닉네임
+     */
+    void updateVirtualMemberNickname(Long botUserId, String nickname);
 }

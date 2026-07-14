@@ -23,6 +23,7 @@ import com.pfplaybackend.api.virtualcrew.adapter.in.web.payload.PoolSummaryRespo
 import com.pfplaybackend.api.virtualcrew.adapter.in.web.payload.ProvisionPoolRequest;
 import com.pfplaybackend.api.virtualcrew.adapter.in.web.payload.RemoveBotsRequest;
 import com.pfplaybackend.api.virtualcrew.adapter.in.web.payload.RemoveBotsResponse;
+import com.pfplaybackend.api.virtualcrew.adapter.in.web.payload.RenameBotRequest;
 import com.pfplaybackend.api.virtualcrew.adapter.in.web.payload.RenameSongPackRequest;
 import com.pfplaybackend.api.virtualcrew.adapter.in.web.payload.SetBotAvatarRequest;
 import com.pfplaybackend.api.virtualcrew.adapter.in.web.payload.SongPackDetailResponse;
@@ -333,6 +334,16 @@ public class AdminVirtualCrewController {
     public ResponseEntity<Void> setBotAvatar(@PathVariable("userId") Long userId,
                                              @Valid @RequestBody SetBotAvatarRequest req) {
         botAvatarAdminService.setIndividual(new UserId(userId), req.avatarBodyUri());
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "봇 닉네임 변경", description = "파티룸 노출명 교체. 비블랭크·20자 이하, 닉네임 중복 시 409")
+    @SecurityRequirement(name = "cookieAuth")
+    @PreAuthorize("@adminAuth.canManageVirtualCrew()")
+    @PutMapping("/virtual-crew/bots/{userId}/nickname")
+    public ResponseEntity<Void> renameBot(@PathVariable("userId") Long userId,
+                                          @Valid @RequestBody RenameBotRequest req) {
+        adminService.renameBot(userId, req.nickname());
         return ResponseEntity.noContent().build();
     }
 

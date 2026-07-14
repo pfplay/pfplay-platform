@@ -27,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @Transactional
 class VirtualUserPoolServiceIT extends AbstractIntegrationTest {
@@ -169,6 +170,34 @@ class VirtualUserPoolServiceIT extends AbstractIntegrationTest {
                     .as("bot %s user_profile row count (provision 후 정확히 1개)", id.getUid())
                     .isEqualTo(1L);
         }
+    }
+
+    @Test
+    @DisplayName("renameBot — 봇 닉네임이 실DB user_profile 에서 변경된다")
+    void renameBot_updatesNicknameInDb() {
+        UserId bot = poolService.provision(1).get(0);
+        flushAndClear();
+
+        poolService.renameBot(bot, "루나");
+        flushAndClear();
+
+        String nickname = adminUserService.getVirtualMember(bot)
+                .getProfileData().getNicknameValue();
+        assertThat(nickname).isEqualTo("루나");
+    }
+
+    @Test
+    @DisplayName("renameBot — 다른 봇이 이미 쓰는 닉네임으로 변경 시 ConflictException(UNIQUE)")
+    void renameBot_duplicateNickname_throws() {
+        List<UserId> bots = poolService.provision(2);
+        flushAndClear();
+        UserId a = bots.get(0);
+        UserId b = bots.get(1);
+        poolService.renameBot(b, "디제이민수");
+        flushAndClear();
+
+        assertThatThrownBy(() -> poolService.renameBot(a, "디제이민수"))
+                .isInstanceOf(com.pfplaybackend.api.common.exception.http.ConflictException.class);
     }
 
     @Test

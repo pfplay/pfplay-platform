@@ -100,6 +100,13 @@ public class VirtualCrewAdminService {
     /** 봇 제거 결과 — 실제 탈퇴된 봇 수 + userId 목록(로스터에 없던 id 는 제외). */
     public record BotRemovalResult(int removed, List<Long> removedUserIds) {}
 
+    /** 봇 닉네임 변경(파티룸 노출명 교체) — 검증·UNIQUE 는 pool→provision→admin 경로에서 수행. */
+    @Transactional
+    public void renameBot(Long botUserId, String nickname) {
+        poolService.renameBot(new UserId(botUserId), nickname);
+        log.info("[VirtualCrewAdmin.renameBot] botUserId={} nickname={}", botUserId, nickname);
+    }
+
     /** 봇 풀 전체 요약 — 전체/idle 수 + 파티룸별 배치 현황. */
     @Transactional(readOnly = true)
     public PoolSummary poolSummary() {

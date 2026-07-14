@@ -28,4 +28,9 @@ public class VirtualMemberProvisionAdapter implements VirtualMemberProvisionPort
     public void withdrawVirtualMember(Long botUserId) {
         adminUserService.withdrawVirtualMember(new UserId(botUserId));
     }
+
+    @Override
+    public void updateVirtualMemberNickname(Long botUserId, String nickname) {
+        adminUserService.updateVirtualMemberNickname(new UserId(botUserId), nickname);
+    }
 }
