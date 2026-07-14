@@ -1,7 +1,7 @@
 package com.pfplaybackend.api.administration.adapter.out.persistence.impl;
 
 import com.pfplaybackend.api.administration.adapter.out.persistence.AdminPartyroomQueryRepository;
-import com.pfplaybackend.api.administration.adapter.in.web.payload.response.AdminPartyroomListItemResponse.VirtualDjSummary;
+import com.pfplaybackend.api.administration.adapter.in.web.payload.response.AdminPartyroomListItemResponse.VirtualCrewSummary;
 import com.pfplaybackend.api.administration.application.dto.AdminPartyroomListFilter;
 import com.pfplaybackend.api.administration.application.dto.AdminPartyroomListRow;
 import com.pfplaybackend.api.party.domain.entity.data.QCrewData;
@@ -13,8 +13,8 @@ import com.pfplaybackend.api.user.domain.entity.data.QMemberData;
 import com.pfplaybackend.api.user.domain.entity.data.QProfileData;
 import com.pfplaybackend.api.user.domain.entity.data.QUserAccountData;
 import com.pfplaybackend.api.user.domain.value.Nickname;
-import com.pfplaybackend.api.virtualdj.domain.entity.data.QPartyroomVirtualDjConfigData;
-import com.pfplaybackend.api.virtualdj.domain.enums.VirtualDjStatus;
+import com.pfplaybackend.api.virtualcrew.domain.entity.data.QPartyroomVirtualCrewConfigData;
+import com.pfplaybackend.api.virtualcrew.domain.enums.VirtualCrewStatus;
 import com.querydsl.core.BooleanBuilder;
 import com.querydsl.core.Tuple;
 import com.querydsl.core.types.dsl.ComparableExpressionBase;
@@ -74,7 +74,7 @@ public class AdminPartyroomQueryRepositoryImpl implements AdminPartyroomQueryRep
         QDjData dj = QDjData.djData;
         QPartyroomPlaybackData pb = QPartyroomPlaybackData.partyroomPlaybackData;
         // P2 Task 2.2: 가상 DJ config (left join) + 봇 DJ 카운트(상관 서브쿼리).
-        QPartyroomVirtualDjConfigData cfg = QPartyroomVirtualDjConfigData.partyroomVirtualDjConfigData;
+        QPartyroomVirtualCrewConfigData cfg = QPartyroomVirtualCrewConfigData.partyroomVirtualCrewConfigData;
         // 서브쿼리 전용 alias — 외부 `ua`(host user_account)와 충돌하지 않도록 별도 인스턴스를 둔다.
         QCrewData botCrew = new QCrewData("botCrew");
         QUserAccountData botUa = new QUserAccountData("botUa");
@@ -163,18 +163,18 @@ public class AdminPartyroomQueryRepositoryImpl implements AdminPartyroomQueryRep
                                          QProfileData profile,
                                          QPartyroomPlaybackData pb,
                                          JPQLQuery<Long> djCountSubquery,
-                                         QPartyroomVirtualDjConfigData cfg,
+                                         QPartyroomVirtualCrewConfigData cfg,
                                          JPQLQuery<Long> botDjCountSubquery) {
         Nickname nickname = t.get(profile.bio.nickname);
         Long djCount = t.get(djCountSubquery);
         Integer crewCount = t.get(p.activeCrewCount);
-        // 가상 DJ 요약: config row 가 없으면 left join 으로 cfg.status 가 null → virtualDj=null.
-        VirtualDjStatus vdjStatus = t.get(cfg.status);
-        VirtualDjSummary virtualDj = null;
-        if (vdjStatus != null) {
+        // 가상 DJ 요약: config row 가 없으면 left join 으로 cfg.status 가 null → virtualCrew=null.
+        VirtualCrewStatus vcrewStatus = t.get(cfg.status);
+        VirtualCrewSummary virtualCrew = null;
+        if (vcrewStatus != null) {
             Long botDjCount = t.get(botDjCountSubquery);
-            virtualDj = new VirtualDjSummary(
-                    vdjStatus,
+            virtualCrew = new VirtualCrewSummary(
+                    vcrewStatus,
                     t.get(cfg.targetCount),
                     botDjCount == null ? 0L : botDjCount
             );
@@ -192,7 +192,7 @@ public class AdminPartyroomQueryRepositoryImpl implements AdminPartyroomQueryRep
                 t.get(p.displayFlag),
                 t.get(p.createdAt),
                 t.get(p.lastActivityAt),
-                virtualDj
+                virtualCrew
         );
     }
 

@@ -34,6 +34,7 @@ abstract class AbstractPartyCommandWebMvcTest {
 
     @Autowired protected MockMvc mockMvc;
     @MockBean protected DjCommandService djCommandService;
+    @MockBean protected QuickDjService quickDjService;
     @MockBean protected CrewPenaltyCommandService crewPenaltyCommandService;
     @MockBean protected CrewBlockCommandService crewBlockCommandService;
     @MockBean protected CrewGradeCommandService crewGradeCommandService;

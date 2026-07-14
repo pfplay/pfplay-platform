@@ -4,13 +4,18 @@ import com.pfplaybackend.api.common.ApiCommonResponse;
 import com.pfplaybackend.api.common.config.swagger.ApiErrorCodes;
 import com.pfplaybackend.api.common.domain.value.PlaylistId;
 import com.pfplaybackend.api.party.adapter.in.web.payload.request.dj.ChangePlaylistRequest;
+import com.pfplaybackend.api.party.adapter.in.web.payload.request.dj.QuickDjRequest;
 import com.pfplaybackend.api.party.adapter.in.web.payload.request.dj.RegisterDjRequest;
 import com.pfplaybackend.api.party.adapter.in.web.payload.response.CreateDjResponse;
+import com.pfplaybackend.api.party.adapter.in.web.payload.response.QuickDjResponse;
 import com.pfplaybackend.api.party.application.service.DjCommandService;
+import com.pfplaybackend.api.party.application.service.QuickDjService;
+import com.pfplaybackend.api.party.domain.entity.data.DjData;
 import com.pfplaybackend.api.party.domain.exception.DjException;
 import com.pfplaybackend.api.party.domain.exception.GradeException;
 import com.pfplaybackend.api.party.domain.value.DjId;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
+import com.pfplaybackend.api.playlist.application.dto.command.AddTrackCommand;
 import jakarta.validation.Valid;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -33,6 +38,7 @@ import org.springframework.web.bind.annotation.*;
 public class DjCommandController {
 
     private final DjCommandService djCommandService;
+    private final QuickDjService quickDjService;
 
     @Operation(summary = "DJ 등록", description = "파티룸의 DJ 큐에 등록합니다. 플레이리스트를 선택하여 등록하며, MEMBER 권한이 필요합니다.")
     @ApiResponse(responseCode = "201", description = "DJ 등록 성공")
@@ -46,6 +52,22 @@ public class DjCommandController {
         Long djId = djCommandService.enqueueDj(new PartyroomId(partyroomId), new PlaylistId(request.getPlaylistId()));
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiCommonResponse.success(new CreateDjResponse(djId)));
+    }
+
+    @Operation(summary = "Quick-DJ 등록",
+            description = "검색한 곡 하나로 즉시 DJ 큐에 one-shot 등록합니다. 1회 재생 후 자동으로 대기열에서 이탈하며, MEMBER 권한이 필요합니다.")
+    @ApiResponse(responseCode = "201", description = "Quick-DJ 등록 성공")
+    @SecurityRequirement(name = "cookieAuth")
+    @ApiErrorCodes({DjException.class})
+    @PostMapping("/{partyroomId}/dj-queue/quick")
+    @PreAuthorize("hasRole('MEMBER')")
+    public ResponseEntity<ApiCommonResponse<QuickDjResponse>> quickEnqueueDj(
+            @Parameter(description = "파티룸 ID") @PathVariable Long partyroomId,
+            @Valid @RequestBody QuickDjRequest request) {
+        DjData dj = quickDjService.quickEnqueue(new PartyroomId(partyroomId),
+                new AddTrackCommand(request.getName(), request.getLinkId(), request.getDuration(), request.getThumbnailImage()));
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiCommonResponse.success(new QuickDjResponse(dj.getId(), dj.getOrderNumber())));
     }
 
     @Operation(summary = "본인 DJ 해제", description = "본인을 DJ 큐에서 해제합니다. 현재 재생 중인 DJ인 경우 재생이 중단됩니다.")

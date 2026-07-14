@@ -60,7 +60,7 @@ public class PartyroomAccessCommandService {
     }
 
     @Transactional
-    public CrewData tryEnter(PartyroomId partyroomId, CountryCode countryCode) {
+    public TryEnterResult tryEnter(PartyroomId partyroomId, CountryCode countryCode) {
         AuthContext authContext = ThreadLocalContext.getAuthContext();
         UserId userId = authContext.getUserId();
         log.info("[tryEnter] START - userId={}, targetPartyroomId={}", userId, partyroomId.getId());
@@ -109,7 +109,8 @@ public class PartyroomAccessCommandService {
                             userId, partyroomId.getId());
                 }
                 enforceHostInvariant(partyroom, userId, saved);
-                return saved;
+                // 멤버십 유지(이미 active) → reactivated=false (web#402)
+                return new TryEnterResult(saved, false);
             }
         }
 
@@ -126,7 +127,8 @@ public class PartyroomAccessCommandService {
         if (!result.raceLoser) {
             enforceHostInvariant(partyroom, userId, result.crew);
         }
-        return result.crew;
+        // transitioned(inactive→active 재활성 또는 신규 INSERT) → reactivated. web#402 재연결 소비자용 신호.
+        return new TryEnterResult(result.crew, result.transitioned);
     }
 
     /**
@@ -211,6 +213,12 @@ public class PartyroomAccessCommandService {
     }
 
     private record CrewActivationResult(CrewData crew, boolean transitioned, boolean raceLoser) {}
+
+    /**
+     * tryEnter 결과. {@code reactivated}=true 는 inactive→active 재활성(또는 신규 INSERT)을 뜻한다.
+     * web#402 재연결 resync 소비자에게만 유의미 — 재연결은 crew row가 이미 존재해 INSERT 분기에 닿지 않는다.
+     */
+    public record TryEnterResult(CrewData crew, boolean reactivated) {}
 
     private void publishAccessChangedEvent(PartyroomId partyroomId, CrewData crew, UserId userId) {
         eventPublisher.publishEvent(new CrewAccessedEvent(partyroomId, new CrewId(crew.getId()), userId, AccessType.ENTER));

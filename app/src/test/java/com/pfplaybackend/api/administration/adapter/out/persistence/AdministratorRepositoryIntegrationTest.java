@@ -8,8 +8,10 @@ import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
 import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -26,12 +28,11 @@ class AdministratorRepositoryIntegrationTest extends AbstractIntegrationTest {
     @Test
     void findAllByOrderByGrantedAtDesc_returnsRowsNewestFirst() {
         // Seed three user_account rows and three administrator rows.
-        // AdministratorData factories stamp grantedAt = LocalDateTime.now() at
-        // construction. We rely on the JVM clock advancing between the three
-        // sequential save() calls — true in practice (nanosecond resolution on
-        // Linux/Testcontainers MySQL) but architecturally fragile. If this ever
-        // becomes flaky, expose a Clock-injectable factory and pin grantedAt
-        // explicitly in tests.
+        // AdministratorData factories stamp grantedAt = LocalDateTime.now(), but the
+        // granted_at 컬럼은 DATETIME(0)(초 정밀)이라 세 save 가 같은 초에 들어가면
+        // grantedAt 가 동률로 붕괴해 DESC 정렬이 비결정적이다(옛 create-drop datetime(6)
+        // 시절엔 나노가 보존돼 우연히 통과했었다). 정렬 검증이 load-bearing 이므로
+        // grantedAt 를 1초 간격으로 명시 고정한다.
         userAccountRepository.save(
                 UserAccountData.createForLocalWithMandatoryChange(
                         new UserId(100L), "super@x", "h0"));
@@ -42,12 +43,16 @@ class AdministratorRepositoryIntegrationTest extends AbstractIntegrationTest {
                 UserAccountData.createForLocalWithMandatoryChange(
                         new UserId(102L), "a2@x", "h2"));
 
-        AdministratorData superAdmin = administratorRepository.save(
-                AdministratorData.createSuperAdmin(100L));
-        AdministratorData a1 = administratorRepository.save(
-                AdministratorData.createAdmin(101L, superAdmin.getAdministratorId()));
-        AdministratorData a2 = administratorRepository.save(
-                AdministratorData.createAdmin(102L, superAdmin.getAdministratorId()));
+        LocalDateTime base = LocalDateTime.of(2026, 5, 4, 0, 0, 0);
+        AdministratorData superAdmin = AdministratorData.createSuperAdmin(100L);
+        ReflectionTestUtils.setField(superAdmin, "grantedAt", base);            // oldest
+        superAdmin = administratorRepository.save(superAdmin);
+        AdministratorData a1 = AdministratorData.createAdmin(101L, superAdmin.getAdministratorId());
+        ReflectionTestUtils.setField(a1, "grantedAt", base.plusSeconds(1));
+        a1 = administratorRepository.save(a1);
+        AdministratorData a2 = AdministratorData.createAdmin(102L, superAdmin.getAdministratorId());
+        ReflectionTestUtils.setField(a2, "grantedAt", base.plusSeconds(2));     // newest
+        a2 = administratorRepository.save(a2);
 
         flushAndClear();
 

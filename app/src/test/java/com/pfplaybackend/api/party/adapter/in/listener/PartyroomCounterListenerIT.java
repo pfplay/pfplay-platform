@@ -1,8 +1,12 @@
 package com.pfplaybackend.api.party.adapter.in.listener;
 
+import com.pfplaybackend.api.administration.adapter.out.persistence.AdministratorRepository;
+import com.pfplaybackend.api.administration.domain.entity.data.AdministratorData;
 import com.pfplaybackend.api.common.AbstractIntegrationTest;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.party.adapter.out.persistence.PartyroomRepository;
+import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
+import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
 import com.pfplaybackend.api.party.domain.entity.data.PartyroomData;
 import com.pfplaybackend.api.party.domain.enums.AccessType;
 import com.pfplaybackend.api.party.domain.enums.StageType;
@@ -36,6 +40,8 @@ class PartyroomCounterListenerIT extends AbstractIntegrationTest {
     @Autowired private ApplicationEventPublisher eventPublisher;
     @Autowired private TransactionTemplate transactionTemplate;
     @Autowired private EntityManager entityManager;
+    @Autowired private AdministratorRepository administratorRepository;
+    @Autowired private UserAccountRepository userAccountRepository;
 
     /** 각 케이스가 생성한 partyroom id 모아서 AfterEach 에서 cleanup —
      *  본 IT 가 partyroomRepository.saveAndFlush 로 별도 tx commit 하므로
@@ -151,9 +157,16 @@ class PartyroomCounterListenerIT extends AbstractIntegrationTest {
             );
         }
 
+        // FK fk_paa_administrator → administrator. terminate actor 를 실제 시드.
+        final long adminUid = 990999L;
+        userAccountRepository.saveAndFlush(
+                UserAccountData.createForLocal(new UserId(adminUid), "counter-term-admin@x", "h"));
+        Long adminId = administratorRepository
+                .saveAndFlush(AdministratorData.createSuperAdmin(adminUid)).getAdministratorId();
+
         transactionTemplate.executeWithoutResult(status ->
                 eventPublisher.publishEvent(new PartyroomTerminatedEvent(
-                        new PartyroomId(roomId), 999L, "test reason"))
+                        new PartyroomId(roomId), adminId, "test reason"))
         );
 
         PartyroomData reloaded = partyroomRepository.findById(roomId).orElseThrow();

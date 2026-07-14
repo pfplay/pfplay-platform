@@ -11,6 +11,7 @@ import com.pfplaybackend.api.party.application.port.out.AddedTrackInfo;
 import com.pfplaybackend.api.party.domain.entity.data.CrewData;
 import com.pfplaybackend.api.party.domain.entity.data.history.PlaybackReactionHistoryData;
 import com.pfplaybackend.api.party.domain.enums.ReactionType;
+import com.pfplaybackend.api.party.domain.exception.CrewException;
 import com.pfplaybackend.api.party.domain.exception.ReactionException;
 import com.pfplaybackend.api.party.domain.model.ReactionPostProcessResult;
 import com.pfplaybackend.api.party.domain.model.ReactionState;
@@ -45,7 +46,10 @@ public class PlaybackReactionCommandService {
             throw ExceptionCreator.create(ReactionException.INVALID_REACTION);
         }
 
-        ActivePartyroomDto myActivePartyroom = partyroomQueryService.getMyActivePartyroom().orElseThrow();
+        // 재연결 룸 desync(소프트 재연결이 멤버십 resync 누락) 시 여기서 빈 Optional 이 온다.
+        // 무메시지 orElseThrow → "No value present" 누출 대신 도메인 예외로 매핑(클라가 "다시 입장" 안내 가능).
+        ActivePartyroomDto myActivePartyroom = partyroomQueryService.getMyActivePartyroom()
+                .orElseThrow(() -> ExceptionCreator.create(CrewException.NOT_FOUND_ACTIVE_ROOM));
         PlaybackId playbackId = myActivePartyroom.currentPlaybackId();
         PlaybackReactionHistoryData historyData = getValidReactionHistoryData(authContext, playbackId);
         ReactionState existingState = getExistingState(historyData);
@@ -53,7 +57,7 @@ public class PlaybackReactionCommandService {
 
         ReactionPostProcessResult reactionPostProcessDto = executeProcess(historyData, existingState, targetState);
         Optional<CrewData> optional = partyroomQueryService.getCrewByUserId(partyroomId, authContext.getUserId());
-        CrewData crew = optional.orElseThrow();
+        CrewData crew = optional.orElseThrow(() -> ExceptionCreator.create(CrewException.NOT_FOUND_ROOM));
         AddedTrackInfo addedTrack = playbackReactionPostProcessCommandService.postProcess(
                 reactionPostProcessDto, reactionType, partyroomId, playbackId, new CrewId(crew.getId()));
         return ReactionHistoryDto.from(targetState, toAddedTrackDto(addedTrack));

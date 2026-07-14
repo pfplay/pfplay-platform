@@ -1,8 +1,11 @@
 package com.pfplaybackend.api.administration.adapter.in.web;
 
+import com.pfplaybackend.api.administration.adapter.in.web.payload.response.AdminDjHistoryItemResponse;
 import com.pfplaybackend.api.administration.adapter.in.web.payload.response.AdminPartyroomDetailResponse;
 import com.pfplaybackend.api.administration.adapter.in.web.payload.response.AdminPartyroomListItemResponse;
+import com.pfplaybackend.api.administration.adapter.in.web.payload.response.PartyroomAnalyticsResponse;
 import com.pfplaybackend.api.administration.application.dto.AdminPartyroomListFilter;
+import com.pfplaybackend.api.administration.application.service.AdminPartyroomAnalyticsQueryService;
 import com.pfplaybackend.api.administration.application.service.AdminPartyroomQueryService;
 import com.pfplaybackend.api.common.ApiCommonResponse;
 import com.pfplaybackend.api.common.exception.http.BadRequestException;
@@ -47,6 +50,7 @@ public class AdminPartyroomQueryController {
     private static final int MAX_PAGE_SIZE = 200;
 
     private final AdminPartyroomQueryService queryService;
+    private final AdminPartyroomAnalyticsQueryService analyticsService;
 
     @Operation(summary = "B-1 룸 목록 (페이징/필터/정렬)")
     @PreAuthorize("@adminAuth.isAdmin()")
@@ -79,5 +83,28 @@ public class AdminPartyroomQueryController {
     @GetMapping("/{partyroomId}")
     public ResponseEntity<ApiCommonResponse<AdminPartyroomDetailResponse>> detail(@PathVariable Long partyroomId) {
         return ResponseEntity.ok(ApiCommonResponse.success(queryService.detail(new PartyroomId(partyroomId))));
+    }
+
+    @Operation(summary = "B-3 룸 행동분석 (입퇴장 집계 + 무음이탈 근사)")
+    @PreAuthorize("@adminAuth.isAdmin()")
+    @GetMapping("/{partyroomId}/analytics")
+    public ResponseEntity<ApiCommonResponse<PartyroomAnalyticsResponse>> analytics(
+            @PathVariable Long partyroomId,
+            @RequestParam(defaultValue = "20") int days) {
+        return ResponseEntity.ok(ApiCommonResponse.success(
+                analyticsService.getAnalytics(new PartyroomId(partyroomId), days)));
+    }
+
+    @Operation(summary = "B-4 룸 디제잉 이력 (페이지네이션)")
+    @PreAuthorize("@adminAuth.isAdmin()")
+    @GetMapping("/{partyroomId}/dj-history")
+    public ResponseEntity<ApiCommonResponse<Page<AdminDjHistoryItemResponse>>> djHistory(
+            @PathVariable Long partyroomId,
+            @PageableDefault(size = 20) Pageable pageable) {
+        Pageable bounded = pageable.getPageSize() > MAX_PAGE_SIZE
+                ? PageRequest.of(pageable.getPageNumber(), MAX_PAGE_SIZE)
+                : pageable;
+        return ResponseEntity.ok(ApiCommonResponse.success(
+                analyticsService.getDjHistory(new PartyroomId(partyroomId), bounded)));
     }
 }

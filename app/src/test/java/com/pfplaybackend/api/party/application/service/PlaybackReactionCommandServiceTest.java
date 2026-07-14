@@ -10,6 +10,7 @@ import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.enums.AuthorityTier;
 import com.pfplaybackend.api.common.exception.http.ConflictException;
 import com.pfplaybackend.api.common.exception.http.ForbiddenException;
+import com.pfplaybackend.api.common.exception.http.NotFoundException;
 import com.pfplaybackend.api.party.adapter.out.persistence.PlaybackReactionHistoryRepository;
 import com.pfplaybackend.api.party.application.dto.partyroom.ActivePartyroomDto;
 import com.pfplaybackend.api.party.application.port.out.AddedTrackInfo;
@@ -215,6 +216,55 @@ class PlaybackReactionCommandServiceTest {
         // when & then
         assertThatThrownBy(() -> playbackReactionCommandService.reactToCurrentPlayback(partyroomId, ReactionType.GRAB))
                 .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    @DisplayName("활성 파티룸이 없으면(소프트 재연결 룸 desync) raw 'No value present' 대신 NOT_FOUND(CRW-001) 도메인 예외로 매핑된다")
+    void reactToCurrentPlaybackNoActivePartyroomMapsToNotFound() {
+        // given — FM(비게스트) + LIKE 이지만 백엔드에 활성 파티룸 없음 (재연결 stale 윈도우 재현)
+        when(partyroomQueryService.getMyActivePartyroom()).thenReturn(Optional.empty());
+
+        // when & then — NoSuchElementException("No value present") 누출이 아니라 도메인 NOT_FOUND
+        assertThatThrownBy(() ->
+                playbackReactionCommandService.reactToCurrentPlayback(partyroomId, ReactionType.LIKE))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessageContaining("참여 중인 파티룸을 찾을 수 없습니다");
+
+        // 히스토리 락/후처리까지 진행되지 않는다 (멤버십 없으면 즉시 차단)
+        verify(playbackReactionHistoryRepository, never()).findByPlaybackIdAndUserIdForUpdate(any(), any());
+        verify(playbackReactionPostProcessCommandService, never())
+                .postProcess(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("활성 파티룸은 있으나 해당 룸의 크루가 아니면 NOT_FOUND(CRW-003) 도메인 예외로 매핑된다")
+    void reactToCurrentPlaybackCrewNotFoundMapsToNotFound() {
+        // given — 활성 파티룸 있음, 히스토리 처리 통과하지만 getCrewByUserId 빈값(부분 desync)
+        ActivePartyroomDto activePartyroom = new ActivePartyroomDto(
+                partyroomId.getId(), false, 5L, true, playbackId, new CrewId(5L));
+        when(partyroomQueryService.getMyActivePartyroom()).thenReturn(Optional.of(activePartyroom));
+
+        PlaybackReactionHistoryData historyData = new PlaybackReactionHistoryData(userId, playbackId);
+        when(playbackReactionHistoryRepository.findByPlaybackIdAndUserIdForUpdate(playbackId, userId))
+                .thenReturn(Optional.empty());
+        when(playbackReactionHistoryRepository.saveAndFlush(any())).thenReturn(historyData);
+
+        ReactionState baseState = ReactionState.createBaseState();
+        ReactionState targetState = new ReactionState(true, false, false);
+        when(playbackReactionDomainService.getTargetReactionState(baseState, ReactionType.LIKE))
+                .thenReturn(targetState);
+        ReactionPostProcessResult postProcessResult = new ReactionPostProcessResult(false, false, false, false, null, 0, null);
+        when(playbackReactionDomainService.determinePostProcessing(baseState, targetState))
+                .thenReturn(postProcessResult);
+        when(playbackReactionHistoryRepository.save(any())).thenReturn(historyData);
+
+        when(partyroomQueryService.getCrewByUserId(partyroomId, userId)).thenReturn(Optional.empty());
+
+        // when & then
+        assertThatThrownBy(() ->
+                playbackReactionCommandService.reactToCurrentPlayback(partyroomId, ReactionType.LIKE))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessageContaining("파티룸의 크루가 아닙니다");
     }
 
     @Test

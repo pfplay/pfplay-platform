@@ -9,6 +9,7 @@ import com.pfplaybackend.api.party.application.port.out.PlaybackControlPort;
 import com.pfplaybackend.api.party.application.port.out.PlaylistQueryPort;
 import com.pfplaybackend.api.party.domain.entity.data.*;
 import com.pfplaybackend.api.party.domain.enums.DjChangeType;
+import com.pfplaybackend.api.party.domain.enums.DjKind;
 import com.pfplaybackend.api.party.domain.enums.GradeType;
 import com.pfplaybackend.api.party.domain.event.DjQueueChangedEvent;
 import com.pfplaybackend.api.party.domain.exception.DjException;
@@ -42,6 +43,11 @@ public class DjCommandService {
 
     @Transactional
     public Long enqueueDj(PartyroomId partyroomId, PlaylistId playlistId)  {
+        return enqueueDj(partyroomId, playlistId, DjKind.NORMAL).getId();
+    }
+
+    @Transactional
+    public DjData enqueueDj(PartyroomId partyroomId, PlaylistId playlistId, DjKind kind)  {
         AuthContext authContext = ThreadLocalContext.getAuthContext();
         log.info("[enqueueDj] ENTER - requestId={}, partyroomId={}, userId={}, playlistId={}",
                 RequestIdInterceptor.current(), partyroomId.getId(), authContext.getUserId().getUid(), playlistId.getId());
@@ -74,7 +80,7 @@ public class DjCommandService {
         int nextOrder = queuedDjs.size() + 1;
 
         // Create and save DJ
-        DjData dj = DjData.create(partyroom.getPartyroomId(), playlistId, crewId, nextOrder);
+        DjData dj = DjData.create(partyroom.getPartyroomId(), playlistId, crewId, nextOrder, kind);
         DjData saved = aggregatePort.saveDj(dj);
         log.info("[enqueueDj] SAVED - requestId={}, partyroomId={}, crewId={}, djId={}, orderNumber={}",
                 RequestIdInterceptor.current(), partyroomId.getId(), crew.getId(), saved.getId(), nextOrder);
@@ -89,7 +95,7 @@ public class DjCommandService {
         if (isPostActivationProcessingRequired) {
             playbackControlPort.startPlayback(partyroom);
         }
-        return saved.getId();
+        return saved;
     }
 
     @Transactional

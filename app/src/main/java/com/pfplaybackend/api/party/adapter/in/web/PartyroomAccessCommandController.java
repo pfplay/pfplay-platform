@@ -5,7 +5,6 @@ import com.pfplaybackend.api.common.config.swagger.ApiErrorCodes;
 import com.pfplaybackend.api.party.adapter.in.web.payload.request.access.EnterPartyroomRequest;
 import com.pfplaybackend.api.party.adapter.in.web.payload.response.access.EnterPartyroomResponse;
 import com.pfplaybackend.api.party.application.service.PartyroomAccessCommandService;
-import com.pfplaybackend.api.party.domain.entity.data.CrewData;
 import com.pfplaybackend.api.party.domain.exception.CrewException;
 import com.pfplaybackend.api.party.domain.exception.PartyroomException;
 import com.pfplaybackend.api.party.domain.exception.PenaltyException;
@@ -41,8 +40,9 @@ public class PartyroomAccessCommandController {
         CountryCode countryCode = (request == null || request.countryCode() == null)
                 ? null
                 : CountryCode.of(request.countryCode());
-        CrewData crew = partyroomAccessCommandService.tryEnter(new PartyroomId(partyroomId), countryCode);
-        return ResponseEntity.status(HttpStatus.CREATED).body(ApiCommonResponse.success(EnterPartyroomResponse.from(crew)));
+        var result = partyroomAccessCommandService.tryEnter(new PartyroomId(partyroomId), countryCode);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiCommonResponse.success(EnterPartyroomResponse.from(result.crew(), result.reactivated())));
     }
 
     @Operation(summary = "파티룸 퇴장", description = "현재 입장한 파티룸에서 퇴장합니다. DJ 큐에 등록된 경우 자동으로 해제됩니다.")

@@ -17,6 +17,7 @@ import com.pfplaybackend.api.party.application.port.out.PlaylistCommandPort;
 import com.pfplaybackend.api.party.application.port.out.UserActivityPort;
 import com.pfplaybackend.api.party.domain.entity.data.*;
 import com.pfplaybackend.api.party.domain.enums.DjChangeType;
+import com.pfplaybackend.api.party.domain.enums.DjKind;
 import com.pfplaybackend.api.party.domain.enums.GradeType;
 import com.pfplaybackend.api.party.domain.event.DjQueueChangedEvent;
 import com.pfplaybackend.api.party.domain.event.PlaybackStartedEvent;
@@ -78,6 +79,9 @@ class PlaybackCommandServiceTest {
         lenient().when(authContext.getUserId()).thenReturn(userId);
         lenient().when(authContext.getAuthorityTier()).thenReturn(AuthorityTier.FM);
         ThreadLocalContext.setContext(authContext);
+        // Quick-DJ(#331) — currentDjCrewId=null 인 기본 상태(rotate 경로 보존)
+        lenient().when(aggregatePort.findPlaybackState(any(PartyroomId.class)))
+                .thenAnswer(inv -> PartyroomPlaybackData.createFor(inv.getArgument(0)));
     }
 
     @AfterEach
@@ -479,6 +483,102 @@ class PlaybackCommandServiceTest {
         verify(playlistCommandPort, never()).advancePlaybackCursor(eq(pl1), anyLong());
         verify(partyroomAggregateService, times(1)).rotateDjQueue(partyroomId);
         verify(partyroomAggregateService, never()).deactivatePlayback(any(PartyroomId.class));
+    }
+
+    // ── Quick-DJ(#331) — outgoing ONE_SHOT 이탈 분기 ──
+    // 제거 기준은 위치(order-1)가 아닌 정체(currentDjCrewId). 분기는 tryProceed 에만 존재하고
+    // startPlayback(최초 활성화)·doStart 내부에는 제거 로직이 없어야 한다(spec §3-3).
+
+    private PartyroomData partyroomFixture() {
+        return PartyroomData.builder().id(partyroomId.getId()).partyroomId(partyroomId)
+                .playbackTimeLimit(PlaybackTimeLimit.ofMinutes(10)).build();
+    }
+
+    private PartyroomPlaybackData activatedPlaybackState(CrewId currentDjCrewId) {
+        PartyroomPlaybackData state = PartyroomPlaybackData.createFor(partyroomId);
+        state.activate(new PlaybackId(77L), currentDjCrewId);
+        return state;
+    }
+
+    @Test
+    @DisplayName("complete — outgoing ONE_SHOT 은 회전 대신 제거되고 ONE_SHOT_COMPLETED 가 발행된다")
+    void completeRetiresOutgoingOneShotInsteadOfRotating() {
+        CrewId outgoing = new CrewId(31L);
+        DjData oneShot = DjData.create(partyroomId, new PlaylistId(2L), outgoing, 1, DjKind.ONE_SHOT);
+        when(partyroomQueryService.getPartyroomById(partyroomId)).thenReturn(partyroomFixture());
+        when(aggregatePort.findPlaybackState(partyroomId)).thenReturn(activatedPlaybackState(outgoing));
+        when(aggregatePort.findDj(partyroomId, outgoing)).thenReturn(Optional.of(oneShot));
+        when(aggregatePort.findDjsOrdered(partyroomId)).thenReturn(List.of()); // 제거 후 빈 큐
+
+        playbackCommandService.complete(partyroomId, userId);
+
+        verify(partyroomAggregateService).removeDjFromQueue(partyroomId, outgoing);
+        verify(partyroomAggregateService, never()).rotateDjQueue(any());
+        ArgumentCaptor<Object> events = ArgumentCaptor.forClass(Object.class);
+        verify(eventPublisher, atLeastOnce()).publishEvent(events.capture());
+        assertThat(events.getAllValues().stream()
+                .filter(e -> e instanceof DjQueueChangedEvent)
+                .map(e -> ((DjQueueChangedEvent) e).getChangeType()))
+                .contains(DjChangeType.ONE_SHOT_COMPLETED);
+    }
+
+    @Test
+    @DisplayName("complete — outgoing NORMAL 은 기존 회전 경로 그대로(제거 없음)")
+    void completeRotatesForNormalOutgoing() {
+        CrewId outgoing = new CrewId(32L);
+        DjData normal = DjData.create(partyroomId, new PlaylistId(2L), outgoing, 1);
+        when(partyroomQueryService.getPartyroomById(partyroomId)).thenReturn(partyroomFixture());
+        when(aggregatePort.findPlaybackState(partyroomId)).thenReturn(activatedPlaybackState(outgoing));
+        when(aggregatePort.findDj(partyroomId, outgoing)).thenReturn(Optional.of(normal));
+        when(aggregatePort.findDjsOrdered(partyroomId)).thenReturn(List.of(normal));
+        when(partyroomAggregateService.rotateDjQueue(partyroomId)).thenReturn(List.of(normal));
+        // doStart 진입 후 재생가능 트랙 없음 → deactivate 로 수렴해도 본 검증엔 무관
+        when(aggregatePort.findCrewById(anyLong())).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> playbackCommandService.complete(partyroomId, userId))
+                .isInstanceOf(NoSuchElementException.class); // findCrewById orElseThrow — 기존 doStart 거동
+        verify(partyroomAggregateService).rotateDjQueue(partyroomId);
+        verify(partyroomAggregateService, never()).removeDjFromQueue(any(), any());
+    }
+
+    @Test
+    @DisplayName("complete — outgoing 이 큐에 없으면(dequeue-후-skip) 제거 분기 미실행, 회전 경로")
+    void completeSkipsRetireWhenOutgoingAlreadyDequeued() {
+        CrewId outgoing = new CrewId(33L);
+        when(partyroomQueryService.getPartyroomById(partyroomId)).thenReturn(partyroomFixture());
+        when(aggregatePort.findPlaybackState(partyroomId)).thenReturn(activatedPlaybackState(outgoing));
+        when(aggregatePort.findDj(partyroomId, outgoing)).thenReturn(Optional.empty());
+        when(aggregatePort.findDjsOrdered(partyroomId)).thenReturn(List.of());
+
+        playbackCommandService.complete(partyroomId, userId);
+
+        verify(partyroomAggregateService, never()).removeDjFromQueue(any(), any());
+        verify(partyroomAggregateService).deactivatePlayback(partyroomId); // 빈 큐 → 기존 deactivate
+    }
+
+    @Test
+    @DisplayName("complete — currentDjCrewId=null(비활성)이면 분기 미실행(기존 거동)")
+    void completeNullOutgoingKeepsLegacyPath() {
+        when(partyroomQueryService.getPartyroomById(partyroomId)).thenReturn(partyroomFixture());
+        when(aggregatePort.findDjsOrdered(partyroomId)).thenReturn(List.of());
+
+        playbackCommandService.complete(partyroomId, userId);
+
+        verify(partyroomAggregateService, never()).removeDjFromQueue(any(), any());
+        verify(aggregatePort, never()).findDj(any(), any());
+    }
+
+    @Test
+    @DisplayName("startPlayback(최초 활성화) — tryProceed 미경유라 ONE_SHOT 이어도 제거되지 않는다(미재생 삭제 금지)")
+    void startPlaybackNeverRetiresOneShot() {
+        CrewId crewId = new CrewId(34L);
+        DjData oneShot = DjData.create(partyroomId, new PlaylistId(2L), crewId, 1, DjKind.ONE_SHOT);
+        when(partyroomAggregateService.rotateDjQueue(partyroomId)).thenReturn(List.of(oneShot));
+        when(aggregatePort.findCrewById(anyLong())).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> playbackCommandService.startPlayback(partyroomFixture()))
+                .isInstanceOf(NoSuchElementException.class);
+        verify(partyroomAggregateService, never()).removeDjFromQueue(any(), any());
     }
 
     @Test

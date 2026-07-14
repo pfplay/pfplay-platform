@@ -18,6 +18,9 @@ import com.querydsl.jpa.JPAExpressions;
 import com.querydsl.jpa.JPQLQuery;
 import com.querydsl.jpa.impl.JPAQueryFactory;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -98,7 +101,8 @@ public class PartyroomRepositoryImpl implements PartyroomRepositoryCustom {
                         playbackDto,
                         qCrewData.id,
                         qCrewData.userId,
-                        qCrewData.gradeType
+                        qCrewData.gradeType,
+                        qPartyroomData.createdAt
                 )
                 .from(qPartyroomData)
                 .join(qPlayback).on(qPlayback.partyroomId.id.eq(qPartyroomData.id))
@@ -145,6 +149,7 @@ public class PartyroomRepositoryImpl implements PartyroomRepositoryCustom {
                                 Boolean.TRUE.equals(tuple.get(qPlayback.isActivated)),
                                 Boolean.TRUE.equals(tuple.get(qDjQueue.isClosed)),
                                 tuple.get(crewCountSubquery),
+                                tuple.get(qPartyroomData.createdAt),
                                 tuple.get(8, PlaybackDto.class),
                                 crewsByPartyroomId.getOrDefault(tuple.get(qPartyroomData.id), List.of())
                         ),
@@ -164,6 +169,46 @@ public class PartyroomRepositoryImpl implements PartyroomRepositoryCustom {
                 .orderBy(qPlaybackData.createdAt.desc())
                 .limit(20)
                 .fetch();
+    }
+
+    @Override
+    public List<PlaybackData> findPlaybackForInterval(PartyroomId partyroomId, LocalDateTime from, LocalDateTime now) {
+        QPlaybackData q = QPlaybackData.playbackData;
+        List<PlaybackData> inWindow = queryFactory
+                .select(q).from(q)
+                .where(q.partyroomId.id.eq(partyroomId.getId())
+                        .and(q.createdAt.goe(from))
+                        .and(q.createdAt.lt(now)))
+                .orderBy(q.createdAt.asc())
+                .fetch();
+        PlaybackData straddle = queryFactory
+                .select(q).from(q)
+                .where(q.partyroomId.id.eq(partyroomId.getId())
+                        .and(q.createdAt.lt(from)))
+                .orderBy(q.createdAt.desc())
+                .fetchFirst();
+        if (straddle == null) return inWindow;
+        List<PlaybackData> result = new ArrayList<>(inWindow.size() + 1);
+        result.add(straddle);
+        result.addAll(inWindow);
+        return result;
+    }
+
+    @Override
+    public Page<PlaybackData> findPlaybackHistory(PartyroomId partyroomId, Pageable pageable) {
+        QPlaybackData q = QPlaybackData.playbackData;
+        List<PlaybackData> content = queryFactory
+                .select(q).from(q)
+                .where(q.partyroomId.id.eq(partyroomId.getId()))
+                .orderBy(q.createdAt.desc())            // 정렬 고정
+                .offset(pageable.getOffset())
+                .limit(pageable.getPageSize())
+                .fetch();
+        Long total = queryFactory
+                .select(q.count()).from(q)
+                .where(q.partyroomId.id.eq(partyroomId.getId()))
+                .fetchOne();
+        return new PageImpl<>(content, pageable, total == null ? 0L : total);
     }
 
     @Override

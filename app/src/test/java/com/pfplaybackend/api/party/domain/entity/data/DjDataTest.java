@@ -1,6 +1,7 @@
 package com.pfplaybackend.api.party.domain.entity.data;
 
 import com.pfplaybackend.api.common.domain.value.PlaylistId;
+import com.pfplaybackend.api.party.domain.enums.DjKind;
 import com.pfplaybackend.api.party.domain.value.CrewId;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import org.junit.jupiter.api.DisplayName;
@@ -57,5 +58,21 @@ class DjDataTest {
         assertThat(dj.getOrderNumber()).isEqualTo(3);
         assertThat(dj.getCrewId()).isEqualTo(new CrewId(20L));
         assertThat(dj.getPartyroomId()).isEqualTo(new PartyroomId(1L));
+    }
+
+    // ── Quick-DJ(#331) — DjKind ──
+
+    @Test
+    @DisplayName("create(4-arg) — kind 미지정 생성은 NORMAL")
+    void createDefaultsToNormal() {
+        DjData dj = DjData.create(new PartyroomId(1L), new PlaylistId(2L), new CrewId(3L), 1);
+        assertThat(dj.getKind()).isEqualTo(DjKind.NORMAL);
+    }
+
+    @Test
+    @DisplayName("create(5-arg) — ONE_SHOT 지정 생성")
+    void createWithOneShotKind() {
+        DjData dj = DjData.create(new PartyroomId(1L), new PlaylistId(2L), new CrewId(3L), 1, DjKind.ONE_SHOT);
+        assertThat(dj.getKind()).isEqualTo(DjKind.ONE_SHOT);
     }
 }

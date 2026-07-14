@@ -103,6 +103,11 @@ public class PlaylistAggregateAdapter implements PlaylistAggregatePort, Playlist
         return trackRepository.existsByPlaylistId(playlistId);
     }
 
+    @Override
+    public void deleteAllTracksByPlaylist(Long playlistId) {
+        trackRepository.deleteAllByPlaylistIdValue(playlistId);
+    }
+
     // ===== Track Reordering =====
 
     @Override

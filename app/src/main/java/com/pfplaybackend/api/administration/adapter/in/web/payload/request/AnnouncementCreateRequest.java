@@ -27,5 +27,6 @@ public record AnnouncementCreateRequest(
         @NotBlank @Size(max = 2000) String messageEn,
         LocalDateTime scheduledStartAt,
         LocalDateTime scheduledEndAt,
-        LocalDateTime expiresAt
+        LocalDateTime expiresAt,
+        boolean sendPush
 ) {}

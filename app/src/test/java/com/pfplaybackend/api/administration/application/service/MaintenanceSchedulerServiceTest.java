@@ -100,7 +100,7 @@ class MaintenanceSchedulerServiceTest {
                 AnnouncementType.MAINTENANCE_NOTICE, AnnouncementSeverity.WARN,
                 "점검", "M", "안내", "N",
                 start, end, null,
-                start, 1L);
+                start, 1L, false);
     }
 
     /** ACTIVE maintenance: 이미 markMaintenanceStarted 가 호출된 entity (completedAt=null). */

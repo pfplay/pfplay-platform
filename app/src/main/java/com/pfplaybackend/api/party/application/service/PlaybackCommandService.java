@@ -13,6 +13,7 @@ import com.pfplaybackend.api.party.application.port.out.PlaylistCommandPort;
 import com.pfplaybackend.api.party.application.port.out.UserActivityPort;
 import com.pfplaybackend.api.party.domain.entity.data.*;
 import com.pfplaybackend.api.party.domain.enums.DjChangeType;
+import com.pfplaybackend.api.party.domain.enums.DjKind;
 import com.pfplaybackend.api.party.domain.enums.GradeType;
 import com.pfplaybackend.api.party.domain.event.DjQueueChangedEvent;
 import com.pfplaybackend.api.party.domain.event.PlaybackStartedEvent;
@@ -89,25 +90,52 @@ public class PlaybackCommandService implements PlaybackControlPort {
 
     private void tryProceed(PartyroomId partyroomId) {
         PartyroomData partyroom = partyroomQueryService.getPartyroomById(partyroomId);
+        boolean oneShotRetired = retireOutgoingOneShot(partyroomId);
         List<DjData> queuedDjs = aggregatePort.findDjsOrdered(partyroomId);
-        log.debug("[tryProceed] partyroomId={}, queueSize={}", partyroomId.getId(), queuedDjs.size());
+        log.debug("[tryProceed] partyroomId={}, queueSize={}, oneShotRetired={}",
+                partyroomId.getId(), queuedDjs.size(), oneShotRetired);
 
         if(!queuedDjs.isEmpty()) {
-            doStart(partyroom);
+            // ONE_SHOT 제거로 이미 큐가 전진했으면 중복 회전 금지(spec §3-3)
+            doStart(partyroom, !oneShotRetired);
         }else{
             log.info("[tryProceed] EMPTY_QUEUE_DEACTIVATE - partyroomId={}", partyroomId.getId());
             deactivateAndNotify(partyroom);
         }
     }
 
-    @Override
-    public void startPlayback(PartyroomData partyroom) {
-        doStart(partyroom);
+    /**
+     * 방금 재생을 끝낸(outgoing) DJ 가 ONE_SHOT 이면 회전 대신 큐에서 제거한다.
+     * 제거 기준은 위치(order-1)가 아닌 정체(currentDjCrewId) — doStart 의 선두 회전은
+     * 최초 활성화·dequeue-후-skip 경로에서도 진입하므로 위치 기준은 미재생 엔트리를 삭제한다(spec §3-3).
+     * currentDjCrewId 는 deactivate 에서만 클리어되므로 완료/스킵 시점엔 방금 끝난 DJ 를 가리킨다.
+     */
+    private boolean retireOutgoingOneShot(PartyroomId partyroomId) {
+        PartyroomPlaybackData playbackState = aggregatePort.findPlaybackState(partyroomId);
+        CrewId outgoingCrewId = playbackState.getCurrentDjCrewId();
+        if (outgoingCrewId == null) return false;
+        return aggregatePort.findDj(partyroomId, outgoingCrewId)
+                .filter(dj -> dj.getKind() == DjKind.ONE_SHOT)
+                .map(dj -> {
+                    partyroomAggregateService.removeDjFromQueue(partyroomId, outgoingCrewId);
+                    eventPublisher.publishEvent(new DjQueueChangedEvent(partyroomId, DjChangeType.ONE_SHOT_COMPLETED, outgoingCrewId));
+                    log.info("[tryProceed] ONE_SHOT_COMPLETED - partyroomId={}, crewId={}",
+                            partyroomId.getId(), outgoingCrewId.getId());
+                    return true;
+                })
+                .orElse(false);
     }
 
-    private void doStart(PartyroomData partyroom) {
+    @Override
+    public void startPlayback(PartyroomData partyroom) {
+        doStart(partyroom, true);
+    }
+
+    private void doStart(PartyroomData partyroom, boolean rotate) {
         long partyroomIdValue = partyroom.getPartyroomId().getId();
-        List<DjData> rotatedDjs = partyroomAggregateService.rotateDjQueue(partyroom.getPartyroomId());
+        List<DjData> rotatedDjs = rotate
+                ? partyroomAggregateService.rotateDjQueue(partyroom.getPartyroomId())
+                : aggregatePort.findDjsOrdered(partyroom.getPartyroomId());
         int limitMin = partyroom.getPlaybackTimeLimit().getMinutes();
         log.debug("[doStart] ENTER - partyroomId={}, queueSize={}, limitMin={}",
                 partyroomIdValue, rotatedDjs.size(), limitMin);

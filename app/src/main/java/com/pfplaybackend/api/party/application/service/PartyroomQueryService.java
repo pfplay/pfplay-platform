@@ -5,6 +5,7 @@ import com.pfplaybackend.api.common.aspect.context.AuthContext;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.enums.AuthorityTier;
 import com.pfplaybackend.api.common.exception.ExceptionCreator;
+import com.pfplaybackend.api.party.application.dto.CurrentPlaybackView;
 import com.pfplaybackend.api.party.application.dto.crew.CrewDto;
 import com.pfplaybackend.api.party.application.dto.dj.DjWithProfileDto;
 import com.pfplaybackend.api.party.application.dto.partyroom.ActivePartyroomDto;
@@ -29,6 +30,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -45,13 +47,23 @@ public class PartyroomQueryService {
 
     @Transactional(readOnly = true)
     public List<PartyroomWithCrewDto> getAllPartyrooms() {
-        return queryPort.getCrewDataByPartyroomId().stream().map(partyroomWithCrewDto -> {
-            List<CrewDto> filteredCrews = partyroomWithCrewDto.crews().stream()
-                                .filter(crewDto -> crewDto.gradeType().isEqualOrHigherThan(GradeType.MODERATOR))
-                                .limit(3)
-                                .toList();
-            return PartyroomWithCrewDto.from(partyroomWithCrewDto, filteredCrews);
-        }).toList();
+        // 활성 크루 수 내림차순, 동률이면 최신 생성순(createdAt DESC). (#310)
+        // (조회 쿼리는 결과를 HashMap 으로 모아 순서가 비결정적이므로 여기서 결정론적으로 정렬한다.)
+        Comparator<PartyroomWithCrewDto> byCrewCountDesc = Comparator
+                .comparingLong((PartyroomWithCrewDto dto) -> dto.crewCount() == null ? 0L : dto.crewCount())
+                .reversed();
+        Comparator<PartyroomWithCrewDto> byCreatedAtDesc = Comparator
+                .comparing(PartyroomWithCrewDto::createdAt, Comparator.nullsLast(Comparator.reverseOrder()));
+
+        return queryPort.getCrewDataByPartyroomId().stream()
+                .sorted(byCrewCountDesc.thenComparing(byCreatedAtDesc))
+                .map(partyroomWithCrewDto -> {
+                    List<CrewDto> filteredCrews = partyroomWithCrewDto.crews().stream()
+                            .filter(crewDto -> crewDto.gradeType().isEqualOrHigherThan(GradeType.MODERATOR))
+                            .limit(3)
+                            .toList();
+                    return PartyroomWithCrewDto.from(partyroomWithCrewDto, filteredCrews);
+                }).toList();
     }
 
     @Transactional(readOnly = true)
@@ -169,14 +181,40 @@ public class PartyroomQueryService {
         return playbackQueryService.getPlaybackById(playbackState.getCurrentPlaybackId()).getLinkId();
     }
 
+    /**
+     * 현재 재생 상태({@link CurrentPlaybackView})를 반환한다. 재생 비활성/곡 없음이면 empty.
+     *
+     * <p>가상 DJ 봇 반응 틱이 현재 재생 곡·DJ crew 를 참조하기 위해 호출한다.
+     * {@link PartyroomAggregatePort} 접근은 party BC 안에 가두고, 호출자에게는 평이한 view record 만
+     * 노출한다(virtualcrew 패키지의 ArchUnit AggregatePort 의존 금지 가드 준수). 가드는 sibling
+     * {@link #getCurrentPlaybackName} 와 동일하다.
+     */
+    @Transactional(readOnly = true)
+    public Optional<CurrentPlaybackView> getCurrentPlaybackState(PartyroomId partyroomId) {
+        PartyroomPlaybackData playbackState = aggregatePort.findPlaybackState(partyroomId);
+        if (playbackState == null || !playbackState.isActivated() || playbackState.getCurrentPlaybackId() == null) {
+            return Optional.empty();
+        }
+        return Optional.of(new CurrentPlaybackView(
+                playbackState.getCurrentPlaybackId(), playbackState.getCurrentDjCrewId()));
+    }
+
     @Transactional(readOnly = true)
     public Optional<CrewData> getCrewByUserId(PartyroomId partyroomId, UserId userId) {
         return aggregatePort.findCrew(partyroomId, userId);
     }
 
     @Transactional(readOnly = true)
+    /**
+     * 룸-스코프 커맨드용 "현재 활성 크루" 조회. 행이 없거나 {@code is_active=false}(소프트 재연결
+     * stale 멤버십 등)이면 absent 와 동일하게 {@code NOT_FOUND_ACTIVE_ROOM}(CRW-001) 으로 거부한다.
+     * <p>예외 이름이 약속하는 "active" 계약을 구현이 지키도록 정렬 — 비활성 크루의 enqueueDj 가
+     * 회전 유령 dj orphan 을 만들던 결함 차단(#304, web#402 백엔드 방어선). 호출 패밀리 전체
+     * (enqueue·dequeue·changePlaylist·grade·penalty·skip)가 active 크루를 전제로 한다.
+     */
     public CrewData getCrewOrThrow(PartyroomId partyroomId, UserId userId) {
         return aggregatePort.findCrew(partyroomId, userId)
+                .filter(CrewData::isActive)
                 .orElseThrow(() -> ExceptionCreator.create(CrewException.NOT_FOUND_ACTIVE_ROOM));
     }
 

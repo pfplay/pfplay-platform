@@ -10,6 +10,8 @@ import com.pfplaybackend.api.party.domain.value.CrewId;
 import com.pfplaybackend.api.party.domain.value.LinkDomain;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
@@ -174,6 +176,30 @@ public class PartyroomAggregateAdapter implements PartyroomAggregatePort, Partyr
     @Override
     public void saveDjQueueState(DjQueueData djQueue) {
         djQueueRepository.save(djQueue);
+    }
+
+    // ===== Reconcile cron (#308) =====
+
+    @Override
+    public List<PartyroomId> findPartyroomIdsWithInactiveCrewDj() {
+        return djRepository.findPartyroomIdsWithInactiveCrewDj();
+    }
+
+    @Override
+    public List<PartyroomId> findStuckActivatedPartyroomIds(long threshold) {
+        return partyroomPlaybackRepository.findStuckActivatedPartyroomIds(threshold);
+    }
+
+    // ===== Playback interval 재구성 (어드민 행동분석) =====
+
+    @Override
+    public List<PlaybackData> findPlaybackForInterval(PartyroomId partyroomId, LocalDateTime from, LocalDateTime now) {
+        return partyroomRepository.findPlaybackForInterval(partyroomId, from, now);
+    }
+
+    @Override
+    public Page<PlaybackData> findPlaybackHistory(PartyroomId partyroomId, Pageable pageable) {
+        return partyroomRepository.findPlaybackHistory(partyroomId, pageable);
     }
 
     // ===== Query Port (DTO-returning QueryDSL methods) =====
