@@ -572,12 +572,13 @@ class AdminVirtualCrewControllerTest {
     @Test
     @WithMockUser(roles = "ADMIN")
     void bots_admin_returns200WithBody() throws Exception {
+        // userId 는 TSID(2^53 초과) — JSON 문자열로 직렬화돼 어드민 프론트에서 정밀도 손실이 없어야 한다.
         given(botAvatarAdminService.roster())
                 .willReturn(List.of(new BotRosterRow(
-                        1L, "봇", "https://cdn/body.png", "https://cdn/icon.png", 7L, "룸", 3L, "DJ 챌린저")));
+                        864530440482800637L, "봇", "https://cdn/body.png", "https://cdn/icon.png", 7L, "룸", 3L, "DJ 챌린저")));
         mockMvc.perform(get("/api/v1/admin/virtual-crew/bots"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[0].userId").value(1))
+                .andExpect(jsonPath("$.data[0].userId").value("864530440482800637"))
                 .andExpect(jsonPath("$.data[0].nickname").value("봇"))
                 .andExpect(jsonPath("$.data[0].avatarBodyUri").value("https://cdn/body.png"))
                 .andExpect(jsonPath("$.data[0].avatarIconUri").value("https://cdn/icon.png"))
@@ -631,9 +632,9 @@ class AdminVirtualCrewControllerTest {
                                 {"botIds":[1,2],"bodyUris":["https://cdn/a.png","https://cdn/b.png"]}
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.assigned[0].userId").value(1))
+                .andExpect(jsonPath("$.data.assigned[0].userId").value("1"))
                 .andExpect(jsonPath("$.data.assigned[0].avatarBodyUri").value("https://cdn/a.png"))
-                .andExpect(jsonPath("$.data.assigned[1].userId").value(2));
+                .andExpect(jsonPath("$.data.assigned[1].userId").value("2"));
         verify(botAvatarAdminService).distribute(List.of(1L, 2L), List.of("https://cdn/a.png", "https://cdn/b.png"));
     }
 
