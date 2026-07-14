@@ -14,6 +14,7 @@ import com.querydsl.jpa.impl.JPAQueryFactory;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
@@ -73,6 +74,28 @@ public class BotPoolQueryRepositoryImpl implements BotPoolQueryRepository {
                         userAccountData.userId.uid.in(candidateUserIds),
                         userAccountData.isDummy.isTrue(),
                         userAccountData.withdrawnAt.isNull())
+                .fetch();
+    }
+
+    @Override
+    public List<Long> filterPlacedBotUserIds(Collection<Long> botUserIds) {
+        if (botUserIds == null || botUserIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return queryFactory
+                .select(userAccountData.userId.uid)
+                .from(userAccountData)
+                .where(
+                        userAccountData.userId.uid.in(botUserIds),
+                        userAccountData.isDummy.isTrue(),
+                        userAccountData.withdrawnAt.isNull(),
+                        // 활성 crew EXISTS — findIdleBotUserIds 의 NOT EXISTS 와 대칭. 파티룸 조인 없이
+                        // crew 만으로 판정하므로 orphan 파티룸이어도 배치로 잡는다.
+                        JPAExpressions.selectOne()
+                                .from(crewData)
+                                .where(crewData.userId.uid.eq(userAccountData.userId.uid)
+                                        .and(crewData.isActive.isTrue()))
+                                .exists())
                 .fetch();
     }
 

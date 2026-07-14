@@ -3,13 +3,16 @@ package com.pfplaybackend.api.admin.application.service;
 import com.pfplaybackend.api.admin.application.port.out.AdminMemberPort;
 import com.pfplaybackend.api.admin.application.port.out.AdminPlaylistPort;
 import com.pfplaybackend.api.admin.domain.exception.AdminException;
+import com.pfplaybackend.api.administration.application.service.AdminMemberWithdrawCommandService;
 import com.pfplaybackend.api.common.config.security.enums.ProviderType;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.exception.ExceptionCreator;
 import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
+import com.pfplaybackend.api.user.adapter.out.persistence.UserProfileRepository;
 import com.pfplaybackend.api.user.domain.entity.data.MemberData;
 import com.pfplaybackend.api.user.domain.entity.data.ProfileData;
 import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
+import com.pfplaybackend.api.user.domain.value.Nickname;
 import com.pfplaybackend.api.avatar.domain.value.AvatarBodyUri;
 import com.pfplaybackend.api.avatar.domain.value.AvatarFaceUri;
 import com.pfplaybackend.api.user.domain.value.WalletAddress;
@@ -37,6 +40,8 @@ public class AdminUserService {
     private final AdminProfileService adminProfileService;
     private final AdminPlaylistPort adminPlaylistPort;
     private final UserAccountRepository userAccountRepository;
+    private final UserProfileRepository userProfileRepository;
+    private final AdminMemberWithdrawCommandService adminMemberWithdrawCommandService;
 
     /**
      * Create virtual member with auto-generated profile and FM authority
@@ -173,6 +178,66 @@ public class AdminUserService {
         adminMemberPort.deleteMemberById(userId.getUid());
 
         log.info("Virtual member deleted: userId={}", userId.getUid());
+    }
+
+    /**
+     * 가상 회원을 탈퇴(soft-delete)한다 — 물리 삭제 대신 {@code withdrawn_at} 세팅 + 이메일 PII 비식별화.
+     *
+     * <p>가상 크루 봇 제거의 진입점. 봇 계정은 crew/dj/playlist/activity 등 여러 테이블이 참조하므로
+     * 물리 삭제는 orphan/FK 위험이 크다. 대신 실회원과 동일한 검증된 탈퇴 경로
+     * ({@link AdminMemberWithdrawCommandService#withdraw})를 재사용한다 — idempotent(재호출 무해),
+     * adminId 기록, {@code UserAccountWithdrawnEvent} 발행을 모두 승계한다. 모든 봇 풀 조회가
+     * {@code withdrawn_at IS NULL} 로 필터하므로 탈퇴 즉시 풀·로스터·배치 대상에서 사라진다.
+     *
+     * @param userId 가상 회원(봇)의 user_account_id
+     */
+    @Transactional
+    public void withdrawVirtualMember(UserId userId) {
+        // 1. 회원 조회(user_account_id) — 없으면 MEMBER_NOT_FOUND.
+        MemberData member = findMemberByUserId(userId);
+
+        // 2. LOCAL provider(가상 회원)인지 검증 — 실 소셜 회원 오탈퇴 방지.
+        requireLocalProviderForVirtualMemberOp(member, AdminException.NON_VIRTUAL_MEMBER_DELETE);
+
+        // 3. 검증된 탈퇴 명령에 위임(member_id 기준). idempotent — 이미 탈퇴면 no-op.
+        adminMemberWithdrawCommandService.withdraw(member.getMemberId());
+
+        log.info("Virtual member withdrawn (soft-delete): userId={}", userId.getUid());
+    }
+
+    /**
+     * 가상 회원(봇)의 닉네임을 변경한다. 봇의 닉네임은 파티룸에서 그대로 노출되므로, 운영자가
+     * 사람처럼 보이는 이름으로 덮어쓸 수 있게 한다.
+     *
+     * <p>{@link Nickname} 도메인 규칙(비블랭크·20자 이하, charset 무제한 — 한글/공백 허용)을 따르고,
+     * {@code uk_user_profile_nickname} UNIQUE 제약을 사전 검사({@code existsByNicknameAndUserIdNot},
+     * self 제외)로 확인해 충돌 시 409({@link AdminException#DUPLICATE_NICKNAME})를 던진다.
+     * 프로필은 기존 행을 in-place mutate({@link ProfileData#updateNickname}) — 아바타 변경과 동일하게
+     * cascade 더블 인서트(uk 위반)를 피한다.
+     *
+     * @param userId   가상 회원(봇)의 user_account_id
+     * @param nickname 새 닉네임
+     */
+    @Transactional
+    public void updateVirtualMemberNickname(UserId userId, String nickname) {
+        // 1. 회원 조회 + LOCAL(가상) 검증.
+        MemberData member = findMemberByUserId(userId);
+        requireLocalProviderForVirtualMemberOp(member, AdminException.NON_VIRTUAL_MEMBER_NICKNAME_UPDATE);
+
+        // 2. 도메인 규칙 검증(비블랭크·20자 이하). 페이로드에서도 @NotBlank/@Size 로 400 선차단하지만
+        //    도메인 불변식을 최종 방어선으로 다시 태운다.
+        Nickname requested = new Nickname(nickname);
+
+        // 3. 닉네임 UNIQUE 사전 검사(self 제외) — 재저장(동일 닉) 은 허용, 타인 중복은 409.
+        if (userProfileRepository.existsByNicknameAndUserIdNot(requested, userId)) {
+            throw ExceptionCreator.create(AdminException.DUPLICATE_NICKNAME);
+        }
+
+        // 4. 기존 프로필 행 in-place 수정 후 저장(cascade UPDATE).
+        member.getProfileData().updateNickname(nickname);
+        adminMemberPort.saveMember(member);
+
+        log.info("Virtual member nickname updated: userId={}, nickname={}", userId.getUid(), nickname);
     }
 
     /**

@@ -17,4 +17,21 @@ public interface VirtualMemberProvisionPort {
      * (FM 승격 + 프로필·기본 아바타 + activity 행 + GRABLIST 포함).
      */
     MemberData createVirtualMember(String nickname);
+
+    /**
+     * 봇(가상 멤버)을 탈퇴(soft-delete)한다 — 실회원과 동일한 검증된 탈퇴 경로 재사용.
+     * idempotent(이미 탈퇴면 no-op). 탈퇴 즉시 봇 풀·로스터·배치 대상 조회에서 제외된다.
+     *
+     * @param botUserId 봇의 user_account_id
+     */
+    void withdrawVirtualMember(Long botUserId);
+
+    /**
+     * 봇(가상 멤버)의 닉네임을 변경한다(파티룸 노출명 교체). 비블랭크·20자 이하 + 닉네임 UNIQUE 를
+     * 검증하며, 충돌 시 예외를 던진다.
+     *
+     * @param botUserId 봇의 user_account_id
+     * @param nickname  새 닉네임
+     */
+    void updateVirtualMemberNickname(Long botUserId, String nickname);
 }

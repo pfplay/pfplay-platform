@@ -21,6 +21,9 @@ import com.pfplaybackend.api.virtualcrew.adapter.in.web.payload.DistributeBotAva
 import com.pfplaybackend.api.virtualcrew.adapter.in.web.payload.DistributeBotAvatarResponse;
 import com.pfplaybackend.api.virtualcrew.adapter.in.web.payload.PoolSummaryResponse;
 import com.pfplaybackend.api.virtualcrew.adapter.in.web.payload.ProvisionPoolRequest;
+import com.pfplaybackend.api.virtualcrew.adapter.in.web.payload.RemoveBotsRequest;
+import com.pfplaybackend.api.virtualcrew.adapter.in.web.payload.RemoveBotsResponse;
+import com.pfplaybackend.api.virtualcrew.adapter.in.web.payload.RenameBotRequest;
 import com.pfplaybackend.api.virtualcrew.adapter.in.web.payload.RenameSongPackRequest;
 import com.pfplaybackend.api.virtualcrew.adapter.in.web.payload.SetBotAvatarRequest;
 import com.pfplaybackend.api.virtualcrew.adapter.in.web.payload.SongPackDetailResponse;
@@ -334,6 +337,16 @@ public class AdminVirtualCrewController {
         return ResponseEntity.noContent().build();
     }
 
+    @Operation(summary = "봇 닉네임 변경", description = "파티룸 노출명 교체. 비블랭크·20자 이하, 닉네임 중복 시 409")
+    @SecurityRequirement(name = "cookieAuth")
+    @PreAuthorize("@adminAuth.canManageVirtualCrew()")
+    @PutMapping("/virtual-crew/bots/{userId}/nickname")
+    public ResponseEntity<Void> renameBot(@PathVariable("userId") Long userId,
+                                          @Valid @RequestBody RenameBotRequest req) {
+        adminService.renameBot(userId, req.nickname());
+        return ResponseEntity.noContent().build();
+    }
+
     @Operation(summary = "봇 아바타 일괄 변별 배분", description = "선택 봇들에 셋에서 랜덤 1개씩 배분")
     @SecurityRequirement(name = "cookieAuth")
     @PreAuthorize("@adminAuth.canManageVirtualCrew()")
@@ -342,6 +355,16 @@ public class AdminVirtualCrewController {
             @Valid @RequestBody DistributeBotAvatarRequest req) {
         List<BotAvatarAssigner.Assigned> assigned = botAvatarAdminService.distribute(req.botIds(), req.bodyUris());
         return ResponseEntity.ok(ApiCommonResponse.success(DistributeBotAvatarResponse.from(assigned)));
+    }
+
+    @Operation(summary = "봇 일괄 제거(탈퇴)", description = "선택 봇들을 풀에서 제거(soft-delete). 배치된 봇이 포함되면 409(먼저 리소스 회수/재배치)")
+    @SecurityRequirement(name = "cookieAuth")
+    @PreAuthorize("@adminAuth.canManageVirtualCrew()")
+    @PostMapping("/virtual-crew/bots/remove")
+    public ResponseEntity<ApiCommonResponse<RemoveBotsResponse>> removeBots(
+            @Valid @RequestBody RemoveBotsRequest req) {
+        return ResponseEntity.ok(ApiCommonResponse.success(
+                RemoveBotsResponse.from(adminService.removeBots(req.botUserIds()))));
     }
 
     // ── 봇↔페르소나 매핑 (P3) ──

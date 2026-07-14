@@ -1,6 +1,7 @@
 package com.pfplaybackend.api.virtualcrew.adapter.out.provision;
 
 import com.pfplaybackend.api.admin.application.service.AdminUserService;
+import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.user.domain.entity.data.MemberData;
 import com.pfplaybackend.api.virtualcrew.application.port.VirtualMemberProvisionPort;
 import lombok.RequiredArgsConstructor;
@@ -21,5 +22,15 @@ public class VirtualMemberProvisionAdapter implements VirtualMemberProvisionPort
     @Override
     public MemberData createVirtualMember(String nickname) {
         return adminUserService.createVirtualMember(nickname, null, null);
+    }
+
+    @Override
+    public void withdrawVirtualMember(Long botUserId) {
+        adminUserService.withdrawVirtualMember(new UserId(botUserId));
+    }
+
+    @Override
+    public void updateVirtualMemberNickname(Long botUserId, String nickname) {
+        adminUserService.updateVirtualMemberNickname(new UserId(botUserId), nickname);
     }
 }

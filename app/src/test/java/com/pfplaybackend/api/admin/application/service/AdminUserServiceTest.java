@@ -5,9 +5,11 @@ import com.pfplaybackend.api.admin.application.port.out.AdminPlaylistPort;
 import com.pfplaybackend.api.common.config.security.enums.ProviderType;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.enums.AuthorityTier;
+import com.pfplaybackend.api.common.exception.http.ConflictException;
 import com.pfplaybackend.api.common.exception.http.ForbiddenException;
 import com.pfplaybackend.api.common.exception.http.NotFoundException;
 import com.pfplaybackend.api.user.adapter.out.persistence.UserAccountRepository;
+import com.pfplaybackend.api.user.adapter.out.persistence.UserProfileRepository;
 import com.pfplaybackend.api.user.domain.entity.data.MemberData;
 import com.pfplaybackend.api.user.domain.entity.data.ProfileData;
 import com.pfplaybackend.api.user.domain.entity.data.UserAccountData;
@@ -43,6 +45,9 @@ class AdminUserServiceTest {
 
     @Mock
     private UserAccountRepository userAccountRepository;
+
+    @Mock
+    private UserProfileRepository userProfileRepository;
 
     @InjectMocks
     private AdminUserService adminUserService;
@@ -210,5 +215,61 @@ class AdminUserServiceTest {
         // when & then
         assertThatThrownBy(() -> adminUserService.getVirtualMember(userId))
                 .isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    @DisplayName("updateVirtualMemberNickname — 가상 회원 닉네임이 in-place 로 변경되고 저장된다")
+    void updateVirtualMemberNicknameSuccess() {
+        // given
+        UserId userId = new UserId(401L);
+        MemberData virtualMember = createMemberFor(userId.getUid());
+        UserAccountData localAccount = createLocalAccount(userId);
+
+        when(adminMemberPort.findMemberByUserAccountId(userId.getUid())).thenReturn(Optional.of(virtualMember));
+        when(userAccountRepository.findById(userId)).thenReturn(Optional.of(localAccount));
+        when(userProfileRepository.existsByNicknameAndUserIdNot(new Nickname("루나"), userId)).thenReturn(false);
+        when(adminMemberPort.saveMember(any(MemberData.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        // when
+        adminUserService.updateVirtualMemberNickname(userId, "루나");
+
+        // then — 기존 프로필 행이 새 닉네임으로 mutate + 저장
+        assertThat(virtualMember.getProfileData().getNicknameValue()).isEqualTo("루나");
+        verify(adminMemberPort).saveMember(virtualMember);
+    }
+
+    @Test
+    @DisplayName("updateVirtualMemberNickname — 비가상(GOOGLE) 회원은 ForbiddenException")
+    void updateVirtualMemberNicknameNonVirtualThrows() {
+        // given
+        UserId userId = new UserId(402L);
+        MemberData googleMember = createMemberFor(userId.getUid());
+        UserAccountData googleAccount = createGoogleAccount(userId);
+
+        when(adminMemberPort.findMemberByUserAccountId(userId.getUid())).thenReturn(Optional.of(googleMember));
+        when(userAccountRepository.findById(userId)).thenReturn(Optional.of(googleAccount));
+
+        // when & then
+        assertThatThrownBy(() -> adminUserService.updateVirtualMemberNickname(userId, "루나"))
+                .isInstanceOf(ForbiddenException.class);
+        verify(adminMemberPort, never()).saveMember(any());
+    }
+
+    @Test
+    @DisplayName("updateVirtualMemberNickname — 닉네임 중복(타인) 시 ConflictException")
+    void updateVirtualMemberNicknameDuplicateThrows() {
+        // given
+        UserId userId = new UserId(403L);
+        MemberData virtualMember = createMemberFor(userId.getUid());
+        UserAccountData localAccount = createLocalAccount(userId);
+
+        when(adminMemberPort.findMemberByUserAccountId(userId.getUid())).thenReturn(Optional.of(virtualMember));
+        when(userAccountRepository.findById(userId)).thenReturn(Optional.of(localAccount));
+        when(userProfileRepository.existsByNicknameAndUserIdNot(new Nickname("중복닉"), userId)).thenReturn(true);
+
+        // when & then
+        assertThatThrownBy(() -> adminUserService.updateVirtualMemberNickname(userId, "중복닉"))
+                .isInstanceOf(ConflictException.class);
+        verify(adminMemberPort, never()).saveMember(any());
     }
 }

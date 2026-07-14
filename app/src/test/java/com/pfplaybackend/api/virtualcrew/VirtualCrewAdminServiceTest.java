@@ -3,6 +3,7 @@ package com.pfplaybackend.api.virtualcrew;
 import com.pfplaybackend.api.party.application.service.PartyroomQueryService;
 import com.pfplaybackend.api.party.domain.entity.data.PartyroomData;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
+import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.virtualcrew.adapter.out.persistence.BotPoolQueryRepository;
 import com.pfplaybackend.api.virtualcrew.adapter.out.persistence.PartyroomVirtualCrewConfigRepository;
 import com.pfplaybackend.api.virtualcrew.application.port.VirtualCrewOrchestrator;
@@ -12,6 +13,7 @@ import com.pfplaybackend.api.virtualcrew.application.service.VirtualCrewAdminSer
 import com.pfplaybackend.api.virtualcrew.application.service.VirtualUserPoolService;
 import com.pfplaybackend.api.virtualcrew.domain.entity.data.PartyroomVirtualCrewConfigData;
 import com.pfplaybackend.api.virtualcrew.domain.enums.VirtualCrewStatus;
+import com.pfplaybackend.api.virtualcrew.domain.exception.VirtualCrewException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -19,8 +21,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.List;
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -109,5 +114,71 @@ class VirtualCrewAdminServiceTest {
     void replace_delegates() {
         service.replace(ROOM);
         verify(orchestrator).replaceRoom(ROOM);
+    }
+
+    // ── removeBots (봇 일괄 제거 = 탈퇴 soft-delete) ──
+
+    @Test
+    @DisplayName("removeBots — 유효 봇 전원 withdrawBot 위임 + 결과 반환")
+    void removeBots_idle_withdrawsEach() {
+        when(botPoolQueryRepository.filterBotUserIds(anyList())).thenReturn(List.of(1L, 2L));
+        when(botPoolQueryRepository.filterPlacedBotUserIds(anyCollection())).thenReturn(List.of());
+
+        VirtualCrewAdminService.BotRemovalResult result = service.removeBots(List.of(1L, 2L));
+
+        verify(poolService).withdrawBot(new UserId(1L));
+        verify(poolService).withdrawBot(new UserId(2L));
+        assertThat(result.removed()).isEqualTo(2);
+        assertThat(result.removedUserIds()).containsExactly(1L, 2L);
+    }
+
+    @Test
+    @DisplayName("removeBots — 활성 crew 배치 봇 포함 시 409(BOT_PLACED_CANNOT_REMOVE), 전체 거부(withdraw 0건)")
+    void removeBots_placed_rejectsAll() {
+        when(botPoolQueryRepository.filterBotUserIds(anyList())).thenReturn(List.of(1L, 2L));
+        when(botPoolQueryRepository.filterPlacedBotUserIds(anyCollection())).thenReturn(List.of(2L));
+
+        assertThatThrownBy(() -> service.removeBots(List.of(1L, 2L)))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining(VirtualCrewException.BOT_PLACED_CANNOT_REMOVE.getMessage());
+
+        verify(poolService, never()).withdrawBot(any());
+    }
+
+    @Test
+    @DisplayName("removeBots — 비봇/미존재/이미탈퇴 id 는 filterBotUserIds 가 걸러 멱등 스킵")
+    void removeBots_unknownId_skipped() {
+        when(botPoolQueryRepository.filterBotUserIds(anyList())).thenReturn(List.of(1L));
+        when(botPoolQueryRepository.filterPlacedBotUserIds(anyCollection())).thenReturn(List.of());
+
+        VirtualCrewAdminService.BotRemovalResult result = service.removeBots(List.of(1L, 999L));
+
+        verify(poolService).withdrawBot(new UserId(1L));
+        verify(poolService, never()).withdrawBot(new UserId(999L));
+        assertThat(result.removed()).isEqualTo(1);
+        assertThat(result.removedUserIds()).containsExactly(1L);
+    }
+
+    @Test
+    @DisplayName("removeBots — 빈 목록은 no-op(repo 조회조차 안 함)")
+    void removeBots_empty_noop() {
+        VirtualCrewAdminService.BotRemovalResult result = service.removeBots(List.of());
+
+        assertThat(result.removed()).isZero();
+        verify(botPoolQueryRepository, never()).filterBotUserIds(anyList());
+        verify(botPoolQueryRepository, never()).filterPlacedBotUserIds(anyCollection());
+        verify(poolService, never()).withdrawBot(any());
+    }
+
+    @Test
+    @DisplayName("removeBots — 유효 봇이 하나도 없으면 no-op(withdraw 0건)")
+    void removeBots_noValidBots_noop() {
+        when(botPoolQueryRepository.filterBotUserIds(anyList())).thenReturn(List.of());
+
+        VirtualCrewAdminService.BotRemovalResult result = service.removeBots(List.of(999L));
+
+        assertThat(result.removed()).isZero();
+        verify(botPoolQueryRepository, never()).filterPlacedBotUserIds(anyCollection());
+        verify(poolService, never()).withdrawBot(any());
     }
 }
