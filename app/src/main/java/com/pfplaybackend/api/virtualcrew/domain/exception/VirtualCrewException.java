@@ -20,7 +20,8 @@ public enum VirtualCrewException implements DomainException {
     PERSONA_INACTIVE("VCREW-011", "비활성 페르소나는 새로 매핑할 수 없습니다.", ErrorType.BAD_REQUEST),
     PERSONA_IN_USE("VCREW-012", "봇에 매핑된 페르소나는 삭제할 수 없습니다. 먼저 매핑을 해제하세요.", ErrorType.CONFLICT),
     CHAT_CONFIG_INVALID("VCREW-013", "채팅 설정 값이 유효하지 않습니다.", ErrorType.BAD_REQUEST),
-    DJ_COUNT_EXCEEDS_TRACKS("VCREW-014", "djBotCount 가 필터 통과 트랙 수를 초과합니다", ErrorType.BAD_REQUEST);
+    DJ_COUNT_EXCEEDS_TRACKS("VCREW-014", "djBotCount 가 필터 통과 트랙 수를 초과합니다", ErrorType.BAD_REQUEST),
+    BOT_PLACED_CANNOT_REMOVE("VCREW-015", "배치된 봇은 제거할 수 없습니다. 먼저 해당 방을 리소스 회수/재배치하세요", ErrorType.CONFLICT);
 
     private final String errorCode;
     private final String message;

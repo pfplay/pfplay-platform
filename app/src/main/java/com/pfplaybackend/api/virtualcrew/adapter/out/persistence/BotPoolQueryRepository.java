@@ -6,6 +6,7 @@ import com.pfplaybackend.api.virtualcrew.application.dto.BotCandidate;
 import com.pfplaybackend.api.virtualcrew.application.dto.BotRosterRow;
 import com.pfplaybackend.api.virtualcrew.application.dto.PoolPlacementRow;
 
+import java.util.Collection;
 import java.util.List;
 
 /**
@@ -53,6 +54,15 @@ public interface BotPoolQueryRepository {
      * 입력이 null/빈 리스트면 빈 리스트를 반환한다.
      */
     List<Long> filterBotUserIds(List<Long> candidateUserIds);
+
+    /**
+     * 후보 봇 중 현재 활성 crew 로 배치된 봇의 userId 부분집합을 반환한다({@link #findIdleBotUserIds} 와 대칭).
+     *
+     * <p>배치 판정을 {@code 활성 crew EXISTS} 로만 한다 — 파티룸 행 존재/제목 조인에 의존하지 않는다.
+     * 따라서 파티룸이 지워졌지만 활성 crew row 가 남은 orphan 상황에서도 배치로 본다(제거 시 방 잔류창 방지).
+     * 봇(is_dummy=true, withdrawn_at IS NULL)으로 한정한다. 입력이 null/빈 컬렉션이면 빈 리스트.
+     */
+    List<Long> filterPlacedBotUserIds(Collection<Long> botUserIds);
 
     /**
      * 주어진 파티룸 안에서 채팅 응답 후보가 될 수 있는 페르소나 봇 목록을 반환한다.
