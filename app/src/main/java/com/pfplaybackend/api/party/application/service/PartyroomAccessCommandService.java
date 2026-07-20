@@ -149,7 +149,16 @@ public class PartyroomAccessCommandService {
         PartyroomId pid = partyroom.getPartyroomId();
         LocalDateTime now = LocalDateTime.now(clock);
 
-        int activated = aggregatePort.activateCrew(pid, userId, now);
+        int activated;
+        try {
+            activated = aggregatePort.activateCrew(pid, userId, now);
+        } catch (DataIntegrityViolationException e) {
+            // #349 activateCrew UPDATE(is_active false→true)가 위반할 수 있는 유일한 유니크는
+            // uk_crew_active_user 다 = 동시에 다른 방 입장이 이 유저를 먼저 active 로 선점(버스트 패자).
+            // 조용한 다중 활성 대신 CONFLICT 로 실패 → outer tx 롤백 → 활성 방은 정확히 1개 유지.
+            // (PR2 의 유저 단위 락이 들어오면 애초에 이 경쟁 자체가 사라져 이 경로는 사문화된다.)
+            throw asConcurrentEntryOrRethrow(e);
+        }
         if (activated == 1) {
             CrewData crew = aggregatePort.findCrew(pid, userId).orElseThrow();
             crew.updateCountryCode(countryCode);
@@ -162,7 +171,12 @@ public class PartyroomAccessCommandService {
                 CrewData newCrew = CrewData.create(pid, userId, GradeType.LISTENER, countryCode, now);
                 return new CrewActivationResult(aggregatePort.saveCrew(newCrew), true, false);
             } catch (DataIntegrityViolationException e) {
-                // INSERT race 패배 — outer tx가 rollback-only 상태. winner row 조회는 별 트랜잭션에서.
+                // #349 INSERT 가 uk_crew_active_user 위반이면 다른 방 동시 입장 패자 → CONFLICT.
+                if (isActiveUserConstraint(e)) {
+                    throw ExceptionCreator.create(CrewException.CONCURRENT_ACTIVE_ROOM);
+                }
+                // uk_crew_partyroom_user 위반 = 같은 방 동시 INSERT 패배 — outer tx가 rollback-only 상태.
+                // winner row 조회는 별 트랜잭션에서.
                 log.info("[ensureCrewActive] CONCURRENT_INSERT_LOSER - userId={}, partyroomId={}",
                         userId, pid.getId());
                 CrewData winner = findCrewInNewTransaction(pid, userId);
@@ -174,6 +188,29 @@ public class PartyroomAccessCommandService {
         CrewData crew = existing.get();
         crew.updateCountryCode(countryCode);
         return new CrewActivationResult(aggregatePort.saveCrew(crew), false, false);
+    }
+
+    /**
+     * #349 "유저당 활성 방 1개" DB 불변식(uk_crew_active_user)을 강제하는 UNIQUE 이름.
+     * MySQL 무결성 위반 메시지("Duplicate entry '...' for key 'CREW.uk_crew_active_user'")로 식별한다.
+     */
+    private static final String ACTIVE_USER_UNIQUE_CONSTRAINT = "uk_crew_active_user";
+
+    /**
+     * activateCrew UPDATE 가 던진 무결성 위반이 uk_crew_active_user 면 동시 입장 경쟁 패자로 간주해
+     * CONFLICT 도메인 예외로 매핑, 아니면(예상 밖 무결성 위반) 원 예외를 그대로 surface 한다.
+     */
+    private RuntimeException asConcurrentEntryOrRethrow(DataIntegrityViolationException e) {
+        if (isActiveUserConstraint(e)) {
+            return ExceptionCreator.create(CrewException.CONCURRENT_ACTIVE_ROOM);
+        }
+        return e;
+    }
+
+    private boolean isActiveUserConstraint(DataIntegrityViolationException e) {
+        Throwable root = e.getMostSpecificCause();
+        String msg = (root == null) ? null : root.getMessage();
+        return msg != null && msg.contains(ACTIVE_USER_UNIQUE_CONSTRAINT);
     }
 
     /**
