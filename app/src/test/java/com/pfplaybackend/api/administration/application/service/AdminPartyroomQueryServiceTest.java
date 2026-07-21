@@ -194,7 +194,9 @@ class AdminPartyroomQueryServiceTest {
         assertThat(detail.hostUserAccountId()).isEqualTo(7L);
         assertThat(detail.hostEmail()).isEqualTo("host@example.com");
         assertThat(detail.hostNickname()).isEqualTo("hostNick");
-        assertThat(detail.crewCount()).isEqualTo(4);
+        // #358 상세 크루 수 = 라이브 목록(findActiveCrews)과 동일 소스 — 드리프트 가능한
+        // crew_count 컬럼(reflection 으로 4 세팅됨)이 아니라 activeCrews.size()=1 이어야 한다.
+        assertThat(detail.crewCount()).isEqualTo(1);
         // PR 14g §5: root-level introduction + playbackTimeLimit (minutes) 노출
         assertThat(detail.introduction()).isEqualTo("intro");
         assertThat(detail.playbackTimeLimit()).isEqualTo(5);
