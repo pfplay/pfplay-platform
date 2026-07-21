@@ -273,7 +273,15 @@ public class PartyroomAccessCommandService {
         // enterByHost를 거치지 않고 tryEnter가 처리하므로 이중 exit 없음.
         autoExitPriorActiveRoomIfDifferent(hostId, partyroom.getPartyroomId());
         CrewData crew = CrewData.create(partyroom.getPartyroomId(), hostId, GradeType.HOST, null, LocalDateTime.now(clock));
-        aggregatePort.saveCrew(crew);
+        try {
+            aggregatePort.saveCrew(crew);
+        } catch (DataIntegrityViolationException e) {
+            // #351 auto-exit statement 와 본 INSERT 사이의 밀리초 창에 같은 유저의 타 기기
+            // tryEnter 가 active_user_id 슬롯을 선점하면 uk_crew_active_user 위반. 정합성은
+            // 무해(방 생성 포함 outer tx 전체 롤백)하므로 미처리 500 대신 ensureCrewActive 와
+            // 동일하게 CRW-005 CONFLICT 로 매핑해 재시도를 유도한다. 그 외 위반은 원예외 유지.
+            throw asConcurrentEntryOrRethrow(e);
+        }
     }
 
     /**
