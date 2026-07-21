@@ -38,7 +38,6 @@ public class PartyroomRepositoryImpl implements PartyroomRepositoryCustom {
 
     @Override
     public Optional<ActivePartyroomDto> getActivePartyroomByUserId(UserId userId) {
-        QPartyroomData qPartyroomData = QPartyroomData.partyroomData;
         QCrewData qCrewData = QCrewData.crewData;
         QPartyroomPlaybackData qPlayback = QPartyroomPlaybackData.partyroomPlaybackData;
         QDjQueueData qDjQueue = QDjQueueData.djQueueData;
@@ -46,20 +45,34 @@ public class PartyroomRepositoryImpl implements PartyroomRepositoryCustom {
         ActivePartyroomDto activePartyroomDto = queryFactory
                 .select(Projections.constructor(
                         ActivePartyroomDto.class,
-                        qPartyroomData.id,
-                        qDjQueue.isClosed,
+                        // #349 id 는 CREW 의 partyroom_id 에서 직접 취득 — PARTYROOM 조인 불필요.
+                        // "내 활성 방"의 단일 진실원천은 CREW 이므로, 조인 대상 부재로 crew 가 조회에서
+                        // 통째로 탈락(masking)하는 경로를 원천 차단한다.
+                        qCrewData.partyroomId.id,
+                        // #349 LEFT JOIN 방어: DJ_QUEUE / PARTYROOM_PLAYBACK 행이 없으면(레거시·부분손상)
+                        // NULL 이 primitive boolean 으로 언박싱되며 투영 시점에 NPE. coalesce(false) 로
+                        // 결정적 기본값 부여 — queueClosed 는 소비처 없음, playbackActivated=false 는
+                        // "활성 재생 없음"이라는 sane default (무행 방은 재생 비활성으로 표시).
+                        qDjQueue.isClosed.coalesce(false),
                         qCrewData.id.as("crewId"),
-                        qPlayback.isActivated,
+                        qPlayback.isActivated.coalesce(false),
                         qPlayback.currentPlaybackId,
                         qPlayback.currentDjCrewId
                 ))
                 .from(qCrewData)
-                .join(qPartyroomData).on(qPartyroomData.id.eq(qCrewData.partyroomId.id))
-                .join(qPlayback).on(qPlayback.partyroomId.id.eq(qPartyroomData.id))
-                .join(qDjQueue).on(qDjQueue.partyroomId.id.eq(qPartyroomData.id))
+                // #349 INNER→LEFT: 하위행(playback/djqueue) 부재로 활성 crew 가 masking 되면 auto-exit·
+                // presence 가 그 crew 를 못 봐 고아를 못 치우고(누적), 새 uk_crew_active_user 유니크와
+                // 결합 시 "고아가 있으면 어느 방도 못 들어가는" 하드 wedge 로 승격된다. LEFT 로 제거.
+                .leftJoin(qPlayback).on(qPlayback.partyroomId.id.eq(qCrewData.partyroomId.id))
+                .leftJoin(qDjQueue).on(qDjQueue.partyroomId.id.eq(qCrewData.partyroomId.id))
                 .where(qCrewData.userId.eq(userId)
                         .and(qCrewData.isActive.eq(true)))
-                .fetchOne();
+                // #349: "유저당 활성 방 1개"는 uk_crew_active_user 유니크로 DB가 보장하므로 정상 상태에선
+                // 최대 1행이다. fetchOne 은 (혹시라도 다중 활성이 남은 비정상 상태에서) 정합성 강제/조회
+                // 경로 자체를 NonUniqueResultException 으로 자멸시켰다(입장 전면 wedge). 결정적 최신 1행을
+                // 고르도록 orderBy + fetchFirst 로 전환 — 어떤 데이터 상태에서도 던지지 않는다.
+                .orderBy(qCrewData.enteredAt.desc(), qCrewData.id.desc())
+                .fetchFirst();
 
         return Optional.ofNullable(activePartyroomDto);
     }
