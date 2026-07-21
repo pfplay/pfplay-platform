@@ -5,6 +5,7 @@ import com.pfplaybackend.api.common.aspect.context.AuthContext;
 import com.pfplaybackend.api.common.ThreadLocalContext;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.enums.AuthorityTier;
+import com.pfplaybackend.api.party.adapter.out.persistence.CrewRepository;
 import com.pfplaybackend.api.party.adapter.out.persistence.PartyroomRepository;
 import com.pfplaybackend.api.party.application.port.out.UserProfileQueryPort;
 import com.pfplaybackend.api.party.domain.entity.data.PartyroomData;
@@ -40,6 +41,7 @@ class PartyroomAccessCommandServiceRaceIT extends AbstractIntegrationTest {
 
     @Autowired private PartyroomAccessCommandService accessCommandService;
     @Autowired private PartyroomRepository partyroomRepository;
+    @Autowired private CrewRepository crewRepository;
     @Autowired private PlatformTransactionManager transactionManager;
 
     /** saveAndFlush 가 별도 tx 로 commit 하고 tryEnter 가 crew 행까지 생성하므로
@@ -146,11 +148,11 @@ class PartyroomAccessCommandServiceRaceIT extends AbstractIntegrationTest {
             pool.shutdown();
         }
 
-        // AFTER_COMMIT listener는 REQUIRES_NEW 동기 dispatch라 done.await() 후 모든 UPDATE 완료
-        PartyroomData reloaded = partyroomRepository.findById(roomId).orElseThrow();
-        assertThat(reloaded.getActiveCrewCount())
-                .as("100 동시 enter → crew_count는 정확히 1 (race B + spurious ENTER 차단 검증)")
-                .isEqualTo(1);
+        // #360 counter 소멸 — 라이브 진실로 단언: 100 동시 enter 에도 활성 crew 는 정확히 1
+        // (race B + spurious ENTER 차단 + uk_crew_active_user). 카운터보다 강한 단언.
+        assertThat(crewRepository.countByPartyroomIdAndIsActiveTrue(new PartyroomId(roomId)))
+                .as("100 동시 enter → 활성 crew 는 정확히 1")
+                .isEqualTo(1L);
     }
 
     private AuthContext authContextOf(UserId userId) {
