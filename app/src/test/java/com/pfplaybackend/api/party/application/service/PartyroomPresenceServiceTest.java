@@ -49,6 +49,8 @@ class PartyroomPresenceServiceTest {
     @Mock RedisTemplate<String, Object> redisTemplate;
     @Mock ValueOperations<String, Object> valueOps;
     @Mock DistributedLockExecutor distributedLockExecutor;
+    @Mock org.springframework.messaging.simp.user.SimpUserRegistry simpUserRegistry;
+    @Mock com.pfplaybackend.api.party.application.port.out.LivenessSweepQueryPort livenessSweepQueryPort;
 
     PartyroomPresenceService service;
     Clock clock;
@@ -57,7 +59,8 @@ class PartyroomPresenceServiceTest {
     void setUp() {
         clock = Clock.fixed(Instant.parse("2026-05-09T12:00:00Z"), ZoneId.of("UTC"));
         service = new PartyroomPresenceService(aggregatePort, partyroomAccessCommandService,
-                systemConfigCache, redisTemplate, distributedLockExecutor, clock);
+                systemConfigCache, redisTemplate, distributedLockExecutor, clock, simpUserRegistry,
+                livenessSweepQueryPort);
         lenient().when(redisTemplate.opsForValue()).thenReturn(valueOps);
     }
 
@@ -296,5 +299,64 @@ class PartyroomPresenceServiceTest {
         lenient().when(playback.isActivated()).thenReturn(currentDj);
         lenient().when(playback.isCurrentDj(any(CrewId.class))).thenReturn(currentDj);
         return playback;
+    }
+
+    // ── #356 liveness 스윕: 신호 유실 고아 활성 crew(유령) → markPending ──────────
+
+    @Test
+    @DisplayName("#356 세션 없는 고아 활성 crew → markPending (grace 시작)")
+    void sweep_marks_orphan_active_crew_pending() {
+        CrewData ghost = activeCrew(false);
+        when(livenessSweepQueryPort.findLivenessSweepCandidates(any(LocalDateTime.class)))
+                .thenReturn(java.util.List.of(ghost));
+        when(simpUserRegistry.getUser(userId().toString())).thenReturn(null); // 살아있는 세션 없음
+        when(aggregatePort.findCrew(roomId(), userId())).thenReturn(Optional.of(ghost));
+        when(aggregatePort.markCrewPending(eq(roomId()), eq(userId()), any(LocalDateTime.class)))
+                .thenReturn(1);
+        when(systemConfigCache.getListenerGraceSeconds()).thenReturn(10);
+
+        service.sweepOrphanActiveCrews();
+
+        verify(aggregatePort).markCrewPending(eq(roomId()), eq(userId()), any(LocalDateTime.class));
+        verify(valueOps).set(anyString(), any(), eq(10L), eq(TimeUnit.SECONDS));
+    }
+
+    @Test
+    @DisplayName("#356 살아있는 세션이 있는 crew 는 스윕 대상 아님")
+    void sweep_skips_crew_with_live_session() {
+        CrewData live = activeCrew(false);
+        when(livenessSweepQueryPort.findLivenessSweepCandidates(any(LocalDateTime.class)))
+                .thenReturn(java.util.List.of(live));
+        when(simpUserRegistry.getUser(userId().toString()))
+                .thenReturn(org.mockito.Mockito.mock(org.springframework.messaging.simp.user.SimpUser.class));
+
+        service.sweepOrphanActiveCrews();
+
+        verify(aggregatePort, never()).markCrewPending(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("#356 후보 없음 → no-op")
+    void sweep_noop_when_no_candidates() {
+        when(livenessSweepQueryPort.findLivenessSweepCandidates(any(LocalDateTime.class)))
+                .thenReturn(java.util.List.of());
+
+        service.sweepOrphanActiveCrews();
+
+        verify(aggregatePort, never()).markCrewPending(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("#356 최근 입장 유예: enteredBefore = now - 600s 로 후보를 조회한다")
+    void sweep_queries_with_recent_enter_grace_threshold() {
+        org.mockito.ArgumentCaptor<LocalDateTime> captor =
+                org.mockito.ArgumentCaptor.forClass(LocalDateTime.class);
+        when(livenessSweepQueryPort.findLivenessSweepCandidates(any(LocalDateTime.class)))
+                .thenReturn(java.util.List.of());
+
+        service.sweepOrphanActiveCrews();
+
+        verify(livenessSweepQueryPort).findLivenessSweepCandidates(captor.capture());
+        assertThat(captor.getValue()).isEqualTo(LocalDateTime.now(clock).minusSeconds(600));
     }
 }

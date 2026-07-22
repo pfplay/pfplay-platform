@@ -166,7 +166,8 @@ public class AdminPartyroomQueryService {
                 hostUserId == null ? null : hostUserId.getUid(),
                 extractNickname(hostMember),
                 hostAccount == null ? null : hostAccount.getEmail(),
-                partyroom.getActiveCrewCount(),
+                // #358 크루 수 = 라이브 목록과 동일 소스(activeCrews) — crew_count 컬럼 드리프트 면역
+                activeCrews.size(),
                 partyroom.getLastActivityAt(),
                 partyroom.getStageType(),
                 playbackLimitMinutes,

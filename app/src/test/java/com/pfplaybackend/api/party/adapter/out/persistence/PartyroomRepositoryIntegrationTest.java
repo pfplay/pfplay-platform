@@ -50,7 +50,6 @@ class PartyroomRepositoryIntegrationTest extends AbstractIntegrationTest {
         assertThat(loaded.isTerminated()).isFalse();
         assertThat(loaded.getPartyroomId()).isNotNull();
         assertThat(loaded.getStatus()).isEqualTo(PartyroomStatus.ACTIVE);
-        assertThat(loaded.getActiveCrewCount()).isZero();
         assertThat(loaded.getDisplayFlag()).isEqualTo(DisplayFlag.NORMAL);
         assertThat(loaded.getLastActivityAt()).isNull();
     }

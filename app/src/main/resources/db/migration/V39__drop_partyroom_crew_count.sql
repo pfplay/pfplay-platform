@@ -1,0 +1,11 @@
+-- Issue #360: partyroom.crew_count 캐시 카운터 컬럼 제거.
+--
+-- 배경: ENTER/EXIT 이벤트 구동 카운터는 이벤트 없는 상태 변경(V38 collapse, 운영 수동 SQL,
+-- 과거 재연결 버스트의 중복 ENTER)에서 드리프트한다. #358 에서 어드민 크루 수 불일치
+-- ("목록 3 ↔ 상세 크루 없음")의 근원으로 확인되어, 모든 소비자(고객 로비·신/구 어드민)가
+-- crew 라이브 COUNT 로 전환 완료(#359). 이후 본 컬럼은 쓰기 전용 유지비용 + "그럴듯한 이름의
+-- 죽은 데이터" 함정(애드혹 SQL/BI 오독)만 남아 제거한다. 갱신 경로(PartyroomCounterListener →
+-- PartyroomActivityListener)는 lastActivityAt touch 책임만 유지.
+--
+-- 미래에 대규모 스케일에서 캐시 카운터가 다시 필요해지면 reconcile 동반 설계로 재도입한다.
+alter table partyroom drop column crew_count;

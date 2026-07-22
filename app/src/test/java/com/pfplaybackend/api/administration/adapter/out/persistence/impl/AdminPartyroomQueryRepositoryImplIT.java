@@ -316,6 +316,30 @@ class AdminPartyroomQueryRepositoryImplIT extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("#358 크루 수 = 라이브 COUNT(활성 crew 만) — 비활성 crew 는 미포함")
+    void crewCount_reads_live_count_not_drifted_column() {
+        PartyroomData room = seedRoom(aliceUid, "drift-room", PartyroomStatus.ACTIVE);
+        // (#360 으로 crew_count 컬럼 자체가 제거됨 — 본 테스트는 라이브 COUNT 산정만 잠근다)
+        // 실제 활성 crew 1 + 비활성 1
+        CrewData active = crewRepository.saveAndFlush(CrewData.create(
+                new PartyroomId(room.getId()), new UserId(bobUid), GradeType.LISTENER, null));
+        CrewData exited = crewRepository.saveAndFlush(CrewData.create(
+                new PartyroomId(room.getId()), new UserId(aliceUid), GradeType.LISTENER, null));
+        exited.deactivatePresence();
+        crewRepository.saveAndFlush(exited);
+
+        Page<AdminPartyroomListRow> result = queryRepository.findAdminList(
+                new AdminPartyroomListFilter(null, null, null, null, null),
+                PageRequest.of(0, 10)
+        );
+
+        AdminPartyroomListRow row = result.getContent().stream()
+                .filter(r -> r.partyroomId().equals(room.getId()))
+                .findFirst().orElseThrow();
+        assertThat(row.crewCount()).isEqualTo(1); // 라이브 활성 crew 만 (비활성 제외)
+    }
+
+    @Test
     @DisplayName("페이징 — page 0 size 1 → 컨텐츠 1개, totalElements=2")
     void paging() {
         seedRoom(aliceUid, "room-1", PartyroomStatus.ACTIVE);

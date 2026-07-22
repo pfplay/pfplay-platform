@@ -1,10 +1,18 @@
 name: CI Test
 
 on:
+  # #364 PR 브랜치는 pull_request 1회만 — push '**' 와의 이중 실행(플레이크 노출 2배,
+  # 실측: PR#362 동일 커밋 쌍둥이 잡 중 1개만 실패)을 제거한다.
+  # push 는 장수 브랜치의 머지 후 통합 검증(각 PR CI 는 자기 브랜치 기준이므로 조합 안전망)만 담당.
   push:
-    branches: ['**']
+    branches: [main, develop, release]
   pull_request:
     branches: [main, develop, release]
+
+# 같은 ref 에 연속 push 시 낡은 런 자동 취소 — 장수 브랜치의 머지 후 검증은 취소하지 않는다.
+concurrency:
+  group: ci-test-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
