@@ -93,6 +93,17 @@ public class AdminPartyroomQueryRepositoryImpl implements AdminPartyroomQueryRep
                 .from(dj)
                 .where(dj.partyroomId.id.eq(p.id));
 
+        // #358 크루 수 = 라이브 진실(crew.is_active=1) 상관 서브쿼리. partyroom.crew_count
+        // 컬럼은 ENTER/EXIT 이벤트 구동 카운터라 이벤트 없는 상태 변경(V38 collapse, 운영 수동
+        // SQL 등)에서 드리프트해 상세의 라이브 크루 목록과 불일치했다(목록 3 ↔ 상세 크루 없음).
+        // 고객 로비 목록(PartyroomRepositoryImpl.getCrewDataByPartyroomId)과 동일한 방식.
+        QCrewData liveCrew = new QCrewData("liveCrew");
+        JPQLQuery<Long> activeCrewCountSubquery = JPAExpressions
+                .select(liveCrew.count())
+                .from(liveCrew)
+                .where(liveCrew.partyroomId.id.eq(p.id)
+                        .and(liveCrew.isActive.isTrue()));
+
         // 봇 DJ 카운트: DJ → CrewData(is_active=true 단언, stale DJ 방어) → user_account(is_dummy=true).
         // DjData 에는 userId 가 없어 crew 를 경유한다.
         // 조인키 + is_active 단언은 ActiveDjSnapshotQueryRepositoryImpl 의 canonical 패턴을 그대로 미러링한다.
@@ -115,7 +126,7 @@ public class AdminPartyroomQueryRepositoryImpl implements AdminPartyroomQueryRep
                         p.stageType,
                         ua.userId.uid,
                         profile.bio.nickname,
-                        p.activeCrewCount,
+                        activeCrewCountSubquery,
                         djCountSubquery,
                         pb.isActivated,
                         p.status,
@@ -134,7 +145,7 @@ public class AdminPartyroomQueryRepositoryImpl implements AdminPartyroomQueryRep
                 .leftJoin(cfg).on(cfg.partyroomId.eq(p.id))
                 .where(where);
 
-        applySort(query, pageable.getSort(), p, nicknameLikeExpr);
+        applySort(query, pageable.getSort(), p, nicknameLikeExpr, activeCrewCountSubquery);
 
         Long total = queryFactory
                 .select(p.count())
@@ -151,7 +162,7 @@ public class AdminPartyroomQueryRepositoryImpl implements AdminPartyroomQueryRep
                 .fetch();
 
         List<AdminPartyroomListRow> content = tuples.stream()
-                .map(t -> mapRow(t, p, ua, profile, pb, djCountSubquery, cfg, botDjCountSubquery))
+                .map(t -> mapRow(t, p, ua, profile, pb, activeCrewCountSubquery, djCountSubquery, cfg, botDjCountSubquery))
                 .toList();
 
         return new PageImpl<>(content, pageable, total == null ? 0L : total);
@@ -162,12 +173,13 @@ public class AdminPartyroomQueryRepositoryImpl implements AdminPartyroomQueryRep
                                          QUserAccountData ua,
                                          QProfileData profile,
                                          QPartyroomPlaybackData pb,
+                                         JPQLQuery<Long> activeCrewCountSubquery,
                                          JPQLQuery<Long> djCountSubquery,
                                          QPartyroomVirtualCrewConfigData cfg,
                                          JPQLQuery<Long> botDjCountSubquery) {
         Nickname nickname = t.get(profile.bio.nickname);
         Long djCount = t.get(djCountSubquery);
-        Integer crewCount = t.get(p.activeCrewCount);
+        Long liveCrewCount = t.get(activeCrewCountSubquery); // #358 라이브 COUNT (컬럼 드리프트 면역)
         // 가상 DJ 요약: config row 가 없으면 left join 으로 cfg.status 가 null → virtualCrew=null.
         VirtualCrewStatus vcrewStatus = t.get(cfg.status);
         VirtualCrewSummary virtualCrew = null;
@@ -185,7 +197,7 @@ public class AdminPartyroomQueryRepositoryImpl implements AdminPartyroomQueryRep
                 t.get(p.stageType),
                 t.get(ua.userId.uid),
                 nickname == null ? null : nickname.value(),
-                crewCount == null ? 0 : crewCount,
+                liveCrewCount == null ? 0 : liveCrewCount.intValue(),
                 djCount == null ? 0L : djCount,
                 t.get(pb.isActivated),
                 t.get(p.status),
@@ -233,16 +245,24 @@ public class AdminPartyroomQueryRepositoryImpl implements AdminPartyroomQueryRep
      * caller (rather than silently ignore the requested order).
      */
     private void applySort(JPAQuery<?> query, Sort sort,
-                           QPartyroomData p, StringExpression nicknameExpr) {
+                           QPartyroomData p, StringExpression nicknameExpr,
+                           JPQLQuery<Long> activeCrewCountSubquery) {
         if (sort.isUnsorted()) {
             query.orderBy(p.createdAt.desc());
             return;
         }
         for (Sort.Order order : sort) {
+            // #358 crewCount 정렬도 표시값과 동일한 라이브 서브쿼리 기준 (컬럼 드리프트 면역)
+            if ("crewCount".equals(order.getProperty())) {
+                query.orderBy(new com.querydsl.core.types.OrderSpecifier<>(
+                        order.isAscending() ? com.querydsl.core.types.Order.ASC
+                                            : com.querydsl.core.types.Order.DESC,
+                        activeCrewCountSubquery));
+                continue;
+            }
             ComparableExpressionBase<?> path = switch (order.getProperty()) {
                 case "createdAt"      -> p.createdAt;
                 case "lastActivityAt" -> p.lastActivityAt;
-                case "crewCount"      -> p.activeCrewCount;
                 case "title"          -> p.title;
                 case "hostNickname"   -> nicknameExpr;
                 default -> throw new IllegalArgumentException(

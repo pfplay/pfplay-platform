@@ -181,7 +181,6 @@ class BotPoolQueryRepositoryImplIT extends AbstractIntegrationTest {
                 .stageType(StageType.GENERAL)
                 .hostId(new UserId(HOST_UID))
                 .status(PartyroomStatus.TERMINATED)
-                .activeCrewCount(0)
                 .build();
         Long terminatedRoomId = partyroomRepository.saveAndFlush(terminatedRoom).getId();
 
