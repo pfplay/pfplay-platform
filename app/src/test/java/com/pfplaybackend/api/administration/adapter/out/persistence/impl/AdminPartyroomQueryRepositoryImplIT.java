@@ -316,12 +316,10 @@ class AdminPartyroomQueryRepositoryImplIT extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("#358 크루 수 = 라이브 COUNT — 드리프트된 crew_count 컬럼(3)이 아니라 실제 활성 crew(1)")
+    @DisplayName("#358 크루 수 = 라이브 COUNT(활성 crew 만) — 비활성 crew 는 미포함")
     void crewCount_reads_live_count_not_drifted_column() {
         PartyroomData room = seedRoom(aliceUid, "drift-room", PartyroomStatus.ACTIVE);
-        // 컬럼 드리프트 재현: 이벤트 없는 상태 변경(V38 collapse·운영 수동 SQL)이 남기는 상태.
-        org.springframework.test.util.ReflectionTestUtils.setField(room, "activeCrewCount", 3);
-        partyroomRepository.saveAndFlush(room);
+        // (#360 으로 crew_count 컬럼 자체가 제거됨 — 본 테스트는 라이브 COUNT 산정만 잠근다)
         // 실제 활성 crew 1 + 비활성 1
         CrewData active = crewRepository.saveAndFlush(CrewData.create(
                 new PartyroomId(room.getId()), new UserId(bobUid), GradeType.LISTENER, null));
@@ -338,7 +336,7 @@ class AdminPartyroomQueryRepositoryImplIT extends AbstractIntegrationTest {
         AdminPartyroomListRow row = result.getContent().stream()
                 .filter(r -> r.partyroomId().equals(room.getId()))
                 .findFirst().orElseThrow();
-        assertThat(row.crewCount()).isEqualTo(1); // 컬럼(3) 무시, 라이브 활성 crew 만
+        assertThat(row.crewCount()).isEqualTo(1); // 라이브 활성 crew 만 (비활성 제외)
     }
 
     @Test

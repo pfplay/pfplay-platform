@@ -83,10 +83,7 @@ class AdminPartyroomQueryServiceTest {
                 PlaybackTimeLimit.ofMinutes(5),
                 StageType.GENERAL, HOST_UID
         );
-        // crew_count is package-private/no-setter; force via reflection so we can assert the
-        // list/detail mapping carries it through correctly without standing up a JPA fixture.
         setField(partyroom, "id", 100L);
-        setField(partyroom, "activeCrewCount", 4);
         setField(partyroom, "lastActivityAt", LocalDateTime.of(2026, 4, 27, 10, 0));
     }
 

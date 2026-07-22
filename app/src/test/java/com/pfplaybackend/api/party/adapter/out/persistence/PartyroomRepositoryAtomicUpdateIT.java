@@ -49,82 +49,6 @@ class PartyroomRepositoryAtomicUpdateIT extends AbstractIntegrationTest {
         return partyroomRepository.saveAndFlush(p);
     }
 
-    // ── incrementCrewCount ─────────────────────────────────────────
-
-    @Test
-    @DisplayName("incrementCrewCount — ACTIVE 룸에서 +1, lastActivityAt 갱신, 1 affected")
-    void increment_active() {
-        PartyroomData p = createAndSaveActive(1001L);
-        // DB 컬럼이 DATETIME(0)(초 정밀)이라 MySQL 이 나노를 반올림 → 입력을 초로 절삭해 결정론 비교.
-        LocalDateTime now = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS);
-
-        int affected = partyroomRepository.incrementCrewCount(p.getId(), now);
-
-        assertThat(affected).isEqualTo(1);
-        PartyroomData reloaded = partyroomRepository.findById(p.getId()).orElseThrow();
-        assertThat(reloaded.getActiveCrewCount()).isEqualTo(1);
-        assertThat(reloaded.getLastActivityAt()).isEqualToIgnoringNanos(now);
-    }
-
-    @Test
-    @DisplayName("incrementCrewCount — TERMINATED 룸 거부 (0 affected)")
-    void increment_terminated() {
-        PartyroomData p = createAndSaveTerminated(1002L);
-
-        int affected = partyroomRepository.incrementCrewCount(p.getId(), LocalDateTime.now());
-
-        assertThat(affected).isZero();
-    }
-
-    @Test
-    @DisplayName("incrementCrewCount — 존재하지 않는 id 거부 (0 affected)")
-    void increment_missing() {
-        int affected = partyroomRepository.incrementCrewCount(999_999_999L, LocalDateTime.now());
-        assertThat(affected).isZero();
-    }
-
-    // ── decrementCrewCount ─────────────────────────────────────────
-
-    @Test
-    @DisplayName("decrementCrewCount — 정상 -1")
-    void decrement_normal() {
-        PartyroomData p = createAndSaveActive(1003L);
-        partyroomRepository.incrementCrewCount(p.getId(), LocalDateTime.now());
-        partyroomRepository.incrementCrewCount(p.getId(), LocalDateTime.now());
-
-        LocalDateTime decrementAt = LocalDateTime.now().truncatedTo(ChronoUnit.SECONDS);
-        int affected = partyroomRepository.decrementCrewCount(p.getId(), decrementAt);
-
-        assertThat(affected).isEqualTo(1);
-        PartyroomData reloaded = partyroomRepository.findById(p.getId()).orElseThrow();
-        assertThat(reloaded.getActiveCrewCount()).isEqualTo(1);
-        assertThat(reloaded.getLastActivityAt()).isEqualToIgnoringNanos(decrementAt);
-    }
-
-    @Test
-    @DisplayName("decrementCrewCount — crewCount=0에서 호출하면 음수 안 되고 0 유지 (음수 가드가 0 유지)")
-    void decrement_underflow_guard() {
-        PartyroomData p = createAndSaveActive(1004L);
-
-        int affected = partyroomRepository.decrementCrewCount(p.getId(), LocalDateTime.now());
-
-        // MySQL driver may report 0 or 1 here depending on useAffectedRows flag
-        // — what matters is the underflow guard kept the count at 0.
-        assertThat(affected).isIn(0, 1);
-        PartyroomData reloaded = partyroomRepository.findById(p.getId()).orElseThrow();
-        assertThat(reloaded.getActiveCrewCount()).isZero();
-    }
-
-    @Test
-    @DisplayName("decrementCrewCount — TERMINATED 룸 거부")
-    void decrement_terminated() {
-        PartyroomData p = createAndSaveTerminated(1005L);
-
-        int affected = partyroomRepository.decrementCrewCount(p.getId(), LocalDateTime.now());
-
-        assertThat(affected).isZero();
-    }
-
     // ── touchLastActivity ──────────────────────────────────────────
 
     @Test
@@ -162,39 +86,6 @@ class PartyroomRepositoryAtomicUpdateIT extends AbstractIntegrationTest {
 
         assertThat(affected).isZero();
     }
-
-    // ── resetCrewCount ─────────────────────────────────────────────
-
-    @Test
-    @DisplayName("resetCrewCount — 임의 값 → 0")
-    void reset_normal() {
-        PartyroomData p = createAndSaveActive(1010L);
-        partyroomRepository.incrementCrewCount(p.getId(), LocalDateTime.now());
-        partyroomRepository.incrementCrewCount(p.getId(), LocalDateTime.now());
-        partyroomRepository.incrementCrewCount(p.getId(), LocalDateTime.now());
-
-        int affected = partyroomRepository.resetCrewCount(p.getId());
-
-        assertThat(affected).isEqualTo(1);
-        PartyroomData reloaded = partyroomRepository.findById(p.getId()).orElseThrow();
-        assertThat(reloaded.getActiveCrewCount()).isZero();
-    }
-
-    @Test
-    @DisplayName("resetCrewCount — TERMINATED 룸도 reset 가능 (status 가드 없음)")
-    void reset_terminated() {
-        PartyroomData p = createAndSaveActive(1011L);
-        partyroomRepository.incrementCrewCount(p.getId(), LocalDateTime.now());
-        p.terminate();
-        partyroomRepository.saveAndFlush(p);
-
-        int affected = partyroomRepository.resetCrewCount(p.getId());
-
-        assertThat(affected).isEqualTo(1);
-        assertThat(partyroomRepository.findById(p.getId()).orElseThrow().getActiveCrewCount()).isZero();
-    }
-
-    // ── findNonTerminatedHostRoom (status 시맨틱 변경 회귀) ────────────────
 
     @Test
     @DisplayName("findNonTerminatedHostRoom — TERMINATED 룸은 결과에서 제외")
