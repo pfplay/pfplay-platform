@@ -1,7 +1,7 @@
 # 이벤트 기반 신뢰성 로드맵 — 파생 상태 드리프트와 테스트 플레이키니스의 구조적 해소
 
-작성: 2026-07-22 · 상태: 딥 리서치 2회(주장별 3표 적대검증) 기반 확정안
-근거 라벨: **[✓]** = 1차 출처 3-0 검증 완료 · **[◇]** = 일반 지식(검증 미완, 3차 조사 후보)
+작성: 2026-07-22 · 상태: 딥 리서치 3회(주장별 3표 적대검증 + 3건 직접 원문확인) 기반 확정안
+근거 라벨: **[✓]** = 1차 출처 검증 완료 (◇ 잔여 없음 — 전 축 검증됨)
 
 ## 0. 배경 — 왜 이 로드맵인가
 
@@ -60,7 +60,7 @@ pfplay는 서비스 특성상(실시간 파티룸·presence·재생 동기화) �
    신규 e2e 추가 시 "이 단언이 정말 large여야 하는가"를 리뷰 질문으로 명문화
 4. **비결정 단언 감사**: IT/e2e에서 파생 상태·타이밍 단언(sleep, 짧은 timeout, 이벤트 구동
    카운터류) 전수 grep → 라이브 진실 단언으로 전환 (RaceIT에서 이미 실행한 교정의 일반화)
-5. **기지 플레이크 2건 근본 수정**: Carry 자정(→ Clock 주입 가상시간 [◇], Phase 3의 선발대),
+5. **기지 플레이크 2건 근본 수정**: Carry 자정(→ Clock 주입 가상시간 [✓], Phase 3의 선발대),
    display-board IFrame(대기 조건 교정)
 6. merge queue(P9 [✓])는 현 팀 규모(순차 머지 관행)에선 **보류** — 동시 머지가 늘어나는
    시점에 재검토
@@ -91,20 +91,44 @@ pfplay는 서비스 특성상(실시간 파티룸·presence·재생 동기화) �
    리더 선출(ShedLock=B2). 재연결 스톰은 Slack이 일급 장애모드로 설계한 시나리오 —
    파킹된 인프라 스케일 하네스의 테스트 케이스로 편입
 
-## 5. Phase 3 — 결정론적 테스트 기반 (분기 단위) [◇ 축 전체 검증 미완]
+## 5. Phase 3 — 결정론적 테스트 기반 (분기 단위) [✓ 3차 표적 조사로 검증 완료]
 
-> 이 축은 딥 리서치 2회에서 검증 생존 주장이 없었다(1차: 전멸, 2차: 세션 한도로 미도달).
-> 아래는 일반 지식 기반이며, 착수 전 표적 3차 조사로 근거를 채운다.
+> 3차 조사(2026-07-22, 8개 대상 표적 검증)에서 결정론 시뮬레이션 계열·JVM 도구 전부
+> 1차 출처 3-0 검증. 공통 원리: **비결정론 요소(시계·네트워크·스케줄링)를 통제 대상으로
+> 옮겨야 재현이 가능하다** — "스레드 많이 띄워 오래 돌리기"는 jcstress 공식 문서조차
+> 확률 게임으로 자인하는 모델이다.
 
-1. **Clock 주입 전면화** [◇]: 잔존 wall-clock 소비처(`LocalDateTime.now()` 직호출류) 제거
-   → 가상시간 테스트로 grace/TTL/자정 로직 검증 (Carry 자정 플레이크의 근본 해법)
-2. **동시성 검증의 결정론화** [◇]: "100-스레드 실제 경쟁" 스타일(러너 성능 민감)을
-   Lincheck(모델 체킹으로 인터리빙 통제)/jcstress류로 대체 또는 보강 검토.
-   현행 완화책: 비결정 단언 제거(P4 단언 교정, 완료) + 러너 변동 허용 재시도
-3. **인바리언트 프로퍼티 테스트**: "유저당 활성방 ≤1", "DJ ⇒ crew 활성" 등 불변식을
+1. **Clock 주입 전면화** [✓ 최우선]: `java.time.Clock` Javadoc 원문이 이것을 공식 설계
+   의도로 명시 — *"Best practice for applications is to pass a Clock into any method
+   that requires the current instant… A dependency injection framework is one way…
+   This approach allows an alternative clock, such as fixed or offset to be used during
+   testing."* 모든 DST 계열(FDB/TigerBeetle)이 시계 통제를 결정론의 첫 전제로 둔다
+   (TigerBeetle: *"all non-deterministic parts… are stubbed out. This includes the
+   clock"*). 잔존 `LocalDateTime.now()` 직호출 제거 → 가상시간으로 grace/TTL/자정 검증
+   (Carry 자정 플레이크의 근본 해법)
+2. **동시성 검증의 결정론화** [✓ 도구별 역할 확정]:
+   - **Lincheck(모델 체킹 모드)**: 공유 메모리 접근점에 스레드 전환을 삽입해 **인터리빙을
+     결정론적으로 탐색, 같은 입력이면 같은 결과 + 실패 시 실행 트레이스 제공** (kotlinlang
+     공식 문서 검증). 상태머신/자료구조 수준 레이스(tryEnter 활성화 경쟁 등)의 정석 도구.
+     한계 명시: 순차 일관성 가정이라 약한 메모리 모델 버그는 미커버
+   - **jcstress**: 공식 자기정의가 "JVM·클래스라이브러리·하드웨어의 동시성 **정합성 연구**"
+     하네스 — 애플리케이션 로직용이 아니며 실행 모델이 공식적으로 확률적(긴 실행 권고,
+     단일 통과 무의미). 우리 용도로는 메모리모델 수준 의심 지점에만 한정
+   - **100-스레드 실경쟁 IT의 물리적 한계** [✓]: GitHub hosted runner는 **private 레포
+     ubuntu-latest 기준 2 vCPU/8GB** (공식 사양표) — 100 스레드 경쟁이 로컬 고사양과
+     전혀 다른 스케줄링을 겪는 구조적 이유. 완화(비결정 단언 제거, 완료)를 넘어
+     Lincheck 대체가 목표
+3. **비동기 대기 표준화** [✓]: Awaitility 공식 목적 — *"a small Java DSL for
+   synchronizing asynchronous operations"*, sleep 대신 조건 폴링. 테스트 내 잔존
+   sleep/waitForTimeout류를 조건 대기로 전환하는 표준 도구로 채택
+4. **인바리언트 프로퍼티 테스트**: "유저당 활성방 ≤1", "DJ ⇒ crew 활성" 등 불변식을
    무작위 조작 시퀀스로 검증 — DB 유니크(1호 방어) 위에 테스트(2호 방어)
-4. (영감으로만) FoundationDB/TigerBeetle식 풀 시뮬레이션은 현 규모 대비 과잉 —
-   1~3의 축소 적용이 실리적 등가물
+5. (영감으로만 [✓ 원리 검증]) FDB식 풀 시뮬레이션(단일 스레드 결정론 클러스터, Flow)·
+   TigerBeetle VOPR(시드+커밋 재현, 시간 임의 가속 "1분=며칠")·Antithesis(결정론
+   하이퍼바이저)는 현 규모 대비 과잉 — Antithesis 문서 스스로 FDB식 전면 플러그화를
+   *"generally impractical for systems already in production"*으로 평가. 1~4의 축소
+   적용이 실리적 등가물. (캐비앗: FDB 공식 페이지에 'seed' 단어 부재 — 시드 재현 명문은
+   TigerBeetle/Antithesis만. TigerBeetle 재현은 동일 커밋 조건부)
 
 ## 6. 실행 우선순위 요약
 
@@ -116,8 +140,8 @@ pfplay는 서비스 특성상(실시간 파티룸·presence·재생 동기화) �
 | 4 | 비결정 단언 감사 + 기지 플레이크 2건 | P8 + 실측 | M |
 | 5 | 파생 상태 인벤토리 + 이벤트 2분류 | P5/Fowler [✓] | M |
 | 6 | 아웃박스+멱등 소비자 재개 | canonical [✓] | L |
-| 7 | Clock 주입 전면화 → 가상시간 | [◇] 3차 조사 후 | M |
-| 8 | Lincheck/jcstress 검토 | [◇] 3차 조사 후 | M |
+| 7 | Clock 주입 전면화 → 가상시간 | JDK Javadoc 공식 의도 [✓] | M |
+| 8 | RaceIT류 → Lincheck 모델체킹 대체 | 결정론 탐색+트레이스 [✓] + 러너 2vCPU 실측 | M |
 
 ## 7. 검증 출처 (전 주장 3-0 적대검증 통과)
 
@@ -132,7 +156,15 @@ pfplay는 서비스 특성상(실시간 파티룸·presence·재생 동기화) �
 - Google Testing Blog: 2016/05 flaky-tests-at-google · 2017/04 where-do-our-flaky-tests-come-from · Micco 발표 PDF(research.google)
 - GitHub Docs: merge queue 관리/사용 문서 2건
 - GitLab: handbook quarantine-process · development/testing_guide/unhealthy_tests
+- FoundationDB: apple.github.io/foundationdb/testing.html · Will Wilson Strange Loop 2014(공식 프로그램+녹화)
+- TigerBeetle: github tigerbeetle docs/internals/vopr.md · 2023 blog(시간 가속)
+- Antithesis: antithesis.com/docs/resources/deterministic_simulation_testing
+- OpenJDK jcstress: github.com/openjdk/jcstress README · Shipilëv Hydra 2021 워크숍
+- JetBrains Lincheck: kotlinlang.org/docs/lincheck-testing-strategies · getting-started
+- JDK: java.time.Clock Javadoc(직접 원문확인 — "dependency injection… fixed or offset… during testing")
+- Awaitility: github.com/awaitility/awaitility(직접 원문확인)
+- GitHub runner 사양: docs.github.com runners 레퍼런스(직접 원문확인 — private ubuntu-latest 2vCPU/8GB, public 4vCPU/16GB)
 
 캐비앗: 자사 블로그 특성상 실패 사례 과소보고 가능성 · Slack 현행 내부구조 미확인 ·
 Figma "40만"은 사전 요건이 아닌 롤아웃 시점 관측치 · AWS 스스로 constant-work의 적용
-한계(탄력 웹 플릿) 명시 · [◇] 항목은 착수 전 표적 조사 필수.
+한계(탄력 웹 플릿) 명시 · 3차 조사로 [◇] 전량 해소(잔여 캐비앗은 §5 본문에 명시).
