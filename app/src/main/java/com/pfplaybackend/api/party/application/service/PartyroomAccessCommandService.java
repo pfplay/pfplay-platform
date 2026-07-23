@@ -15,6 +15,7 @@ import com.pfplaybackend.api.party.domain.enums.DjChangeType;
 import com.pfplaybackend.api.party.domain.enums.GradeType;
 import com.pfplaybackend.api.party.domain.event.CrewAccessedEvent;
 import com.pfplaybackend.api.party.domain.event.DjQueueChangedEvent;
+import com.pfplaybackend.api.party.domain.event.SessionSupersededEvent;
 import com.pfplaybackend.api.party.domain.exception.CrewException;
 import com.pfplaybackend.api.party.domain.port.PartyroomAggregatePort;
 import com.pfplaybackend.api.party.domain.service.PartyroomAggregateService;
@@ -320,6 +321,12 @@ public class PartyroomAccessCommandService {
                 log.info("[autoExitPriorActiveRoom] Auto-exit from another room - userId={}, exitingRoomId={}, enteringRoomId={}",
                         userId, activeRoomInfo.id(), target.getId());
                 exitInternal(new PartyroomId(activeRoomInfo.id()), userId);
+                // #369 멀티 디바이스 승계 — 밀려난 유저에게 SESSION_SUPERSEDED 알림을 보내기 위한 이벤트.
+                // exit 는 위에서 서버가 이미 완결했고, 이 이벤트/알림은 순수 UX 신호다. AFTER_COMMIT 리스너가
+                // 소비하므로 exit 이 커밋된 뒤에만 발송된다(서버 권위). tryEnter/enterByHost 공용 helper 라
+                // 양 진입 경로의 밀어냄을 모두 커버한다.
+                eventPublisher.publishEvent(new SessionSupersededEvent(
+                        userId, new PartyroomId(activeRoomInfo.id()), target, clock.millis()));
             }
         }
         return optActiveRoomInfo;
