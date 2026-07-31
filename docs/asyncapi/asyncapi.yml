@@ -35,14 +35,19 @@ servers:
     host: localhost:8080
     pathname: /ws
     protocol: stomp
-    description: 로컬 개발 서버
+    description: 로컬 (docker-compose.local.yml)
   dev:
-    host: dev.pfplay.io
+    host: localhost:9090
     pathname: /ws
     protocol: stomp
-    description: 개발 서버
+    description: dev VM — compose 가 호스트 9090 으로 노출한다. 공개 호스트명은 배포 설정 참조.
+  staging:
+    host: stg-api.pfplay.xyz
+    pathname: /ws
+    protocol: stomp
+    description: 검증 서버
   prod:
-    host: api.pfplay.io
+    host: api.pfplay.xyz
     pathname: /ws
     protocol: stomp
     description: 운영 서버
@@ -109,6 +114,31 @@ channels:
         $ref: '#/components/messages/CrewPenalized'
       CrewProfileChanged:
         $ref: '#/components/messages/CrewProfileChanged'
+      RoomTerminated:
+        $ref: '#/components/messages/RoomTerminated'
+      RoomSuspended:
+        $ref: '#/components/messages/RoomSuspended'
+      RoomRestored:
+        $ref: '#/components/messages/RoomRestored'
+
+  systemAnnouncements:
+    address: /sub/system/announcements
+    title: 시스템 공지 · 점검
+    description: |
+      전역 공지와 점검 라이프사이클이 이 채널로 브로드캐스트됩니다.
+      파티룸과 무관하게 접속 중인 모든 클라이언트가 구독합니다.
+
+      ⚠️ 이 채널의 페이로드는 파티룸 브로드캐스트와 **공통 메타데이터 규약을 공유하지 않습니다**
+      (`partyroomId` / `id` / `timestamp` 없음). 구분자는 `eventType` 하나뿐입니다.
+    messages:
+      AnnouncementPublished:
+        $ref: '#/components/messages/AnnouncementPublished'
+      AnnouncementCancelled:
+        $ref: '#/components/messages/AnnouncementCancelled'
+      MaintenanceStarted:
+        $ref: '#/components/messages/MaintenanceStarted'
+      MaintenanceEnded:
+        $ref: '#/components/messages/MaintenanceEnded'
 
   # ─────────────────────────────────────────
   # Server → Client (Subscribe, Private)
@@ -252,6 +282,70 @@ operations:
     summary: 크루의 프로필(닉네임, 아바타)이 변경되었을 때 수신합니다.
     messages:
       - $ref: '#/channels/partyroomBroadcast/messages/CrewProfileChanged'
+
+  receiveRoomTerminated:
+    action: receive
+    channel:
+      $ref: '#/channels/partyroomBroadcast'
+    title: 파티룸 강제 종료 수신
+    summary: 운영자가 파티룸을 종료했을 때 수신합니다.
+    messages:
+      - $ref: '#/channels/partyroomBroadcast/messages/RoomTerminated'
+
+  receiveRoomSuspended:
+    action: receive
+    channel:
+      $ref: '#/channels/partyroomBroadcast'
+    title: 파티룸 정지 수신
+    summary: 운영자가 파티룸을 정지했을 때 수신합니다.
+    messages:
+      - $ref: '#/channels/partyroomBroadcast/messages/RoomSuspended'
+
+  receiveRoomRestored:
+    action: receive
+    channel:
+      $ref: '#/channels/partyroomBroadcast'
+    title: 파티룸 복구 수신
+    summary: 운영자가 정지된 파티룸을 복구했을 때 수신합니다.
+    messages:
+      - $ref: '#/channels/partyroomBroadcast/messages/RoomRestored'
+
+  # Server → Client (System Announcements)
+  receiveAnnouncementPublished:
+    action: receive
+    channel:
+      $ref: '#/channels/systemAnnouncements'
+    title: 공지 발행 수신
+    summary: 새 공지가 발행되었을 때 수신합니다.
+    messages:
+      - $ref: '#/channels/systemAnnouncements/messages/AnnouncementPublished'
+
+  receiveAnnouncementCancelled:
+    action: receive
+    channel:
+      $ref: '#/channels/systemAnnouncements'
+    title: 공지 취소 수신
+    summary: 공지가 취소되었을 때 수신합니다.
+    messages:
+      - $ref: '#/channels/systemAnnouncements/messages/AnnouncementCancelled'
+
+  receiveMaintenanceStarted:
+    action: receive
+    channel:
+      $ref: '#/channels/systemAnnouncements'
+    title: 점검 시작 수신
+    summary: 점검이 ACTIVE 로 전이했을 때 수신합니다.
+    messages:
+      - $ref: '#/channels/systemAnnouncements/messages/MaintenanceStarted'
+
+  receiveMaintenanceEnded:
+    action: receive
+    channel:
+      $ref: '#/channels/systemAnnouncements'
+    title: 점검 종료 수신
+    summary: 점검이 완료되었을 때 수신합니다. 오버레이를 해제해야 합니다.
+    messages:
+      - $ref: '#/channels/systemAnnouncements/messages/MaintenanceEnded'
 
   receiveHeartbeat:
     action: receive
@@ -498,6 +592,93 @@ components:
               offsetY: 0.3
               scale: 1.2
 
+    RoomTerminated:
+      name: RoomTerminated
+      title: 파티룸 강제 종료
+      summary: 운영자가 파티룸을 종료함
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/RoomModerationPayload'
+      examples:
+        - name: 신고 누적 종료
+          payload:
+            partyroomId: 10
+            eventType: ROOM_TERMINATED
+            id: "550e8400-e29b-41d4-a716-446655440010"
+            timestamp: 1709964213000
+            administratorId: 1
+            reason: "신고 누적"
+
+    RoomSuspended:
+      name: RoomSuspended
+      title: 파티룸 정지
+      summary: 운영자가 파티룸을 정지함
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/RoomModerationPayload'
+
+    RoomRestored:
+      name: RoomRestored
+      title: 파티룸 복구
+      summary: 운영자가 정지된 파티룸을 복구함 (reason 없음)
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/RoomRestoredPayload'
+
+    # ─── Server → Client (System Announcements) ───
+    AnnouncementPublished:
+      name: AnnouncementPublished
+      title: 공지 발행
+      summary: 새 공지 발행 브로드캐스트
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/AnnouncementPayload'
+      examples:
+        - name: 점검 예고
+          payload:
+            eventType: ANNOUNCEMENT_PUBLISHED
+            announcementId: 12
+            type: MAINTENANCE_NOTICE
+            severity: WARNING
+            titleKo: "정기 점검 안내"
+            titleEn: "Scheduled maintenance"
+            messageKo: "8월 1일 02:00~04:00 점검이 진행됩니다."
+            messageEn: "Maintenance on Aug 1, 02:00–04:00."
+            scheduledStartAt: "2026-08-01T02:00:00"
+            scheduledEndAt: "2026-08-01T04:00:00"
+            expiresAt: null
+            sentAt: "2026-07-31T09:00:00"
+
+    AnnouncementCancelled:
+      name: AnnouncementCancelled
+      title: 공지 취소
+      summary: 공지 취소 브로드캐스트 (축약 페이로드)
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/AnnouncementCancelledPayload'
+
+    MaintenanceStarted:
+      name: MaintenanceStarted
+      title: 점검 시작
+      summary: 점검이 ACTIVE 로 전이 — 전체 공지 페이로드와 동일 형태
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/AnnouncementPayload'
+
+    MaintenanceEnded:
+      name: MaintenanceEnded
+      title: 점검 종료
+      summary: 점검 완료 — 클라이언트는 점검 오버레이를 해제해야 한다
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/MaintenanceEndedPayload'
+      examples:
+        - name: 자동 완료
+          payload:
+            eventType: MAINTENANCE_ENDED
+            announcementId: 12
+            completedAt: "2026-08-01T04:00:00"
+
     # ─── Server → Client (Private) ───
     HeartbeatResponse:
       name: HeartbeatResponse
@@ -546,6 +727,91 @@ components:
         - CREW_GRADE_CHANGED
         - CREW_PENALIZED
         - CREW_PROFILE_CHANGED
+        - ROOM_TERMINATED
+        - ROOM_SUSPENDED
+        - ROOM_RESTORED
+
+    # ─── Room Moderation Payloads ───
+    RoomModerationPayload:
+      allOf:
+        - $ref: '#/components/schemas/BroadcastMetadata'
+        - type: object
+          properties:
+            administratorId:
+              type: integer
+              format: int64
+              description: 조치를 수행한 운영자 ID
+            reason:
+              type: string
+              nullable: true
+              description: 조치 사유
+          required: [administratorId]
+
+    RoomRestoredPayload:
+      allOf:
+        - $ref: '#/components/schemas/BroadcastMetadata'
+        - type: object
+          properties:
+            administratorId:
+              type: integer
+              format: int64
+              description: 복구를 수행한 운영자 ID
+          required: [administratorId]
+
+    # ─── System Announcement Payloads ───
+    # ⚠️ 파티룸 브로드캐스트와 달리 partyroomId/id/timestamp 공통 메타데이터가 없다.
+    AnnouncementPayload:
+      type: object
+      description: 공지 발행 · 점검 시작 공통 페이로드
+      properties:
+        eventType:
+          type: string
+          enum: [ANNOUNCEMENT_PUBLISHED, MAINTENANCE_STARTED]
+        announcementId:
+          type: integer
+          format: int64
+        type:
+          type: string
+          description: 공지 종류 (예 MAINTENANCE_NOTICE)
+        severity:
+          type: string
+        titleKo: { type: string }
+        titleEn: { type: string }
+        messageKo: { type: string }
+        messageEn: { type: string }
+        scheduledStartAt: { type: string, format: date-time, nullable: true }
+        scheduledEndAt: { type: string, format: date-time, nullable: true }
+        expiresAt: { type: string, format: date-time, nullable: true }
+        sentAt: { type: string, format: date-time, nullable: true }
+      required: [eventType, announcementId, type, severity]
+
+    AnnouncementCancelledPayload:
+      type: object
+      properties:
+        eventType:
+          type: string
+          const: ANNOUNCEMENT_CANCELLED
+        announcementId:
+          type: integer
+          format: int64
+        cancelledAt:
+          type: string
+          format: date-time
+      required: [eventType, announcementId, cancelledAt]
+
+    MaintenanceEndedPayload:
+      type: object
+      properties:
+        eventType:
+          type: string
+          const: MAINTENANCE_ENDED
+        announcementId:
+          type: integer
+          format: int64
+        completedAt:
+          type: string
+          format: date-time
+      required: [eventType, announcementId, completedAt]
 
     # ─── Client → Server Payloads ───
     IncomingGroupChatPayload:
