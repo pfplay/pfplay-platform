@@ -1,5 +1,8 @@
 # PFPlay WebSocket 이벤트 설계 검수 리포트
 
+> ⚠️ **2026-03-09 시점 검수 리포트다** (확인: 2026-07-31). 지적 사항의 반영 여부는 개별 확인이
+> 필요하다. 스펙 본문 `asyncapi.yml` 은 2026-07-31 에 갱신됐다(시스템 공지 채널·룸 조치 이벤트 추가).
+
 > **검수 기준**: AsyncAPI 3.0 Best Practices, CloudEvents v1.0 Spec, STOMP Protocol Convention, 실무 이벤트 설계 가이드
 > **작성일**: 2026-03-09
 

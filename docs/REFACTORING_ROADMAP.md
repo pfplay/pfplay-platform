@@ -1,10 +1,87 @@
-# DDD 리팩토링 로드맵
+# 리팩토링 로드맵
 
-> **참고 (2026-04-20 갱신)**: 본 문서는 **과거 성숙도 리팩토링(Phase A-F) 완료 기록**이다. 40.0/40 달성된 시점의 스냅샷이며 **현 시점에서 진행 중인 작업을 나타내지 않는다**.
-> 현재 및 향후 작업(어드민 플랫폼, Avatar BC 등)은 `docs/superpowers/specs/2026-04-19-admin-platform-roadmap.md`를 참조한다.
-> 이전 리팩토링(Phase 0~8, 모듈 재구조화, ERD 정규화)은 `docs/archive/`에 아카이빙됨.
+> **이 문서의 구조 (2026-07-31 개편)**
+> - **[1부 — 현행 로드맵](#1부--현행-로드맵-2026-07-31-기준)**: 지금 열려 있는 작업.
+> - **[2부 — 과거 기록](#2부--과거-기록-ddd-성숙도-phase-af-2026-02완료)**: 2026-02 DDD 성숙도
+>   Phase A~F 완주 기록. **현재 진행 중인 작업이 아니다.** 보존 목적으로만 남긴다.
 
-> 2026-02-21 성숙도 재평가에서 도출된 잔존 과제를 체계화한 장기 리팩토링 계획.
+---
+
+# 1부 — 현행 로드맵 (2026-07-31 기준)
+
+## 1.1 이벤트 기반 신뢰성 로드맵 (주축)
+
+원문: [`docs/superpowers/specs/2026-07-22-event-driven-reliability-roadmap.md`](superpowers/specs/2026-07-22-event-driven-reliability-roadmap.md)
+
+핵심 명제는 하나다.
+
+> **이벤트는 최적화이고, 정확성은 reconcile 이 담당한다.**
+> edge-triggered 로 상태를 유지하면 이벤트가 유실되는 순간 상태가 영구히 어긋나며, 이벤트는
+> 반드시 유실된다.
+
+2026-07 의 사건 4건(crew 다중활성 wedge #349, 신호 유실 유령 crew #356, `crew_count` 드리프트
+#358/#360, RaceIT CI 플레이크)이 전부 이 한 구조에서 나왔다는 관찰이 출발점이다.
+
+### 이미 반영된 것
+
+| 구현 | 원칙 |
+|---|---|
+| playback/dj reconcile 크론 (#308, PR #309) | level-triggered reconcile — [ADR 008](adr/008-self-healing-reconcile-cron.md) |
+| presence liveness 스윕 (#356, PR #357) | 신호 유실 유령의 level-triggered 치유 — [ADR 009](adr/009-presence-liveness-sweep.md) |
+| 캐시 카운터 제거 → 라이브 COUNT (#358/#360, V39) | 파생 상태는 매번 진실에서 재계산 |
+| `uk_crew_active_user` DB 유니크 (V38) | 애플리케이션 밖(스토리지)의 최종 방어선 |
+| CI 이중 트리거 제거 (#364, PR #365) | 플레이크 노출면 절반 |
+
+### Phase 1 잔여 (테스트 신뢰성)
+
+- [ ] **드리프트-0 지표** — 파생 상태 불일치를 수치로 보이게 한다.
+- [ ] **플레이크 대장 + 기한부 격리** — 재시도로 통과한 테스트를 기록하고, 반복 플레이크는
+      기한 있는 `@Tag("quarantine")` 로 분리(기한 없는 격리는 은폐다).
+- [ ] **비결정 단언 감사** — IT/e2e 의 타이밍·파생 상태 단언을 라이브 진실 단언으로 전환.
+- [ ] **Carry 자정 플레이크 근본 수정** — `Clock` 주입으로 가상 시간화.
+
+### Phase 2 이후
+
+이벤트 인벤토리·2분류, 아웃박스 도입까지가 원문의 범위다. 상세는 원문 §4 이후 참조.
+
+## 1.2 파킹된 설계 (Approved · 코드 미착수)
+
+착수 시 재설계 없이 바로 구현 가능한 상태로 승인된 설계들이다.
+
+> ⚠️ **아래 설계 문서들은 아직 이 레포에 커밋돼 있지 않다**(작업 세션 산출물로만 존재).
+> 착수하는 PR 이 해당 스펙을 `docs/superpowers/specs/` 로 함께 들여오는 것을 원칙으로 한다.
+
+| 주제 | 요지 |
+|---|---|
+| 도메인 이벤트 아웃박스 | AFTER_COMMIT + sweeper, at-least-once. 신뢰성 로드맵 Phase 3 과 같은 목표 |
+| DJ 회전 슬롯 FSM | 파생 `SlotState` 도입, 마이그레이션 0 |
+| 재생 세션 명시 FSM | `isActivated` 불리언 → state enum |
+| 재생 동기화 정합성 프로토콜 | `elapsedMs` + `serverTime` 기반 |
+| vdj-reconcile 다중 인스턴스 | FlapGuardStore / ShedLock 두 안 |
+| 소셜 파운데이션(팔로우·public_id·알림센터) | 착수 시 `public_id` 마이그레이션이 분리된 첫 PR |
+
+## 1.3 코드 정리 백로그 (이슈 있음)
+
+| 항목 | 이슈 | 요약 |
+|---|---|---|
+| enum 영속화 4원화 해소 | [#333](https://github.com/pfplay/pfplay-platform/issues/333) | ORDINAL 암묵 사용 제거 → `VARCHAR` + `@JdbcTypeCode` 통일. 각 단계 독립 PR |
+| Presence ↔ AccessCommand 순환 | [#228](https://github.com/pfplay/pfplay-platform/issues/228) | 이벤트 기반 `forceOffline` 으로 생성자 순환 해소 |
+| 탈퇴 닉네임 익명화 | [#339](https://github.com/pfplay/pfplay-platform/issues/339) | UNIQUE 제약상 익명화 외 해법 없음 |
+| 토큰 만료 graceful 재인증 | [#306](https://github.com/pfplay/pfplay-platform/issues/306) | refresh/슬라이딩 갱신 + WS inbound 만료 검증 |
+| 배포 readiness 판정 | [#342](https://github.com/pfplay/pfplay-platform/issues/342) | 타임아웃 = 실패로 처리, 헬스 경로 교체 |
+
+### 구조 정리 (이슈 없음, 관측 사항)
+
+- `api.admin.*` 와 `api.administration.*` 의 공존. 신규는 `administration` 으로 가고 있으나
+  구 표면(데모·시뮬레이션)이 남아 있다. 이관 시점 미정.
+
+---
+
+# 2부 — 과거 기록: DDD 성숙도 Phase A~F (2026-02 완료)
+
+> **아래는 완료 기록이다.** 2026-02-22 시점에 40.0/40 을 달성하며 종료됐고, 그 이후의 작업은
+> 1부를 본다. 점수·표는 당시 스냅샷이며 현재 코드 상태의 평가가 아니다.
+> 이전 리팩토링(Phase 0~8, 모듈 재구조화, ERD 정규화)은 `docs/archive/` 에 있다.
 
 **현재 종합 점수**: 40.0/40 (100%)
 **목표 종합 점수**: 40.0/40 (100%) ✅ 달성

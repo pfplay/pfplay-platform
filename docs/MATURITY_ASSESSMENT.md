@@ -1,5 +1,19 @@
 # DDD 성숙도 평가 기준 및 현황
 
+> ⚠️ **2026-02-22 시점 스냅샷이다** (확인: 2026-07-31). 이후 재평가하지 않았다.
+> **채점 기준(1~5점 척도)은 여전히 유효**하므로 재평가 시 그대로 쓰면 되지만,
+> **점수는 당시 코드 기준**이며 현재 상태를 나타내지 않는다.
+>
+> 평가 이후 들어온 주요 변화 — 재평가 시 이 부분들이 새로 채점 대상이다:
+> - BC 신설: **Virtual Crew**, **Notification**(Web Push). Administration 대폭 확장
+> - 자가치유 레이어 신설: reconcile 크론 4종 ([ADR 008](adr/008-self-healing-reconcile-cron.md),
+>   [ADR 009](adr/009-presence-liveness-sweep.md))
+> - 테스트 하네스 전면 교체: 실 Flyway 스키마 기반 통합 테스트
+>   ([ADR 007](adr/007-integration-test-flyway-harness.md)) + `:app:integrationTest` 분리
+> - 스키마 V16 → V39, DB 불변식(`uk_crew_active_user`) 도입
+>
+> 현행 로드맵은 [`REFACTORING_ROADMAP.md`](REFACTORING_ROADMAP.md) 1부를 본다.
+
 > PFPlay Backend의 DDD 구현 수준을 정량 평가하기 위한 항목별 기준점 문서.
 > 각 차원(1~8)에 대해 1~5점 척도를 정의하고, 현재 수준과 목표 수준을 기록한다.
 
