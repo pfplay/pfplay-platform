@@ -114,6 +114,8 @@ channels:
         $ref: '#/components/messages/CrewPenalized'
       CrewProfileChanged:
         $ref: '#/components/messages/CrewProfileChanged'
+      PartyroomNoticeUpdated:
+        $ref: '#/components/messages/PartyroomNoticeUpdated'
       RoomTerminated:
         $ref: '#/components/messages/RoomTerminated'
       RoomSuspended:
@@ -282,6 +284,15 @@ operations:
     summary: 크루의 프로필(닉네임, 아바타)이 변경되었을 때 수신합니다.
     messages:
       - $ref: '#/channels/partyroomBroadcast/messages/CrewProfileChanged'
+
+  receivePartyroomNoticeUpdated:
+    action: receive
+    channel:
+      $ref: '#/channels/partyroomBroadcast'
+    title: 파티룸 공지 변경 수신
+    summary: 파티룸 공지가 등록·수정·해제되었을 때 수신합니다.
+    messages:
+      - $ref: '#/channels/partyroomBroadcast/messages/PartyroomNoticeUpdated'
 
   receiveRoomTerminated:
     action: receive
@@ -592,6 +603,22 @@ components:
               offsetY: 0.3
               scale: 1.2
 
+    PartyroomNoticeUpdated:
+      name: PartyroomNoticeUpdated
+      title: 파티룸 공지 변경
+      summary: 파티룸 공지 내용이 변경됨. 빈 문자열은 공지 해제를 의미함
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/PartyroomNoticeUpdatedPayload'
+      examples:
+        - name: 공지 변경
+          payload:
+            partyroomId: 10
+            eventType: PARTYROOM_NOTICE_UPDATED
+            id: "550e8400-e29b-41d4-a716-44665544000a"
+            timestamp: 1709964213000
+            content: "매너를 지켜주세요."
+
     RoomTerminated:
       name: RoomTerminated
       title: 파티룸 강제 종료
@@ -727,6 +754,7 @@ components:
         - CREW_GRADE_CHANGED
         - CREW_PENALIZED
         - CREW_PROFILE_CHANGED
+        - PARTYROOM_NOTICE_UPDATED
         - ROOM_TERMINATED
         - ROOM_SUSPENDED
         - ROOM_RESTORED
@@ -1016,6 +1044,22 @@ components:
             avatar:
               $ref: '#/components/schemas/AvatarProfile'
           required: [crewId, nickname, avatar]
+
+    PartyroomNoticeUpdatedPayload:
+      type: object
+      description: 파티룸 공지 변경 이벤트
+      allOf:
+        - $ref: '#/components/schemas/BroadcastMetadata'
+        - type: object
+          properties:
+            eventType:
+              type: string
+              const: PARTYROOM_NOTICE_UPDATED
+            content:
+              type: string
+              maxLength: 255
+              description: 변경된 공지 내용. 빈 문자열이면 공지 해제
+          required: [content]
 
     # ─── Shared Schemas ───
     CrewInfo:

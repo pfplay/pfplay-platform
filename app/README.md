@@ -63,7 +63,7 @@
 | `PlaybackCommandService` / `PlaybackQueryService` | 재생 제어 / 조회 |
 | `PlaybackReactionCommandService` · `…PostProcessCommandService` · `…QueryService` | 반응 처리·후처리·조회 |
 | `CrewGradeCommandService` · `CrewPenaltyCommandService`/`QueryService` · `CrewBlockCommandService`/`QueryService` | 등급·제재·차단 |
-| `PartyroomNoticeQueryService` | 공지 |
+| `PartyroomNoticeCommandService` / `PartyroomNoticeQueryService` | 공지 수정 / 조회 |
 | `UserSessionRegistry` | 사용자 세션 레지스트리 |
 | `chat/` · `lock/` | 채팅 서비스, 분산락 실행기 |
 
@@ -73,6 +73,7 @@
 `AdminCrewPenalizedEvent` · `AdminCrewPenaltyReleasedEvent` · `DjQueueChangedEvent` ·
 `PlaybackStartedEvent` · `PlaybackDeactivatedEvent` · `ReactionMotionChangedEvent` ·
 `ReactionAggregationChangedEvent` · `PartyroomCreatedEvent` · `PartyroomClosedEvent` ·
+`PartyroomNoticeUpdatedEvent` ·
 `PartyroomTerminatedEvent` · `PartyroomSuspendedEvent` · `PartyroomRestoredEvent` ·
 `PartyroomMetaUpdatedEvent` · `PartyroomDisplayFlagChangedEvent`
 

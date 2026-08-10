@@ -61,6 +61,7 @@ public class RedisListenerConfig {
                 entry("crew_penalized", CrewPenaltyMessage.class),
                 entry("crew_profile_changed", CrewProfileMessage.class),
                 entry("dj_queue_changed", DjQueueChangeMessage.class),
+                entry("partyroom_notice_updated", PartyroomNoticeUpdatedMessage.class),
                 entry("playback_started", PlaybackStartMessage.class)
         ).forEach((topic, type) ->
                 container.addMessageListener(

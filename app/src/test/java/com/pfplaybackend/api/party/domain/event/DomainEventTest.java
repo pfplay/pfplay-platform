@@ -73,10 +73,12 @@ class DomainEventTest {
         DomainEvent closed = new PartyroomClosedEvent(new PartyroomId(1L), new UserId(1L), TEST_ROOM);
         DomainEvent deactivated = new PlaybackDeactivatedEvent(new PartyroomId(1L), new PlaybackId(10L), new CrewId(5L));
         DomainEvent queueChanged = new DjQueueChangedEvent(new PartyroomId(1L), DjChangeType.ENQUEUE, new CrewId(1L));
+        DomainEvent noticeUpdated = new PartyroomNoticeUpdatedEvent(new PartyroomId(1L), "notice");
 
         // then
         assertThat(closed.getEventType()).isEqualTo("PartyroomClosedEvent");
         assertThat(deactivated.getEventType()).isEqualTo("PlaybackDeactivatedEvent");
         assertThat(queueChanged.getEventType()).isEqualTo("DjQueueChangedEvent");
+        assertThat(noticeUpdated.getEventType()).isEqualTo("PartyroomNoticeUpdatedEvent");
     }
 }

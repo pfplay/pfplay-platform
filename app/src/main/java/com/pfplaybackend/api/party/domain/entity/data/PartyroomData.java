@@ -38,6 +38,8 @@ import java.time.LocalDateTime;
 @Entity
 public class PartyroomData extends BaseEntity {
 
+    public static final int MAX_NOTICE_CONTENT_LENGTH = 255;
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "partyroom_id")
@@ -144,6 +146,16 @@ public class PartyroomData extends BaseEntity {
         this.linkDomain = linkDomain;
         this.playbackTimeLimit = timeLimit;
         return this;
+    }
+
+    /**
+     * 파티룸 공지를 교체한다. 빈 문자열은 현재 공지 해제를 의미한다.
+     */
+    public void updateNotice(String content) {
+        if (content == null || content.length() > MAX_NOTICE_CONTENT_LENGTH) {
+            throw ExceptionCreator.create(PartyroomException.INVALID_NOTICE_CONTENT);
+        }
+        this.noticeContent = content;
     }
 
     // ── State Inspection ──
