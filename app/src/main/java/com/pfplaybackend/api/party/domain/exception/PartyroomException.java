@@ -14,7 +14,8 @@ public enum PartyroomException implements DomainException {
     ALREADY_HOST("PTR-006", "이미 다른 파티룸의 호스트입니다", ErrorType.FORBIDDEN),
     ILLEGAL_STATE_TRANSITION("PTR-007", "허용되지 않은 파티룸 상태 전이입니다", ErrorType.CONFLICT),
     LINK_DOMAIN_ALREADY_EXISTS("PTR-008", "이미 사용 중인 파티룸 주소입니다", ErrorType.CONFLICT),
-    MAIN_STAGE_PROTECTED("PTR-009", "메인 스테이지는 보호된 시스템 파티룸입니다", ErrorType.CONFLICT);
+    MAIN_STAGE_PROTECTED("PTR-009", "메인 스테이지는 보호된 시스템 파티룸입니다", ErrorType.CONFLICT),
+    INVALID_NOTICE_CONTENT("PTR-010", "공지사항은 255자 이하여야 합니다", ErrorType.BAD_REQUEST);
 
     private final String errorCode;
     private final String message;

@@ -13,6 +13,7 @@ public enum MessageTopic {
     PLAYBACK_STARTED,
     DJ_QUEUE_CHANGED,
     CHAT_MESSAGE_SENT,
+    PARTYROOM_NOTICE_UPDATED,
     PARTYROOM_CLOSED,
     ROOM_TERMINATED,    // PR 8 — admin terminate
     ROOM_SUSPENDED,     // PR 8 — admin suspend

@@ -5,6 +5,7 @@ import com.pfplaybackend.api.common.domain.enums.AvatarCompositionType;
 import com.pfplaybackend.api.common.domain.enums.MessageTopic;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.party.adapter.in.listener.message.DjQueueChangeMessage;
+import com.pfplaybackend.api.party.adapter.in.listener.message.PartyroomNoticeUpdatedMessage;
 import com.pfplaybackend.api.party.adapter.out.persistence.CrewRepository;
 import com.pfplaybackend.api.party.application.dto.dj.DjWithProfileDto;
 import com.pfplaybackend.api.party.application.port.out.UserProfileQueryPort;
@@ -139,6 +140,22 @@ class DomainEventRedisRelayTest {
         DjQueueChangeMessage published = captor.getValue();
         assertThat(published.changeType()).isEqualTo(DjChangeType.ROTATE);
         assertThat(published.playbackTimeLimitMinutes()).isNull();
+    }
+
+    @Test
+    @DisplayName("on(PartyroomNoticeUpdatedEvent) — 변경된 공지 메시지를 발행한다")
+    void onPartyroomNoticeUpdatedEventPublishesMessage() {
+        PartyroomNoticeUpdatedEvent event = new PartyroomNoticeUpdatedEvent(partyroomId, "new notice");
+
+        domainEventRedisRelay.on(event);
+
+        ArgumentCaptor<PartyroomNoticeUpdatedMessage> captor =
+                ArgumentCaptor.forClass(PartyroomNoticeUpdatedMessage.class);
+        verify(messagePublisher).publish(
+                eq(MessageTopic.PARTYROOM_NOTICE_UPDATED.topic()), captor.capture());
+        assertThat(captor.getValue().partyroomId()).isEqualTo(partyroomId);
+        assertThat(captor.getValue().eventType()).isEqualTo(MessageTopic.PARTYROOM_NOTICE_UPDATED);
+        assertThat(captor.getValue().content()).isEqualTo("new notice");
     }
 
     @Test

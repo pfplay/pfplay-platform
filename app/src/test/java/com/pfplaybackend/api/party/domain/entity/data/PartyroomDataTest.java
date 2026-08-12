@@ -2,6 +2,7 @@ package com.pfplaybackend.api.party.domain.entity.data;
 
 import com.pfplaybackend.api.common.domain.event.DomainEvent;
 import com.pfplaybackend.api.common.domain.value.UserId;
+import com.pfplaybackend.api.common.exception.http.BadRequestException;
 import com.pfplaybackend.api.common.exception.http.ConflictException;
 import com.pfplaybackend.api.common.exception.http.ForbiddenException;
 import com.pfplaybackend.api.party.domain.enums.DisplayFlag;
@@ -48,6 +49,35 @@ class PartyroomDataTest {
             assertThat(p.getNoticeContent()).isEmpty();
             assertThat(p.getTitle()).isEqualTo("Test Room");
             assertThat(p.getStageType()).isEqualTo(StageType.GENERAL);
+        }
+    }
+
+    @Nested
+    @DisplayName("updateNotice()")
+    class UpdateNotice {
+        @Test
+        @DisplayName("공지 내용을 교체한다")
+        void updatesContent() {
+            PartyroomData p = newPartyroom();
+            p.updateNotice("새 공지");
+            assertThat(p.getNoticeContent()).isEqualTo("새 공지");
+        }
+
+        @Test
+        @DisplayName("빈 문자열은 공지 해제로 허용한다")
+        void clearsContent() {
+            PartyroomData p = newPartyroom();
+            p.updateNotice("새 공지");
+            p.updateNotice("");
+            assertThat(p.getNoticeContent()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("null 또는 255자 초과는 거부한다")
+        void rejectsInvalidContent() {
+            PartyroomData p = newPartyroom();
+            assertThatThrownBy(() -> p.updateNotice(null)).isInstanceOf(BadRequestException.class);
+            assertThatThrownBy(() -> p.updateNotice("x".repeat(256))).isInstanceOf(BadRequestException.class);
         }
     }
 
