@@ -5,6 +5,10 @@ on:
   pull_request:
     types: [closed]
     branches: [release]
+    # 문서만 바뀐 머지는 배포하지 않는다 (#374).
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
 
 env:
   IMAGE: ghcr.io/pfplay/pfplay-api
