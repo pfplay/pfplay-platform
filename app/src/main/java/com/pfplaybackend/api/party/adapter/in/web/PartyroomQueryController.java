@@ -4,6 +4,7 @@ import com.pfplaybackend.api.common.ApiCommonResponse;
 import com.pfplaybackend.api.common.config.swagger.ApiErrorCodes;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.party.adapter.in.web.payload.response.info.QueryDjQueueResponse;
+import com.pfplaybackend.api.party.adapter.in.web.payload.response.info.QueryMyActivePartyroomResponse;
 import com.pfplaybackend.api.party.adapter.in.web.payload.response.info.QueryPartyroomListResponse;
 import com.pfplaybackend.api.party.adapter.in.web.payload.response.info.QueryPartyroomListResponse.PartyroomElement;
 import com.pfplaybackend.api.party.application.dto.partyroom.PartyroomWithCrewDto;
@@ -59,6 +60,21 @@ public class PartyroomQueryController {
     public ResponseEntity<ApiCommonResponse<PartyroomSummaryResult>> getPartyroomSummaryInfo(
             @Parameter(description = "파티룸 ID") @PathVariable Long partyroomId) {
         return ResponseEntity.ok().body(ApiCommonResponse.success(partyroomQueryService.getSummaryInfo(new PartyroomId(partyroomId))));
+    }
+
+    /**
+     * 현재 로그인 사용자가 활성 crew로 속한 파티룸을 조회한다 (스냅샷).
+     * → 재연결 resync가 기억하던 방을 되훔침(재입장)하는 대신, 서버 권위 스냅샷으로 분기하기 위한 API.
+     *   멀티 디바이스 승계(new-session-wins)에서 밀려난 브라우저의 세션 되훔침(핑퐁)을 차단한다. (#477)
+     */
+    @Operation(summary = "내 활성 파티룸 스냅샷 조회", description = "현재 로그인 사용자가 활성 crew로 속한 파티룸을 조회합니다. 재연결 시 클라이언트는 기억하던 방을 재주장하는 대신 이 스냅샷으로 분기합니다. 활성 방이 있으면 200 + 스냅샷, 없으면 204 No Content.")
+    @SecurityRequirement(name = "cookieAuth")
+    @GetMapping("/me/active")
+    public ResponseEntity<ApiCommonResponse<QueryMyActivePartyroomResponse>> getMyActivePartyroom() {
+        // 활성 방 없음을 200 + {data:null} 로 주면 web 인터셉터가 래퍼를 벗기지 못해 오역된다 → 204 로 표현.
+        return partyroomQueryService.getMyActivePartyroom()
+                .map(dto -> ResponseEntity.ok(ApiCommonResponse.success(QueryMyActivePartyroomResponse.from(dto))))
+                .orElseGet(() -> ResponseEntity.noContent().build());
     }
 
     @Operation(summary = "DJ 큐 조회", description = "특정 파티룸의 DJ 큐 정보를 조회합니다. 현재 재생 중인 DJ, 대기 중인 DJ 목록, 큐 상태 등을 포함합니다.")
