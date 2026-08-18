@@ -15,6 +15,7 @@ import com.pfplaybackend.api.party.domain.enums.GradeType;
 import com.pfplaybackend.api.party.domain.enums.PartyroomStatus;
 import com.pfplaybackend.api.party.domain.event.CrewAccessedEvent;
 import com.pfplaybackend.api.party.domain.event.CrewGradeChangedEvent;
+import com.pfplaybackend.api.party.domain.event.SessionSupersededEvent;
 import com.pfplaybackend.api.party.domain.port.PartyroomAggregatePort;
 import com.pfplaybackend.api.party.domain.service.PartyroomAggregateService;
 import com.pfplaybackend.api.party.domain.value.CountryCode;
@@ -194,8 +195,10 @@ class PartyroomAccessCommandServiceTest {
         // when — 예외 없이 정상 실행되어야 함
         var result = partyroomAccessCommandService.tryEnter(newRoomId, null);
 
-        // then — EXIT event (from old room exit) + ENTER event (new room) = exactly 2 publish calls
-        verify(eventPublisher, times(2)).publishEvent(any(Object.class));
+        // then — EXIT(기존 룸 exit) + SESSION_SUPERSEDED(#369 밀어냄 알림) + ENTER(새 룸) = 3 publish
+        verify(eventPublisher, times(3)).publishEvent(any(Object.class));
+        // #369 밀려난 유저 알림 이벤트가 발행되어야 한다 (다른 룸으로의 전환)
+        verify(eventPublisher).publishEvent(any(SessionSupersededEvent.class));
         // inactive→active 재활성(transitioned) → reactivated=true (#402)
         assertThat(result.reactivated()).isTrue();
     }
