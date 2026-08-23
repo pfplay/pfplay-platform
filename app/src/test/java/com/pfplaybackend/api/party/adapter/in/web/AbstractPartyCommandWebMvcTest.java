@@ -39,6 +39,7 @@ abstract class AbstractPartyCommandWebMvcTest {
     @MockBean protected CrewBlockCommandService crewBlockCommandService;
     @MockBean protected CrewGradeCommandService crewGradeCommandService;
     @MockBean protected PartyroomCommandService partyroomCommandService;
+    @MockBean protected PartyroomNoticeCommandService partyroomNoticeCommandService;
     @MockBean protected PartyroomAccessCommandService partyroomAccessCommandService;
     @MockBean protected PlaybackCommandService playbackCommandService;
     @MockBean protected PlaybackReactionCommandService playbackReactionCommandService;
