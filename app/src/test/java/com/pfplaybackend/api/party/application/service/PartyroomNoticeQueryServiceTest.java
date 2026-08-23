@@ -1,6 +1,5 @@
 package com.pfplaybackend.api.party.application.service;
 
-import com.pfplaybackend.api.common.config.redis.RedisMessagePublisher;
 import com.pfplaybackend.api.common.domain.value.UserId;
 import com.pfplaybackend.api.common.exception.http.NotFoundException;
 import com.pfplaybackend.api.party.domain.entity.data.PartyroomData;
@@ -27,7 +26,6 @@ import static org.mockito.Mockito.when;
 class PartyroomNoticeQueryServiceTest {
 
     @Mock PartyroomAggregatePort aggregatePort;
-    @Mock RedisMessagePublisher messagePublisher;
     @InjectMocks PartyroomNoticeQueryService partyroomNoticeQueryService;
 
     @Test

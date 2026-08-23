@@ -57,6 +57,12 @@ public class DomainEventRedisRelay {
     }
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void on(PartyroomNoticeUpdatedEvent event) {
+        messagePublisher.publish(MessageTopic.PARTYROOM_NOTICE_UPDATED.topic(),
+                PartyroomNoticeUpdatedMessage.create(event.getPartyroomId(), event.getContent()));
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void on(PlaybackStartedEvent event) {
         PlaybackStartMessage message = new PlaybackStartMessage(event.getPartyroomId(), MessageTopic.PLAYBACK_STARTED,
                 UUID.randomUUID().toString(), System.currentTimeMillis(),
