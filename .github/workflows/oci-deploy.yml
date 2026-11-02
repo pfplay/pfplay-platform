@@ -3,7 +3,8 @@ name: OCI deploy (platform)
 # 기존 배포 워크플로(GCP · 팀원 서버)는 그대로 두고, 그 빌드가 끝난 뒤 이어서 돈다.
 #  1. 기존 빌드가 올린 amd64 이미지(:dev · :stg · :prod)에 arm64 이미지를 더해 같은 태그를 멀티 아키텍처로 다시 만든다.
 #     → GCP(amd64)와 OCI(arm64)가 같은 태그를 쓴다. 커밋 고정 태그 :sha-<commit> 도 함께 붙인다.
-#  2. OCI VM 의 self-hosted runner 가 :sha-<commit> 으로 app 만 교체한다 (deploy/oci/deploy.sh).
+#  2. OCI VM 의 self-hosted runner 가 :sha-<commit> 으로 app 을 교체하고, pytube 는 deploy/oci/streaming-versions.env
+#     에 고정된 pfplay-streaming 태그로 맞춘다 (deploy/oci/deploy.sh).
 # 수동 실행(workflow_dispatch)은 이미 올라간 :sha-<commit> 을 다시 배포한다 — 롤백 · 첫 배포용.
 on:
   workflow_run:
@@ -179,6 +180,7 @@ jobs:
           mkdir -p "$dir"
           install -m 0644 deploy/oci/compose.yml "$dir/compose.yml"
           install -m 0755 deploy/oci/deploy.sh "$dir/deploy.sh"
+          install -m 0644 deploy/oci/streaming-versions.env "$dir/streaming-versions.env"
           umask 077 && printf '%s\n' "$DOT_ENV" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' > "$dir/.env"
 
       # 기존 배포와 같은 PACKAGE_ACCESS_TOKEN 으로 로그인 — pfplay-api 와 다른 저장소의 pfplay-streaming 이미지를 모두 받는다.
@@ -187,8 +189,8 @@ jobs:
           GHCR_TOKEN: ${{ secrets.PACKAGE_ACCESS_TOKEN }}
         run: echo "$GHCR_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
-      - name: Replace app
-        run: /opt/pfplay/${{ needs.resolve.outputs.env }}/deploy.sh ${{ needs.resolve.outputs.env }} app sha-${{ needs.resolve.outputs.sha }}
+      - name: Replace app and align pytube
+        run: /opt/pfplay/${{ needs.resolve.outputs.env }}/deploy.sh ${{ needs.resolve.outputs.env }} sha-${{ needs.resolve.outputs.sha }}
 
       - name: Logout
         if: always()
