@@ -181,8 +181,11 @@ jobs:
           install -m 0755 deploy/oci/deploy.sh "$dir/deploy.sh"
           umask 077 && printf '%s\n' "$DOT_ENV" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' > "$dir/.env"
 
+      # 기존 배포와 같은 PACKAGE_ACCESS_TOKEN 으로 로그인 — pfplay-api 와 다른 저장소의 pfplay-streaming 이미지를 모두 받는다.
       - name: Login to GHCR
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+        env:
+          GHCR_TOKEN: ${{ secrets.PACKAGE_ACCESS_TOKEN }}
+        run: echo "$GHCR_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
       - name: Replace app
         run: /opt/pfplay/${{ needs.resolve.outputs.env }}/deploy.sh ${{ needs.resolve.outputs.env }} app sha-${{ needs.resolve.outputs.sha }}
