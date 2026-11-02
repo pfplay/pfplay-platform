@@ -1,0 +1,211 @@
+name: OCI deploy (platform)
+
+# OCI(ARM) VM 배포. 기존 배포 워크플로(GCP · 팀원 서버)와 서로 참조 없이 독립 실행된다.
+# 브랜치에 들어간 코드가 곧 배포된 코드가 되도록 세 환경 모두 push 로 트리거한다 (PR 머지도 push 다).
+#   develop push → dev   (dev-app-01 · pfplay-dev)
+#   release push → stg   (dev-app-01 · pfplay-stg)
+#   main push    → prod  (prod-app-01 · pfplay-prod)
+#   수동 실행     → 지정한 환경 · 커밋 (롤백 · 재배포)
+#
+# 이미지는 amd64 · arm64 를 각자 네이티브로 빌드해 ghcr.io/pfplay/pfplay-api:sha-<commit> (멀티 아키텍처)로 올린다.
+# :dev · :stg · :prod 태그는 기존 워크플로만 쓰고 여기서는 건드리지 않는다 (동시 실행 시 덮어쓰기 방지).
+# 같은 커밋 이미지가 이미 있으면 빌드를 건너뛰고 바로 배포한다.
+on:
+  push:
+    branches: [develop, release, main]
+    # 기존 배포 워크플로와 같이, 문서만 바뀐 push 는 배포하지 않는다 (#374). 필요하면 수동 실행.
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  workflow_dispatch:
+    inputs:
+      env:
+        description: 배포 환경
+        type: choice
+        options: [dev, stg, prod]
+        required: true
+      sha:
+        description: 배포할 커밋 (브랜치 · 태그 이름도 가능)
+        required: true
+
+env:
+  IMAGE: ghcr.io/pfplay/pfplay-api
+
+concurrency:
+  group: >-
+    oci-deploy-${{ inputs.env || (github.ref_name == 'main' && 'prod')
+    || (github.ref_name == 'release' && 'stg') || 'dev' }}
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    name: Resolve target
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      env: ${{ steps.r.outputs.env }}
+      sha: ${{ steps.r.outputs.sha }}
+      build: ${{ steps.r.outputs.build }}
+      runner: ${{ steps.r.outputs.runner }}
+    steps:
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: r
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          IN_ENV: ${{ inputs.env }}
+          IN_SHA: ${{ inputs.sha }}
+        run: |
+          if [ "$EVENT" = workflow_dispatch ]; then
+            env="$IN_ENV"; sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$IN_SHA" --jq .sha)
+          else
+            case "$GITHUB_REF_NAME" in
+              main) env=prod ;;
+              release) env=stg ;;
+              develop) env=dev ;;
+            esac
+            sha="$GITHUB_SHA"
+          fi
+          if docker buildx imagetools inspect "$IMAGE:sha-$sha" >/dev/null 2>&1; then build=false; else build=true; fi
+          if [ "$env" = prod ]; then runner=oci-prod; else runner=oci-dev; fi
+          echo "env=$env sha=$sha build=$build runner=$runner"
+          { echo "env=$env"; echo "sha=$sha"; echo "build=$build"; echo "runner=$runner"; } >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.arch }} image
+    needs: resolve
+    if: needs.resolve.outputs.build == 'true'
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: gradle
+
+      - name: Build jar
+        run: chmod +x ./gradlew && ./gradlew :app:bootJar -x test
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push by digest
+        id: push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./app/Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          provenance: false
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=oci-${{ matrix.arch }}
+          cache-to: type=gha,scope=oci-${{ matrix.arch }},mode=max
+
+      - name: Save digest
+        run: echo "${{ steps.push.outputs.digest }}" > digest-${{ matrix.arch }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.arch }}
+          path: digest-${{ matrix.arch }}
+          retention-days: 1
+
+  manifest:
+    name: Tag multi-arch image
+    needs: [resolve, build]
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digest-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create :sha-<commit>
+        env:
+          SHA: ${{ needs.resolve.outputs.sha }}
+        run: |
+          docker buildx imagetools create -t "$IMAGE:sha-$SHA" "$IMAGE@$(cat digest-amd64)" "$IMAGE@$(cat digest-arm64)"
+          docker buildx imagetools inspect "$IMAGE:sha-$SHA"
+
+  deploy:
+    name: Deploy to OCI (${{ needs.resolve.outputs.env }})
+    needs: [resolve, manifest]
+    # 이미지가 이미 있어 build · manifest 를 건너뛴 경우에도 진행한다.
+    if: >-
+      always() && needs.resolve.result == 'success' &&
+      (needs.manifest.result == 'success' || needs.resolve.outputs.build == 'false')
+    runs-on: [self-hosted, '${{ needs.resolve.outputs.runner }}']
+    environment: oci-${{ needs.resolve.outputs.env }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          sparse-checkout: deploy/oci
+
+      - name: Sync deploy files and .env
+        env:
+          ENV: ${{ needs.resolve.outputs.env }}
+          # 기존 워크플로가 쓰는 저장소 시크릿 DOT_ENV 와 구분되는 Environment 시크릿.
+          DOT_ENV: ${{ secrets.OCI_DOT_ENV }}
+        run: |
+          dir="/opt/pfplay/$ENV"
+          mkdir -p "$dir"
+          install -m 0644 deploy/oci/compose.yml "$dir/compose.yml"
+          install -m 0755 deploy/oci/deploy.sh "$dir/deploy.sh"
+          install -m 0644 deploy/oci/streaming-versions.env "$dir/streaming-versions.env"
+          umask 077 && printf '%s\n' "$DOT_ENV" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' > "$dir/.env"
+
+      # 기존 배포와 같은 PACKAGE_ACCESS_TOKEN 으로 로그인 — pfplay-api 와 다른 저장소의 pfplay-streaming 이미지를 모두 받는다.
+      - name: Login to GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.PACKAGE_ACCESS_TOKEN }}
+        run: echo "$GHCR_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Replace app and align pytube
+        run: /opt/pfplay/${{ needs.resolve.outputs.env }}/deploy.sh ${{ needs.resolve.outputs.env }} sha-${{ needs.resolve.outputs.sha }}
+
+      - name: Logout
+        if: always()
+        run: docker logout ghcr.io
