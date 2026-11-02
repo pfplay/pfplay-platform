@@ -1,20 +1,18 @@
 name: OCI deploy (platform)
 
-# OCI(ARM) VM 배포. 기존 배포 워크플로(GCP · 팀원 서버)와 같은 조건으로, 서로 참조 없이 독립 실행된다.
-#   develop 으로 향한 PR 머지 → dev   (dev-app-01 · pfplay-dev)
-#   release 로 향한 PR 머지   → stg   (dev-app-01 · pfplay-stg)
-#   main push                → prod  (prod-app-01 · pfplay-prod)
-#   수동 실행                 → 지정한 환경 · 커밋 (롤백 · 재배포)
+# OCI(ARM) VM 배포. 기존 배포 워크플로(GCP · 팀원 서버)와 서로 참조 없이 독립 실행된다.
+# 브랜치에 들어간 코드가 곧 배포된 코드가 되도록 세 환경 모두 push 로 트리거한다 (PR 머지도 push 다).
+#   develop push → dev   (dev-app-01 · pfplay-dev)
+#   release push → stg   (dev-app-01 · pfplay-stg)
+#   main push    → prod  (prod-app-01 · pfplay-prod)
+#   수동 실행     → 지정한 환경 · 커밋 (롤백 · 재배포)
 #
 # 이미지는 amd64 · arm64 를 각자 네이티브로 빌드해 ghcr.io/pfplay/pfplay-api:sha-<commit> (멀티 아키텍처)로 올린다.
 # :dev · :stg · :prod 태그는 기존 워크플로만 쓰고 여기서는 건드리지 않는다 (동시 실행 시 덮어쓰기 방지).
 # 같은 커밋 이미지가 이미 있으면 빌드를 건너뛰고 바로 배포한다.
 on:
-  pull_request:
-    types: [closed]
-    branches: [develop, release]
   push:
-    branches: [main]
+    branches: [develop, release, main]
   workflow_dispatch:
     inputs:
       env:
@@ -31,15 +29,13 @@ env:
 
 concurrency:
   group: >-
-    oci-deploy-${{ inputs.env || (github.event_name == 'push' && 'prod')
-    || (github.base_ref == 'release' && 'stg') || 'dev' }}
+    oci-deploy-${{ inputs.env || (github.ref_name == 'main' && 'prod')
+    || (github.ref_name == 'release' && 'stg') || 'dev' }}
   cancel-in-progress: false
 
 jobs:
   resolve:
     name: Resolve target
-    # 머지 없이 닫힌 PR 은 무시한다.
-    if: github.event_name != 'pull_request' || github.event.pull_request.merged
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -61,18 +57,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT: ${{ github.event_name }}
-          BASE: ${{ github.base_ref }}
-          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
           IN_ENV: ${{ inputs.env }}
           IN_SHA: ${{ inputs.sha }}
         run: |
-          case "$EVENT" in
-            pull_request)
-              if [ "$BASE" = release ]; then env=stg; else env=dev; fi
-              sha="$MERGE_SHA" ;;
-            push) env=prod; sha="$GITHUB_SHA" ;;
-            workflow_dispatch) env="$IN_ENV"; sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$IN_SHA" --jq .sha) ;;
-          esac
+          if [ "$EVENT" = workflow_dispatch ]; then
+            env="$IN_ENV"; sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$IN_SHA" --jq .sha)
+          else
+            case "$GITHUB_REF_NAME" in
+              main) env=prod ;;
+              release) env=stg ;;
+              develop) env=dev ;;
+            esac
+            sha="$GITHUB_SHA"
+          fi
           if docker buildx imagetools inspect "$IMAGE:sha-$sha" >/dev/null 2>&1; then build=false; else build=true; fi
           if [ "$env" = prod ]; then runner=oci-prod; else runner=oci-dev; fi
           echo "env=$env sha=$sha build=$build runner=$runner"
