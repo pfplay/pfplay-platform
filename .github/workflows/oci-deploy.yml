@@ -177,7 +177,7 @@ jobs:
         run: |
           dir="/opt/pfplay/$ENV"
           mkdir -p "$dir"
-          install -m 0644 deploy/oci/docker-compose.yml "$dir/docker-compose.yml"
+          install -m 0644 deploy/oci/compose.yml "$dir/compose.yml"
           install -m 0755 deploy/oci/deploy.sh "$dir/deploy.sh"
           umask 077 && printf '%s\n' "$DOT_ENV" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' > "$dir/.env"
 

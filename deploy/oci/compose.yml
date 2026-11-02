@@ -1,0 +1,81 @@
+# OCI(ARM) 배포용 compose — dev / stg / prod 가 같은 파일을 쓰고 프로젝트 이름(-p pfplay-{env})으로 분리한다.
+# 기존 docker-compose.{env}.yml(GCP · 팀원 서버용)과는 독립적이며, 실행은 deploy/oci/deploy.sh 로만 한다.
+#
+# VM 의 /opt/pfplay/{env}/ 에 이 파일 · deploy.sh · .env · versions.env 가 놓인다.
+#   .env          : 앱 환경변수 (GitHub Environment oci-{env} 의 OCI_DOT_ENV secret 에서 생성)
+#   versions.env  : APP_TAG · STREAMING_TAG · APP_PORT (deploy.sh 가 관리)
+#
+# 외부 노출 없음 — app 은 127.0.0.1:${APP_PORT} 에만 바인딩된다. 공개 경로(Cloudflare 터널)는 별도 구성.
+services:
+  mysql:
+    image: mysql:8.0.30
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?required in .env}
+      MYSQL_DATABASE: pfplay
+      MYSQL_USER: ${DB_USERNAME:-pfplay}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?required in .env}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+09:00
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_ROOT_PASSWORD\" mysqladmin ping -h localhost -u root"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 1g
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--notify-keyspace-events", "Ex"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 256m
+    restart: unless-stopped
+
+  # pfplay-streaming 은 자체 워크플로가 이미지를 올리고 이 서비스만 교체한다 (STREAMING_TAG).
+  pytube:
+    image: ghcr.io/pfplay/pfplay-streaming:${STREAMING_TAG:?set by deploy.sh}
+    environment:
+      API_KEY: ${PYTUBE_API_KEY:?required in .env}
+      API_SECRET: ${PYTUBE_API_SECRET:?required in .env}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9000/hello', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    mem_limit: 256m
+    restart: unless-stopped
+
+  app:
+    image: ghcr.io/pfplay/pfplay-api:${APP_TAG:?set by deploy.sh}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/pfplay?characterEncoding=UTF-8&useUnicode=true&serverTimezone=Asia/Seoul
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      PYTUBE_URI: http://pytube:9000
+      # dev · stg 가 한 VM 을 나눠 쓰므로 힙을 명시한다 (미지정 시 VM 메모리의 25%).
+      JAVA_TOOL_OPTIONS: -Xmx${APP_HEAP:-1g}
+    ports:
+      - "127.0.0.1:${APP_PORT:?set by deploy.sh}:8080"
+    mem_limit: ${APP_MEM_LIMIT:-2g}
+    restart: unless-stopped
+
+volumes:
+  mysql-data:
+  redis-data:

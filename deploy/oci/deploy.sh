@@ -2,7 +2,7 @@
 # OCI VM 에서 한 서비스(app 또는 pytube)만 새 이미지로 교체한다. 나머지 컨테이너는 유지.
 # Usage: deploy.sh {dev|stg|prod} {app|pytube} <image-tag>
 #
-# /opt/pfplay/{env}/ 아래의 docker-compose.yml · .env 를 사용하고, 배포된 태그는 versions.env 에 남긴다.
+# /opt/pfplay/{env}/ 아래의 compose.yml · .env 를 사용하고, 배포된 태그는 versions.env 에 남긴다.
 # 그래서 platform 배포가 pytube 버전을, streaming 배포가 app 버전을 되돌리지 않는다.
 # 기존 scripts/deploy.sh 와 달리 readiness 타임아웃이면 실패(exit 1)로 끝난다 (#342).
 set -euo pipefail
@@ -19,7 +19,7 @@ case "$SERVICE" in app|pytube) ;; *) echo "unknown service: $SERVICE" >&2; exit 
 
 DIR="${PFPLAY_DEPLOY_ROOT:-/opt/pfplay}/$ENV"
 cd "$DIR"
-[[ -f .env && -f docker-compose.yml ]] || { echo "[oci-deploy:$ENV] missing .env or docker-compose.yml in $DIR" >&2; exit 1; }
+[[ -f .env && -f compose.yml ]] || { echo "[oci-deploy:$ENV] missing .env or compose.yml in $DIR" >&2; exit 1; }
 
 # versions.env 갱신 — 처음 배포라면 아직 없는 쪽 태그는 기본값으로 시작한다.
 touch versions.env
@@ -28,7 +28,7 @@ grep -q '^STREAMING_TAG=' versions.env || set_version STREAMING_TAG "${DEFAULT_S
 set_version APP_PORT "$PORT"
 if [[ "$SERVICE" == app ]]; then set_version APP_TAG "$TAG"; else set_version STREAMING_TAG "$TAG"; fi
 
-COMPOSE=(docker compose -p "pfplay-$ENV" --env-file .env --env-file versions.env -f docker-compose.yml)
+COMPOSE=(docker compose -p "pfplay-$ENV" --env-file .env --env-file versions.env -f compose.yml)
 
 if ! grep -q '^APP_TAG=' versions.env; then
   echo "[oci-deploy:$ENV] app has never been deployed here; recorded $SERVICE=$TAG and stopping." >&2
