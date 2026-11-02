@@ -4,6 +4,10 @@ plugins {
 
 def queryDslVersion = '5.0.0'
 
+// Spring Boot 3.2.3 BOM 은 Testcontainers 1.19.x 를 고정한다. 그 버전의 docker-java 는 Docker API 1.32 로 접속해
+// 최신 Docker 엔진(최소 API 1.40~1.44)에서 거부된다. 1.21.4 부터 새 API 로 접속하므로 BOM 속성으로 코어까지 함께 올린다.
+ext['testcontainers.version'] = '1.21.4'
+
 dependencies {
 	implementation project(':common')
 	implementation project(':user')
@@ -34,8 +38,8 @@ dependencies {
 	testImplementation 'org.springframework.security:spring-security-test'
 	testImplementation 'org.assertj:assertj-core:3.24.2'
 	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
-	testImplementation 'org.testcontainers:mysql:1.19.6'
-	testImplementation 'org.testcontainers:junit-jupiter:1.19.6'
+	testImplementation 'org.testcontainers:mysql'
+	testImplementation 'org.testcontainers:junit-jupiter'
 
 	// OAuth2 + JWT
 	implementation 'com.auth0:java-jwt:4.4.0'
