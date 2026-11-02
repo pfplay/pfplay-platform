@@ -4,6 +4,11 @@ name: Deploy to prod (GCP VM via IAP)
 on:
   push:
     branches: [main]
+    # 문서만 바뀐 push 는 배포하지 않는다 (#374).
+    # 코드가 섞인 릴리스 머지는 그대로 배포된다.
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
 
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
