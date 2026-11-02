@@ -1,18 +1,18 @@
 name: OCI deploy (platform)
 
-# 기존 배포 워크플로(GCP · 팀원 서버)는 그대로 두고, 그 빌드가 끝난 뒤 이어서 돈다.
-#  1. 기존 빌드가 올린 amd64 이미지(:dev · :stg · :prod)에 arm64 이미지를 더해 같은 태그를 멀티 아키텍처로 다시 만든다.
-#     → GCP(amd64)와 OCI(arm64)가 같은 태그를 쓴다. 커밋 고정 태그 :sha-<commit> 도 함께 붙인다.
-#  2. OCI VM 의 self-hosted runner 가 :sha-<commit> 으로 app 을 교체하고, pytube 는 deploy/oci/streaming-versions.env
-#     에 고정된 pfplay-streaming 태그로 맞춘다 (deploy/oci/deploy.sh).
-# 수동 실행(workflow_dispatch)은 이미 올라간 :sha-<commit> 을 다시 배포한다 — 롤백 · 첫 배포용.
+# OCI(ARM) VM 배포. 기존 배포 워크플로(GCP · 팀원 서버)와 서로 참조 없이 독립 실행된다.
+# 브랜치에 들어간 코드가 곧 배포된 코드가 되도록 세 환경 모두 push 로 트리거한다 (PR 머지도 push 다).
+#   develop push → dev   (dev-app-01 · pfplay-dev)
+#   release push → stg   (dev-app-01 · pfplay-stg)
+#   main push    → prod  (prod-app-01 · pfplay-prod)
+#   수동 실행     → 지정한 환경 · 커밋 (롤백 · 재배포)
+#
+# 이미지는 amd64 · arm64 를 각자 네이티브로 빌드해 ghcr.io/pfplay/pfplay-api:sha-<commit> (멀티 아키텍처)로 올린다.
+# :dev · :stg · :prod 태그는 기존 워크플로만 쓰고 여기서는 건드리지 않는다 (동시 실행 시 덮어쓰기 방지).
+# 같은 커밋 이미지가 이미 있으면 빌드를 건너뛰고 바로 배포한다.
 on:
-  workflow_run:
-    workflows:
-      - Deploy to dev (this machine)
-      - Deploy to stg (this machine)
-      - Deploy to prod (GCP VM via IAP)
-    types: [completed]
+  push:
+    branches: [develop, release, main]
   workflow_dispatch:
     inputs:
       env:
@@ -21,17 +21,16 @@ on:
         options: [dev, stg, prod]
         required: true
       sha:
-        description: 배포할 커밋 (ghcr.io/pfplay/pfplay-api:sha-<commit> 이 있어야 함)
+        description: 배포할 커밋 (브랜치 · 태그 이름도 가능)
         required: true
 
 env:
   IMAGE: ghcr.io/pfplay/pfplay-api
 
-# workflow_run 은 기본 브랜치(main)에 있는 이 파일로 실행된다 — dev · stg 트리거도 main 머지 후부터 동작.
 concurrency:
   group: >-
-    oci-deploy-${{ inputs.env || (contains(github.event.workflow_run.name, 'prod') && 'prod')
-    || (contains(github.event.workflow_run.name, 'stg') && 'stg') || 'dev' }}
+    oci-deploy-${{ inputs.env || (github.ref_name == 'main' && 'prod')
+    || (github.ref_name == 'release' && 'stg') || 'dev' }}
   cancel-in-progress: false
 
 jobs:
@@ -39,50 +38,58 @@ jobs:
     name: Resolve target
     runs-on: ubuntu-latest
     permissions:
-      actions: read
+      contents: read
+      packages: read
     outputs:
       env: ${{ steps.r.outputs.env }}
       sha: ${{ steps.r.outputs.sha }}
       build: ${{ steps.r.outputs.build }}
       runner: ${{ steps.r.outputs.runner }}
     steps:
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - id: r
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT: ${{ github.event_name }}
-          RUN_NAME: ${{ github.event.workflow_run.name }}
-          RUN_ID: ${{ github.event.workflow_run.id }}
-          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
           IN_ENV: ${{ inputs.env }}
           IN_SHA: ${{ inputs.sha }}
         run: |
           if [ "$EVENT" = workflow_dispatch ]; then
-            env="$IN_ENV"; sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$IN_SHA" --jq .sha); build=false
+            env="$IN_ENV"; sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/$IN_SHA" --jq .sha)
           else
-            case "$RUN_NAME" in
-              "Deploy to dev (this machine)") env=dev ;;
-              "Deploy to stg (this machine)") env=stg ;;
-              "Deploy to prod (GCP VM via IAP)") env=prod ;;
+            case "$GITHUB_REF_NAME" in
+              main) env=prod ;;
+              release) env=stg ;;
+              develop) env=dev ;;
             esac
-            sha="$RUN_SHA"
-            # 배포 단계 실패(GCP · 팀원 서버 사정)와 무관하게, 기존 빌드 job 이 성공했을 때만 이어간다.
-            built=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs" --jq '[.jobs[] | select(.name == "Build & push image") | .conclusion] | first')
-            [ "$built" = success ] && build=true || build=skip
+            sha="$GITHUB_SHA"
           fi
-          [ "$env" = prod ] && runner=oci-prod || runner=oci-dev
+          if docker buildx imagetools inspect "$IMAGE:sha-$sha" >/dev/null 2>&1; then build=false; else build=true; fi
+          if [ "$env" = prod ]; then runner=oci-prod; else runner=oci-dev; fi
           echo "env=$env sha=$sha build=$build runner=$runner"
           { echo "env=$env"; echo "sha=$sha"; echo "build=$build"; echo "runner=$runner"; } >> "$GITHUB_OUTPUT"
 
-  build-arm64:
-    name: Build arm64 image
+  build:
+    name: Build ${{ matrix.arch }} image
     needs: resolve
     if: needs.resolve.outputs.build == 'true'
-    runs-on: ubuntu-24.04-arm
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       packages: write
-    outputs:
-      digest: ${{ steps.push.outputs.digest }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -113,19 +120,33 @@ jobs:
         with:
           context: .
           file: ./app/Dockerfile
-          platforms: linux/arm64
+          platforms: linux/${{ matrix.arch }}
           provenance: false
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=gha,scope=oci-arm64
-          cache-to: type=gha,scope=oci-arm64,mode=max
+          cache-from: type=gha,scope=oci-${{ matrix.arch }}
+          cache-to: type=gha,scope=oci-${{ matrix.arch }},mode=max
+
+      - name: Save digest
+        run: echo "${{ steps.push.outputs.digest }}" > digest-${{ matrix.arch }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.arch }}
+          path: digest-${{ matrix.arch }}
+          retention-days: 1
 
   manifest:
-    name: Merge amd64 + arm64 under one tag
-    needs: [resolve, build-arm64]
+    name: Tag multi-arch image
+    needs: [resolve, build]
     runs-on: ubuntu-latest
     permissions:
       packages: write
     steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digest-*
+          merge-multiple: true
+
       - uses: docker/setup-buildx-action@v3
 
       - name: Login to GHCR
@@ -135,35 +156,24 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create multi-arch tags
+      - name: Create :sha-<commit>
         env:
-          TAG: ${{ needs.resolve.outputs.env }}
           SHA: ${{ needs.resolve.outputs.sha }}
-          ARM64: ${{ needs.build-arm64.outputs.digest }}
         run: |
-          # 기존 빌드가 방금 올린 :$TAG 에서 amd64 이미지 digest 를 꺼낸다 (단일 매니페스트 · 인덱스 모두 처리).
-          raw=$(docker buildx imagetools inspect --raw "$IMAGE:$TAG")
-          if echo "$raw" | jq -e '.manifests' >/dev/null; then
-            amd64=$(echo "$raw" | jq -r '[.manifests[] | select(.platform.architecture == "amd64" and .platform.os == "linux")] | first | .digest')
-          else
-            amd64="sha256:$(printf '%s' "$raw" | sha256sum | cut -d' ' -f1)"
-          fi
-          if [ -z "$amd64" ] || [ "$amd64" = null ]; then echo "no amd64 image under $IMAGE:$TAG" >&2; exit 1; fi
-          docker buildx imagetools create -t "$IMAGE:$TAG" -t "$IMAGE:sha-$SHA" "$IMAGE@$amd64" "$IMAGE@$ARM64"
+          docker buildx imagetools create -t "$IMAGE:sha-$SHA" "$IMAGE@$(cat digest-amd64)" "$IMAGE@$(cat digest-arm64)"
           docker buildx imagetools inspect "$IMAGE:sha-$SHA"
 
   deploy:
     name: Deploy to OCI (${{ needs.resolve.outputs.env }})
     needs: [resolve, manifest]
-    # 수동 실행은 build · manifest 를 건너뛰므로, 앞 job 이 skipped 여도 진행한다.
+    # 이미지가 이미 있어 build · manifest 를 건너뛴 경우에도 진행한다.
     if: >-
-      always() && needs.resolve.result == 'success' && needs.resolve.outputs.build != 'skip' &&
+      always() && needs.resolve.result == 'success' &&
       (needs.manifest.result == 'success' || needs.resolve.outputs.build == 'false')
     runs-on: [self-hosted, '${{ needs.resolve.outputs.runner }}']
     environment: oci-${{ needs.resolve.outputs.env }}
     permissions:
       contents: read
-      packages: read
     steps:
       - uses: actions/checkout@v4
         with:
