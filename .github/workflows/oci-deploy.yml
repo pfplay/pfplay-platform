@@ -13,6 +13,10 @@ name: OCI deploy (platform)
 on:
   push:
     branches: [develop, release, main]
+    # 기존 배포 워크플로와 같이, 문서만 바뀐 push 는 배포하지 않는다 (#374). 필요하면 수동 실행.
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
   workflow_dispatch:
     inputs:
       env:
