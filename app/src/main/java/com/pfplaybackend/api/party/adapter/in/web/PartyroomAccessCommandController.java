@@ -5,6 +5,7 @@ import com.pfplaybackend.api.common.config.swagger.ApiErrorCodes;
 import com.pfplaybackend.api.party.adapter.in.web.payload.request.access.EnterPartyroomRequest;
 import com.pfplaybackend.api.party.adapter.in.web.payload.response.access.EnterPartyroomResponse;
 import com.pfplaybackend.api.party.application.service.PartyroomAccessCommandService;
+import com.pfplaybackend.api.party.application.service.PartyroomEntryService;
 import com.pfplaybackend.api.party.domain.exception.CrewException;
 import com.pfplaybackend.api.party.domain.exception.PartyroomException;
 import com.pfplaybackend.api.party.domain.exception.PenaltyException;
@@ -28,6 +29,7 @@ import org.springframework.web.bind.annotation.*;
 public class PartyroomAccessCommandController {
 
     private final PartyroomAccessCommandService partyroomAccessCommandService;
+    private final PartyroomEntryService partyroomEntryService;
 
     @Operation(summary = "파티룸 입장", description = "파티룸에 입장합니다. 입장 시 크루(Crew)로 등록되며, 크루 정보가 반환됩니다. 요청 본문 자체와 본문의 countryCode(ISO 3166-1 alpha-2)는 모두 선택값으로, 주어진 경우 해당 입장 시점의 국가 코드로 저장되고 본문 생략 또는 countryCode 생략/null이면 비워집니다.")
     @ApiResponse(responseCode = "201", description = "파티룸 입장 성공")
@@ -40,7 +42,7 @@ public class PartyroomAccessCommandController {
         CountryCode countryCode = (request == null || request.countryCode() == null)
                 ? null
                 : CountryCode.of(request.countryCode());
-        var result = partyroomAccessCommandService.tryEnter(new PartyroomId(partyroomId), countryCode);
+        var result = partyroomEntryService.tryEnter(new PartyroomId(partyroomId), countryCode);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiCommonResponse.success(EnterPartyroomResponse.from(result.crew(), result.reactivated())));
     }
