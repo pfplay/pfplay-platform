@@ -22,16 +22,12 @@ import com.pfplaybackend.api.party.domain.specification.PartyroomEntrySpecificat
 import com.pfplaybackend.api.party.domain.value.CountryCode;
 import com.pfplaybackend.api.party.domain.value.CrewId;
 import com.pfplaybackend.api.party.domain.value.PartyroomId;
-import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -49,16 +45,21 @@ public class PartyroomAccessCommandService {
     private final PlaybackControlPort playbackControlPort;
     private final UserProfileQueryPort userProfileQueryPort;
     private final Clock clock;
-    private final PlatformTransactionManager transactionManager;
-    private TransactionTemplate requiresNewReadOnlyTx;
 
-    @PostConstruct
-    void initTxTemplates() {
-        this.requiresNewReadOnlyTx = new TransactionTemplate(transactionManager);
-        this.requiresNewReadOnlyTx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
-        this.requiresNewReadOnlyTx.setReadOnly(true);
+    /**
+     * 같은 방 동시 INSERT 패배(uk_crew_partyroom_user 위반) 신호. 트랜잭션을 롤백시켜 잠금 · 커넥션을
+     * 즉시 반납하고, 트랜잭션 밖의 {@link PartyroomEntryService} 가 새 트랜잭션으로 한 번 재시도한다 (#389).
+     */
+    public static class ConcurrentCrewInsertException extends RuntimeException {
+        ConcurrentCrewInsertException(DataIntegrityViolationException cause) {
+            super(cause);
+        }
     }
 
+    /**
+     * 같은 방 동시 입장에서 crew INSERT 에 지면 {@link ConcurrentCrewInsertException} 을 던진다.
+     * 정상 응답이 필요한 진입점은 재시도를 맡는 {@link PartyroomEntryService} 를 거친다.
+     */
     @Transactional
     public TryEnterResult tryEnter(PartyroomId partyroomId, CountryCode countryCode) {
         AuthContext authContext = ThreadLocalContext.getAuthContext();
@@ -121,29 +122,25 @@ public class PartyroomAccessCommandService {
                     userId, partyroomId.getId(), result.crew.getId());
             publishAccessChangedEvent(partyroom.getPartyroomId(), result.crew, userId);
         } else {
-            log.info("[tryEnter] IDEMPOTENT - already active or concurrent insert loser, no event. userId={}, partyroomId={}",
+            log.info("[tryEnter] IDEMPOTENT - already active, no event. userId={}, partyroomId={}",
                     userId, partyroomId.getId());
         }
-        if (!result.raceLoser) {
-            enforceHostInvariant(partyroom, userId, result.crew);
-        }
+        enforceHostInvariant(partyroom, userId, result.crew);
         // transitioned(inactive→active 재활성 또는 신규 INSERT) → reactivated. web#402 재연결 소비자용 신호.
         return new TryEnterResult(result.crew, result.transitioned);
     }
 
     /**
      * Crew를 active 상태로 만든다 (idempotent). 호출자에게 transitioned 플래그를 돌려 ENTER 이벤트
-     * 발행 여부를, raceLoser 플래그를 돌려 추가 mutation(예: enforceHostInvariant healing) skip 여부를
-     * 판단하게 한다.
+     * 발행 여부를 판단하게 한다.
      *
      * 흐름:
-     *  1. activateCrew atomic toggle 시도 → 1이면 inactive→active 전이 성공. (transitioned=true, raceLoser=false)
+     *  1. activateCrew atomic toggle 시도 → 1이면 inactive→active 전이 성공. (transitioned=true)
      *  2. 0 (row missing 또는 이미 active) → findCrew 분기:
-     *     a. row 없음 → INSERT. 동시 INSERT 패배자는 DataIntegrityViolationException —
-     *        outer 트랜잭션이 rollback-only 상태가 되므로 winner 조회는 별 트랜잭션(REQUIRES_NEW)에서
-     *        수행. 본 호출자는 idempotent return하며 raceLoser=true로 표시한다 — 호출자 측에서
-     *        추가 saveCrew 호출 시 UnexpectedRollbackException 위험이 있으므로 skip해야 한다.
-     *     b. row 있고 active → countryCode만 갱신, idempotent. (transitioned=false, raceLoser=false)
+     *     a. row 없음 → INSERT. 같은 방 동시 INSERT 패배자는 ConcurrentCrewInsertException 으로
+     *        트랜잭션을 끝낸다. 실패한 INSERT 가 잡은 잠금을 쥔 채 이 트랜잭션에서 더 진행하지 않는다 —
+     *        이 트랜잭션은 rollback-only 이고 스냅샷에 승자 행도 보이지 않는다 (#389).
+     *     b. row 있고 active → countryCode만 갱신, idempotent. (transitioned=false)
      */
     private CrewActivationResult ensureCrewActive(PartyroomData partyroom, UserId userId, CountryCode countryCode) {
         PartyroomId pid = partyroom.getPartyroomId();
@@ -162,32 +159,30 @@ public class PartyroomAccessCommandService {
         if (activated == 1) {
             CrewData crew = aggregatePort.findCrew(pid, userId).orElseThrow();
             crew.updateCountryCode(countryCode);
-            return new CrewActivationResult(aggregatePort.saveCrew(crew), true, false);
+            return new CrewActivationResult(aggregatePort.saveCrew(crew), true);
         }
 
         Optional<CrewData> existing = aggregatePort.findCrew(pid, userId);
         if (existing.isEmpty()) {
             try {
                 CrewData newCrew = CrewData.create(pid, userId, GradeType.LISTENER, countryCode, now);
-                return new CrewActivationResult(aggregatePort.saveCrew(newCrew), true, false);
+                return new CrewActivationResult(aggregatePort.saveCrew(newCrew), true);
             } catch (DataIntegrityViolationException e) {
                 // #349 INSERT 가 uk_crew_active_user 위반이면 다른 방 동시 입장 패자 → CONFLICT.
                 if (isActiveUserConstraint(e)) {
                     throw ExceptionCreator.create(CrewException.CONCURRENT_ACTIVE_ROOM);
                 }
-                // uk_crew_partyroom_user 위반 = 같은 방 동시 INSERT 패배 — outer tx가 rollback-only 상태.
-                // winner row 조회는 별 트랜잭션에서.
+                // uk_crew_partyroom_user 위반 = 같은 방 동시 INSERT 패배 → 롤백 후 바깥에서 재시도.
                 log.info("[ensureCrewActive] CONCURRENT_INSERT_LOSER - userId={}, partyroomId={}",
                         userId, pid.getId());
-                CrewData winner = findCrewInNewTransaction(pid, userId);
-                return new CrewActivationResult(winner, false, true);
+                throw new ConcurrentCrewInsertException(e);
             }
         }
 
         // 이미 active — countryCode만 갱신
         CrewData crew = existing.get();
         crew.updateCountryCode(countryCode);
-        return new CrewActivationResult(aggregatePort.saveCrew(crew), false, false);
+        return new CrewActivationResult(aggregatePort.saveCrew(crew), false);
     }
 
     /**
@@ -214,26 +209,9 @@ public class PartyroomAccessCommandService {
     }
 
     /**
-     * Outer @Transactional이 rollback-only로 진입한 후에도 안전하게 SELECT 가능하도록 별 트랜잭션 사용.
-     * Spring AOP self-invocation 우회를 위해 @Transactional(REQUIRES_NEW) 메서드 호출 대신
-     * TransactionTemplate 직접 사용 — 같은 클래스 내부 호출은 proxy를 거치지 않아
-     * @Transactional 어노테이션이 무효화되기 때문.
-     */
-    private CrewData findCrewInNewTransaction(PartyroomId partyroomId, UserId userId) {
-        return requiresNewReadOnlyTx.execute(status ->
-                aggregatePort.findCrew(partyroomId, userId).orElseThrow()
-        );
-    }
-
-    /**
      * Host invariant 강제: 진입 user가 partyroom host인데 grade가 HOST가 아니면 승격.
      * Idempotent — 이미 HOST면 no-op. createMainStage가 enterByHost를 건너뛰는 경우와
      * 기존 잘못된 grade row를 자동 healing.
-     *
-     * 호출 측 PRECONDITION: outer @Transactional이 rollback-only 상태가 아닐 것.
-     * INSERT race-loser 분기에서는 호출하지 말 것 — outer tx가 rollback-only이므로
-     * saveCrew가 UnexpectedRollbackException을 던진다. tryEnter 호출 측에서
-     * CrewActivationResult.raceLoser 플래그로 식별하여 skip한다.
      *
      * saveCrew 호출은 명시적이지만 같은 트랜잭션 내 managed entity merge라 DB write 비용은 0
      * (dirty check + flush 시 단일 UPDATE). 명시 호출은 expel/exit 패턴과의 대칭 + mock 기반
@@ -249,7 +227,7 @@ public class PartyroomAccessCommandService {
                 userId, partyroom.getPartyroomId().getId(), crew.getId(), prev);
     }
 
-    private record CrewActivationResult(CrewData crew, boolean transitioned, boolean raceLoser) {}
+    private record CrewActivationResult(CrewData crew, boolean transitioned) {}
 
     /**
      * tryEnter 결과. {@code reactivated}=true 는 inactive→active 재활성(또는 신규 INSERT)을 뜻한다.

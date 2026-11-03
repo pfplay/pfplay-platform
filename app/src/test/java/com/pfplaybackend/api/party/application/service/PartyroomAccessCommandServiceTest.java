@@ -31,8 +31,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.TransactionStatus;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -41,6 +39,7 @@ import java.time.ZoneId;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -55,7 +54,6 @@ class PartyroomAccessCommandServiceTest {
     @Mock private PlaybackControlPort playbackControlPort;
     @Mock private UserProfileQueryPort userProfileQueryPort;
     @Mock private Clock clock;
-    @Mock private PlatformTransactionManager transactionManager;
 
     @InjectMocks
     private PartyroomAccessCommandService partyroomAccessCommandService;
@@ -86,11 +84,6 @@ class PartyroomAccessCommandServiceTest {
                     }
                     return result;
                 });
-
-        // @PostConstruct does not run with @InjectMocks — manually wire the TransactionTemplate
-        // by calling initTxTemplates via reflection or leaving requiresNewReadOnlyTx null.
-        // Since findCrewInNewTransaction is only called on DataIntegrityViolationException path
-        // (not exercised in these unit tests), this is safe for the happy-path tests below.
     }
 
     @AfterEach
@@ -268,7 +261,7 @@ class PartyroomAccessCommandServiceTest {
     }
 
     @Test
-    @DisplayName("tryEnter INSERT race 패배자는 winner를 별 트랜잭션에서 조회하고 ENTER 이벤트를 발행하지 않는다")
+    @DisplayName("tryEnter INSERT race 패배자는 ConcurrentCrewInsertException 으로 끝나고 ENTER 이벤트를 발행하지 않는다 (#389)")
     void tryEnterConcurrentInsertLoserShouldNotPublishEnter() {
         // given
         PartyroomId racePartyroomId = new PartyroomId(700L);
@@ -285,30 +278,15 @@ class PartyroomAccessCommandServiceTest {
             when(aggregatePort.countActiveCrews(racePartyroomId)).thenReturn(0L);
             when(partyroomQueryService.getMyActivePartyroom(raceUserId)).thenReturn(Optional.empty());
 
-            // INSERT race scenario: activateCrew=0 (no existing row), findCrew initially empty,
-            // saveCrew throws UNIQUE constraint violation simulating concurrent INSERT.
-            // findCrew is called 3 times for this path:
-            //   1. tryEnter line 69: existingCrew (for PartyroomEntrySpecification + same-room guard)
-            //   2. ensureCrewActive line 138: existing (row missing check → triggers INSERT attempt)
-            //   3. findCrewInNewTransaction (REQUIRES_NEW SELECT): winner row
+            // INSERT race scenario: activateCrew=0 (no existing row), findCrew empty,
+            // saveCrew throws uk_crew_partyroom_user violation simulating concurrent INSERT.
             when(aggregatePort.activateCrew(eq(racePartyroomId), eq(raceUserId), any())).thenReturn(0);
-            CrewData winnerCrew = mock(CrewData.class);
-            when(aggregatePort.findCrew(eq(racePartyroomId), eq(raceUserId)))
-                    .thenReturn(Optional.empty())               // call 1: tryEnter existingCrew check
-                    .thenReturn(Optional.empty())               // call 2: ensureCrewActive row-missing check → INSERT
-                    .thenReturn(Optional.of(winnerCrew));       // call 3: REQUIRES_NEW SELECT → winner
+            when(aggregatePort.findCrew(eq(racePartyroomId), eq(raceUserId))).thenReturn(Optional.empty());
             when(aggregatePort.saveCrew(any())).thenThrow(new DataIntegrityViolationException("uk_crew_partyroom_user"));
 
-            // Initialize requiresNewReadOnlyTx (skipped by @InjectMocks since @PostConstruct doesn't fire)
-            TransactionStatus txStatus = mock(TransactionStatus.class);
-            when(transactionManager.getTransaction(any())).thenReturn(txStatus);
-            ReflectionTestUtils.invokeMethod(partyroomAccessCommandService, "initTxTemplates");
-
-            // when
-            CrewData result = partyroomAccessCommandService.tryEnter(racePartyroomId, CountryCode.of("KR")).crew();
-
-            // then: returned crew is the winner row found in the REQUIRES_NEW transaction
-            assertThat(result).isSameAs(winnerCrew);
+            // when / then: 이 트랜잭션에서 더 진행하지 않고 끝낸다 — 재시도는 PartyroomEntryService 몫.
+            assertThatThrownBy(() -> partyroomAccessCommandService.tryEnter(racePartyroomId, CountryCode.of("KR")))
+                    .isInstanceOf(PartyroomAccessCommandService.ConcurrentCrewInsertException.class);
             // No ENTER event published — concurrent insert loser must not inflate the counter
             verify(eventPublisher, never()).publishEvent(any(CrewAccessedEvent.class));
         } finally {
@@ -668,12 +646,11 @@ class PartyroomAccessCommandServiceTest {
     }
 
     @Test
-    @DisplayName("tryEnter race-loser: helper skipped to avoid write on rollback-only outer tx")
+    @DisplayName("tryEnter race-loser(host): rollback-only 트랜잭션에서 healing 쓰기를 시도하지 않고 끝난다")
     void tryEnter_raceLoser_skipsHealingToAvoidRollbackOnlyTx() {
-        // given — same setup as tryEnterConcurrentInsertLoserShouldNotPublishEnter, but
-        // user IS the host and winner row is LISTENER. The healing helper would normally
-        // try to promote → saveCrew on rollback-only outer tx → UnexpectedRollbackException.
-        // The raceLoser guard must skip the helper entirely.
+        // given — same setup as tryEnterConcurrentInsertLoserShouldNotPublishEnter, but user IS the host.
+        // 패배 트랜잭션은 ConcurrentCrewInsertException 으로 바로 끝나므로 healing helper 에 닿지 않는다.
+        // (승자 행 healing 은 PartyroomEntryService 재시도의 같은 방 재입장 분기가 새 트랜잭션에서 수행.)
         PartyroomId racePartyroomId = new PartyroomId(701L);
         UserId raceUserId = new UserId(8002L);
         AuthContext authContext = new AuthContext(raceUserId, AuthorityTier.GT);
@@ -684,43 +661,21 @@ class PartyroomAccessCommandServiceTest {
             when(partyroom.getPartyroomId()).thenReturn(racePartyroomId);
             when(partyroom.getStatus()).thenReturn(PartyroomStatus.ACTIVE);
             when(partyroom.isSuspended()).thenReturn(false);
-            // lenient: getHostId() would be consumed by enforceHostInvariant if the raceLoser guard
-            // were absent. With the guard applied the helper is skipped entirely → stub unused.
             lenient().when(partyroom.getHostId()).thenReturn(raceUserId);
             when(partyroomQueryService.getPartyroomById(racePartyroomId)).thenReturn(partyroom);
             when(aggregatePort.countActiveCrews(racePartyroomId)).thenReturn(0L);
             when(partyroomQueryService.getMyActivePartyroom(raceUserId)).thenReturn(Optional.empty());
 
             when(aggregatePort.activateCrew(eq(racePartyroomId), eq(raceUserId), any())).thenReturn(0);
-
-            // Winner row from REQUIRES_NEW: a LISTENER row that WOULD trigger healing
-            // if the guard were missing.
-            CrewData winnerCrew = mock(CrewData.class);
-            // lenient: getGradeType() would be consumed by enforceHostInvariant if guard were absent;
-            // after guard is applied the helper is skipped so the stub goes unused — strict mode throws.
-            lenient().when(winnerCrew.getGradeType()).thenReturn(GradeType.LISTENER);
-            when(aggregatePort.findCrew(eq(racePartyroomId), eq(raceUserId)))
-                    .thenReturn(Optional.empty())
-                    .thenReturn(Optional.empty())
-                    .thenReturn(Optional.of(winnerCrew));
-            // saveCrew는 두 경로 모두 trigger:
-            //   1. ensureCrewActive INSERT 시도 → DataIntegrityViolationException → race-loser 분기 진입
-            //   2. (가드 없을 시) enforceHostInvariant healing → 또 한 번 saveCrew → 동일 예외 → 테스트 RED
-            // 가드 적용 후엔 helper skip되어 두 번째 호출 자체가 발생하지 않음.
+            when(aggregatePort.findCrew(eq(racePartyroomId), eq(raceUserId))).thenReturn(Optional.empty());
             when(aggregatePort.saveCrew(any()))
                     .thenThrow(new DataIntegrityViolationException("uk_crew_partyroom_user"));
 
-            // Wire requiresNewReadOnlyTx (skipped by @InjectMocks since @PostConstruct doesn't fire)
-            TransactionStatus txStatus = mock(TransactionStatus.class);
-            when(transactionManager.getTransaction(any())).thenReturn(txStatus);
-            ReflectionTestUtils.invokeMethod(partyroomAccessCommandService, "initTxTemplates");
-
-            // when
-            CrewData result = partyroomAccessCommandService.tryEnter(racePartyroomId, null).crew();
-
-            // then — guard prevents the helper from invoking updateGrade or extra saveCrew
-            assertThat(result).isSameAs(winnerCrew);
-            verify(winnerCrew, never()).updateGrade(any(GradeType.class));
+            // when / then
+            assertThatThrownBy(() -> partyroomAccessCommandService.tryEnter(racePartyroomId, null))
+                    .isInstanceOf(PartyroomAccessCommandService.ConcurrentCrewInsertException.class);
+            // INSERT 1회 외의 쓰기(healing saveCrew)는 없다
+            verify(aggregatePort, times(1)).saveCrew(any());
         } finally {
             ThreadLocalContext.clearContext();
         }

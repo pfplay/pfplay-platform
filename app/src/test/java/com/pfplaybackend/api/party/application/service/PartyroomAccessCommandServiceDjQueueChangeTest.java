@@ -26,7 +26,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.transaction.PlatformTransactionManager;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -47,7 +46,6 @@ class PartyroomAccessCommandServiceDjQueueChangeTest {
     @Mock private PartyroomQueryService partyroomQueryService;
     @Mock private PlaybackControlPort playbackControlPort;
     @Mock private Clock clock;
-    @Mock private PlatformTransactionManager transactionManager;
 
     @InjectMocks
     private PartyroomAccessCommandService partyroomAccessCommandService;

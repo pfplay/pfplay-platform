@@ -25,7 +25,7 @@ class PartyroomAccessCommandControllerTest extends AbstractPartyCommandWebMvcTes
         CrewData crew = mock(CrewData.class);
         when(crew.getId()).thenReturn(1L);
         when(crew.getGradeType()).thenReturn(GradeType.CLUBBER);
-        when(partyroomAccessCommandService.tryEnter(any(), any()))
+        when(partyroomEntryService.tryEnter(any(), any()))
                 .thenReturn(new PartyroomAccessCommandService.TryEnterResult(crew, false));
 
         // when & then
@@ -44,7 +44,7 @@ class PartyroomAccessCommandControllerTest extends AbstractPartyCommandWebMvcTes
         CrewData crew = mock(CrewData.class);
         when(crew.getId()).thenReturn(1L);
         when(crew.getGradeType()).thenReturn(GradeType.CLUBBER);
-        when(partyroomAccessCommandService.tryEnter(any(), any()))
+        when(partyroomEntryService.tryEnter(any(), any()))
                 .thenReturn(new PartyroomAccessCommandService.TryEnterResult(crew, false));
 
         // when & then
@@ -63,7 +63,7 @@ class PartyroomAccessCommandControllerTest extends AbstractPartyCommandWebMvcTes
         CrewData crew = mock(CrewData.class);
         when(crew.getId()).thenReturn(1L);
         when(crew.getGradeType()).thenReturn(GradeType.CLUBBER);
-        when(partyroomAccessCommandService.tryEnter(any(), any()))
+        when(partyroomEntryService.tryEnter(any(), any()))
                 .thenReturn(new PartyroomAccessCommandService.TryEnterResult(crew, false));
 
         // when & then — no .content(), no .contentType()
@@ -80,7 +80,7 @@ class PartyroomAccessCommandControllerTest extends AbstractPartyCommandWebMvcTes
         CrewData crew = mock(CrewData.class);
         when(crew.getId()).thenReturn(1L);
         when(crew.getGradeType()).thenReturn(GradeType.CLUBBER);
-        when(partyroomAccessCommandService.tryEnter(any(), any()))
+        when(partyroomEntryService.tryEnter(any(), any()))
                 .thenReturn(new PartyroomAccessCommandService.TryEnterResult(crew, false));
 
         // when & then — empty JSON object
